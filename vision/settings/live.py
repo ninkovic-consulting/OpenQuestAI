@@ -20,9 +20,9 @@ from vision.house import HouseError
 if TYPE_CHECKING:
     from vision.app import Daemon
 
-LIVE_SECTIONS = ("assistant", "budget", "voice", "gate")
+LIVE_SECTIONS = ("assistant", "budget", "voice", "gate", "automations")
 """Copied into the running config."""
-APPLIED_AT_ONCE = ("assistant", "voice", "gate", "agents")
+APPLIED_AT_ONCE = ("assistant", "voice", "gate", "automations", "agents")
 BUDGET_AT_ONCE = ("monthly_cap_usd", "prices")
 
 

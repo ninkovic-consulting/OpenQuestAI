@@ -31,6 +31,18 @@ SAMPLES: dict[str, dict[str, Any]] = {
     "gate.resolved": {"id": "g1", "decision": "timeout"},
     "brain.fallback": {"from": "claude", "to": "local", "reason": "offline"},
     "house.changed": {"revision": 3},
+    "automation.changed": {
+        "id": "a1b2c3d4",
+        "change": "updated",
+        "automation": {"id": "a1b2c3d4", "name": "Stretch"},
+    },
+    "automation.started": {"id": "a1b2c3d4", "name": "Stretch"},
+    "automation.finished": {
+        "id": "a1b2c3d4",
+        "name": "Stretch",
+        "status": "needed_approval",
+        "reply": "Time to stretch.",
+    },
     "notice": {"level": "warn", "text": "Voice is off."},
     "hello": {"token": "t0k"},
     "input.text": {"text": "hello"},

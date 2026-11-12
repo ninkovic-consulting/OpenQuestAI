@@ -6,6 +6,11 @@
   deny, logged as `timeout`.
 - `never` (and unknown tools) are refused.
 
+During an automation's run the card names the automation, an `ask` that
+nobody answers marks the run as having needed approval, and tools that may
+not run unattended are refused before anyone is asked. Nothing an
+automation does goes around the gate.
+
 The bus subscription for `gate.decision` is opened only while a request is
 waiting. `answer(text)` lets a caller settle the waiting request from a spoken
 or typed yes or no; it publishes the same `gate.decision` the window would.
@@ -26,6 +31,7 @@ from vision.core.bus import Bus, Subscription
 from vision.core.config import Config
 from vision.core.events import GateChoice, GateDecision, GateOutcome, GateRequest, GateResolved
 from vision.core.interfaces import AuditRecord, Memory, ToolResult, ToolSpec
+from vision.core.turns import current_origin
 from vision.gate.policy import tier_for
 from vision.gate.tools import Tool, ToolFailure
 
@@ -95,6 +101,10 @@ class ToolGate:
         if tier == "never":
             await self._audit(name, args, tier, "deny", "refused by policy")
             return ToolResult(False, "That action is not allowed.")
+        origin = current_origin()
+        if tool.unattended_refusal and origin is not None and origin.source == "automation":
+            await self._audit(name, args, tier, "deny", "refused during an automation")
+            return ToolResult(False, tool.unattended_refusal)
         request_id = ""
         if tier == "ask":
             request_id = uuid.uuid4().hex
@@ -104,6 +114,9 @@ class ToolGate:
                 await self._audit(name, args, tier, "deny", "cancelled", request_id)
                 raise
             if outcome == "timeout":
+                origin = current_origin()
+                if origin is not None and origin.source == "automation":
+                    origin.needed_approval = True
                 await self._audit(name, args, tier, "timeout", "no answer", request_id)
                 return ToolResult(
                     False, f"Nobody answered within {self._gate.timeout_s:g} seconds, so it did not run."
@@ -117,9 +130,13 @@ class ToolGate:
 
     async def _ask(self, request_id: str, tool: Tool, args: dict[str, Any]) -> GateOutcome:
         timeout = self._gate.timeout_s
-        detail = args.get(tool.detail_arg)
+        detail = tool.describe(args) if tool.describe is not None else args.get(tool.detail_arg)
         if not isinstance(detail, str):
             detail = json.dumps(args, sort_keys=True, ensure_ascii=False)
+        summary = tool.summary
+        origin = current_origin()
+        if origin is not None and origin.source == "automation":
+            summary = f'Automation "{origin.automation_name}": {summary}'
         sub = self._bus.subscribe({GateDecision.TYPE})
         self._waiting.append(request_id)
         outcome: GateOutcome = "deny"
@@ -128,7 +145,7 @@ class ToolGate:
                 GateRequest(
                     id=request_id,
                     tool=tool.spec.name,
-                    summary=tool.summary,
+                    summary=summary,
                     detail=detail,
                     expires_at=time.time() + timeout,
                 )

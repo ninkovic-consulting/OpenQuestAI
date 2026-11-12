@@ -2,6 +2,7 @@
 // back-off, and reload /api/state and /api/house after every (re)connect.
 
 import { Api } from "./api";
+import { HttpAutomations, type AutomationsApi } from "./automations-api";
 import type { Daemon } from "./daemon";
 import { asPlan } from "./plan";
 import type { SettingsApi } from "./settings-api";
@@ -17,6 +18,7 @@ const CLOSE_FORBIDDEN_ORIGIN = 4403;
 export class SocketDaemon implements Daemon {
   private readonly api: Api;
   readonly settings: SettingsApi;
+  readonly automations: AutomationsApi;
   private ws: WebSocket | null = null;
   private backoff = BACKOFF_MIN_MS;
   private loadedOnce = false;
@@ -30,6 +32,7 @@ export class SocketDaemon implements Daemon {
   ) {
     this.api = new Api(token);
     this.settings = new HttpSettings(this.api);
+    this.automations = new HttpAutomations(this.api);
   }
 
   start(): void {

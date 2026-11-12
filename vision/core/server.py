@@ -4,8 +4,8 @@
   app is built.
 - `GET /api/health`, `GET /api/state`, `GET /api/history?limit=50`,
   `GET /api/house` (plus the house package's own routes under `/api/house`,
-  and the settings package's under `/api`: settings, models, voice, downloads,
-  folders, doctor, reset and backups),
+  the settings package's under `/api`: settings, models, voice, downloads,
+  folders, doctor, reset and backups, and the scheduler's `/api/automations`),
   each needing `Authorization: Bearer <token>`. Other packages protect their
   routers with `require_token`.
 - `WS /ws`: the first message must be `hello` with the token, else the
@@ -151,6 +151,10 @@ def create_app(daemon: Daemon) -> FastAPI:
 
     app.state.settings = SettingsService(daemon)
     app.include_router(settings_router(app.state.settings), prefix="/api", dependencies=auth)
+
+    from vision.scheduler import build_router as automations_router
+
+    app.include_router(automations_router(daemon.automations), prefix="/api", dependencies=auth)
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:

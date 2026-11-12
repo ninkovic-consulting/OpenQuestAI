@@ -1,6 +1,7 @@
 // What every settings group is given: the daemon, the saved settings, the
 // shared draft of edits, and ways to move about the screen.
 
+import type { AutomationsApi } from "../../net/automations-api";
 import type { NativeHelpers } from "../../net/native";
 import type { SettingsApi } from "../../net/settings-api";
 import type { Settings } from "../../net/settings-types";
@@ -9,10 +10,11 @@ import type { ProposeResult } from "../../net/types";
 import type { ModelSource } from "../pickers/model-picker";
 import type { Draft } from "./draft";
 
-export type GroupId = "assistant" | "models" | "agents" | "rooms" | "voice" | "asking" | "key" | "mac" | "reset";
+export type GroupId = "assistant" | "models" | "agents" | "rooms" | "voice" | "asking" | "automations" | "key" | "mac" | "reset";
 
 export interface SettingsContext {
   api: SettingsApi;
+  automations: AutomationsApi;
   store: Store;
   native: NativeHelpers;
   models: ModelSource;

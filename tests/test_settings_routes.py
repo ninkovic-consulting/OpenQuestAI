@@ -63,11 +63,13 @@ async def test_settings_shape(daemon: Daemon) -> None:
     assert got["gate"]["never_free"] == ["shell"]
     assert got["gate"]["tiers"]["shell"] == "ask"
     assert {t["id"] for t in got["gate"]["tools"]} >= {"remember", "shell"}
-    assert got["gate"]["tools"][-1] == {
+    assert got["gate"]["tools"][4] == {
         "id": "shell",
         "title": "Shell",
         "description": "Runs a shell command, always after asking you.",
     }
+    assert got["gate"]["tiers"]["delete_automation"] == "ask"
+    assert got["gate"]["tiers"]["create_automation"] == "free"
     assert got["key"] == {"stored": False, "source": None}
     assert got["setup"] == {"completed": False, "first_run": True}
     assert got["restart_pending"] == []

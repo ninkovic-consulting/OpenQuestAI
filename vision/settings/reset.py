@@ -3,7 +3,8 @@
 - `settings`: config.toml removed (defaults). Applied at once; a restart is
   asked for only when something a restart applies changed (the models, say).
 - `house`: house.toml back to the default house; the house reloads at once.
-- `everything`: both, plus the memory vault, `log.db` and `budget.json`;
+- `everything`: both, plus the memory vault, `log.db`, `budget.json` and
+  the automations;
   setup counts as not completed again. Memory is closed while its files move
   and opened again on fresh ones, so nothing writes into a backup; a restart
   is still asked for, because the brain keeps the conversation in memory.
@@ -20,6 +21,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from vision import house
 from vision.core.config import load_config
 from vision.core.events import BudgetUpdate
+from vision.scheduler.store import FILE_NAME as AUTOMATIONS_FILE
 from vision.settings import backups, live
 from vision.settings.outside import Outside
 
@@ -31,13 +33,22 @@ LOG_ITEMS = ["log.db", "log.db-wal", "log.db-shm"]
 NAMES: dict[Level, list[str]] = {
     "settings": ["config.toml"],
     "house": ["house.toml"],
-    "everything": ["config.toml", "house.toml", "house", *LOG_ITEMS, "budget.json"],
+    "everything": [
+        "config.toml",
+        "house.toml",
+        "house",
+        *LOG_ITEMS,
+        "budget.json",
+        AUTOMATIONS_FILE,
+    ],
 }
 MEMORY_ITEMS = frozenset({"house", *LOG_ITEMS})
 MESSAGES: dict[Level, str] = {
     "settings": "Settings are back to their defaults.",
     "house": "The house is back to the default house.",
-    "everything": "Everything is back to a fresh start: settings, house, memory, log and budget.",
+    "everything": (
+        "Everything is back to a fresh start: settings, house, memory, log, budget and automations."
+    ),
 }
 
 
@@ -108,4 +119,6 @@ class Resetter:
         if "budget.json" in names:
             d.components.budget.reload()
             d.bus.publish(BudgetUpdate(**dataclasses.asdict(d.components.budget.status())))
+        if AUTOMATIONS_FILE in names:
+            await d.automations.reload()
         return backup, restart

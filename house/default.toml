@@ -15,14 +15,18 @@
 #
 # Tools are ids from house/tools.toml. A room may list its own, as in
 # tools = ["git", "gh", "npm"]; a room that lists none uses its agent's.
-# Only the assistant's five built-in tools run in this slice; project tools
+# Only the assistant's built-in tools run in this slice; project tools
 # are stored and shown, and start working when the other agents wake up.
 
 # The host's name follows `[assistant] name` in config.toml unless set here,
 # and its models follow `[brain] talk_model` and `heavy_model`.
 [agents.host]
 persona = "agents/host.md"
-tools = ["remember", "recall", "open_app", "open_url", "shell"]
+tools = [
+    "remember", "recall", "open_app", "open_url", "shell",
+    "create_automation", "list_automations", "update_automation", "pause_automation",
+    "resume_automation", "run_automation", "delete_automation",
+]
 
 [agents.steward]
 name = "Brass"

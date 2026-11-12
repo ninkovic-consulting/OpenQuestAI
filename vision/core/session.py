@@ -27,6 +27,12 @@ While a gate request is waiting (the turn in progress is blocked on the
 user's yes), typed or spoken input is first offered to `ToolHost.answer`. A
 short clear yes or no settles the request and starts no turn, so the waiting
 turn carries on; anything else interrupts as usual.
+
+An automation's run is a turn too (`run_automation`), with source
+`automation`: no `user.utterance` is published, the brain is told which
+automation is running and when, and when the automation is only shown, the
+reply is not spoken. The scheduler starts one only while the session is idle;
+input from the user interrupts it like any other turn.
 """
 
 from __future__ import annotations
@@ -38,6 +44,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from vision.core.bus import Bus
 from vision.core.events import (
@@ -48,6 +55,7 @@ from vision.core.events import (
     Notice,
     State,
     StateChanged,
+    TurnSource,
     UserUtterance,
     UtteranceSource,
     VisionDelta,
@@ -64,7 +72,9 @@ from vision.core.interfaces import (
     TurnRecord,
     TurnStatus,
 )
+from vision.core.localtime import local_zone
 from vision.core.sentences import SentenceSplitter
+from vision.core.turns import TurnOrigin, brain_text, set_origin
 
 log = logging.getLogger(__name__)
 
@@ -89,7 +99,9 @@ class _Turn:
     """Mutable state of the turn in progress."""
 
     text: str
-    source: UtteranceSource
+    origin: TurnOrigin
+    speak: bool = True
+    """False for an automation that is only shown: the reply is not spoken."""
     turn_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     started_at: float = field(default_factory=time.time)
     parts: list[str] = field(default_factory=list)
@@ -102,7 +114,11 @@ class _Turn:
     output_tokens: int = 0
     error: str = ""
     replied: bool = False
-    logged: bool = False
+    record: TurnRecord | None = None
+
+    @property
+    def source(self) -> TurnSource:
+        return self.origin.source
 
     @property
     def reply(self) -> str:
@@ -164,7 +180,29 @@ class Session:
         await self.interrupt()
         if source == "text":
             self.bus.publish(UserUtterance(text=text, source="text"))
-        self._task = asyncio.create_task(self._run_turn(_Turn(text, source)))
+        self._task = asyncio.create_task(self._run_turn(_Turn(text, TurnOrigin(source))))
+
+    async def run_automation(
+        self, text: str, *, automation_id: str, name: str, speak: bool
+    ) -> tuple[TurnRecord, TurnOrigin]:
+        """Run an automation's instruction as a turn and wait for it to end.
+
+        Call it only while the session is idle; the scheduler waits for that.
+        Returns the logged turn and its origin, whose `needed_approval` says a
+        tool asked first and nobody answered.
+        """
+        if self.busy:
+            raise RuntimeError("a turn is already running")
+        origin = TurnOrigin("automation", automation_id, name)
+        turn = _Turn(text, origin, speak=speak)
+        task = asyncio.create_task(self._run_turn(turn))
+        self._task = task
+        await asyncio.gather(task, return_exceptions=True)
+        if turn.record is None:  # interrupted before it began
+            turn.status = "interrupted"
+            await self._log(turn)
+        assert turn.record is not None
+        return turn.record, origin
 
     async def interrupt(self) -> None:
         """Stop the turn in progress, if any, and wait for it to close."""
@@ -193,11 +231,14 @@ class Session:
 
         def say(sentence: str) -> None:
             nonlocal speaking
+            if not turn.speak:
+                return
             if speaking is None:
                 self._state("speaking")
                 speaking = asyncio.create_task(self._speak(speech, turn))
             speech.put_nowait(sentence)
 
+        set_origin(turn.origin)
         self._state("thinking")
         try:
             await self._stream(turn, say)
@@ -211,7 +252,8 @@ class Session:
             await self._log(turn)
         except asyncio.CancelledError:
             turn.status = "interrupted"
-            turn.parts = [" ".join(turn.spoken)]
+            if turn.speak:
+                turn.parts = [" ".join(turn.spoken)]
             self._reply(turn)
             await self._log(turn)
             raise
@@ -222,8 +264,9 @@ class Session:
 
     async def _stream(self, turn: _Turn, say: SayFn) -> None:
         splitter = SentenceSplitter()
+        text = brain_text(turn.text, turn.origin, datetime.now(local_zone()))
         try:
-            async for event in self.brain.send(turn.text, heavy=wants_heavy(turn.text)):
+            async for event in self.brain.send(text, heavy=wants_heavy(turn.text)):
                 turn.brain = self.brain.name
                 match event:
                     case TextDelta(text=text) if text:
@@ -282,10 +325,9 @@ class Session:
             self.bus.publish(VisionReply(text=turn.reply, turn_id=turn.turn_id))
 
     async def _log(self, turn: _Turn) -> None:
-        if turn.logged:
+        if turn.record is not None:
             return
-        turn.logged = True
-        record = TurnRecord(
+        record = turn.record = TurnRecord(
             turn_id=turn.turn_id,
             started_at=turn.started_at,
             ended_at=time.time(),

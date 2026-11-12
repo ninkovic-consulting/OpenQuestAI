@@ -3,7 +3,9 @@
 // store actions the real socket uses.
 
 import { cellKey, cellOwners } from "../scene/grid";
+import type { Automation, RunStatus } from "./automation-types";
 import type { Daemon } from "./daemon";
+import { MockAutomations } from "./mock-automations";
 import { MockSettings } from "./mock-settings";
 import { hostAgentId, hostRefusal, hostRoom } from "./plan";
 import { HOST_TOOLS, samplePlan } from "./sample-plan";
@@ -48,8 +50,12 @@ const LONG_REPLY =
 
 export class MockDaemon implements Daemon {
   private plan: Plan = samplePlan();
-  private speaking: { timers: number[]; text: string; turn: string } | null = null;
+  private speaking: { timers: number[]; text: string; turn: string; done: (() => void) | null } | null = null;
   private turn = 0;
+  readonly automations = new MockAutomations({
+    changed: (id) => this.emit("automation.changed", { id, change: "updated", automation: null }),
+    perform: (a) => this.runAutomation(a),
+  });
   readonly settings = new MockSettings({
     plan: () => this.plan,
     changed: () => this.publish(),
@@ -60,6 +66,7 @@ export class MockDaemon implements Daemon {
       this.publish();
     },
     tools: (ids, agent) => (ids ? ids.flatMap((id) => MOCK_CATALOG.filter((t) => t.id === id).map((t) => ({ ...t }))) : agentTools(agent)),
+    forgetAutomations: () => this.automations.clear(),
   });
 
   constructor(private readonly store: Store) {}
@@ -187,11 +194,27 @@ export class MockDaemon implements Daemon {
     this.at(900, () => this.say(long ? LONG_REPLY : "Everything is quiet. The workshop lights are on and the tests are green."));
   }
 
-  private say(text: string): void {
+  /** An automation's run: no words from the user, the automation's name in the caption. */
+  private runAutomation(a: Automation): Promise<{ status: RunStatus; reply: string }> {
+    this.interrupt();
+    this.emit("automation.started", { id: a.id, name: a.name });
+    this.setState("thinking");
+    const reply = `It is time: ${a.instruction.charAt(0).toLowerCase()}${a.instruction.slice(1)}`;
+    return new Promise((resolve) => {
+      this.at(900, () =>
+        this.say(reply, () => {
+          this.emit("automation.finished", { id: a.id, name: a.name, status: "ok", reply });
+          resolve({ status: "ok", reply });
+        }),
+      );
+    });
+  }
+
+  private say(text: string, done: (() => void) | null = null): void {
     const turn = `turn-${++this.turn}`;
     const words = text.split(/(?<= )/);
     const timers: number[] = [];
-    this.speaking = { timers, text: "", turn };
+    this.speaking = { timers, text: "", turn, done };
     this.setState("speaking");
     words.forEach((word, i) =>
       timers.push(
@@ -212,10 +235,11 @@ export class MockDaemon implements Daemon {
 
   private finish(): void {
     if (!this.speaking) return;
-    const { text, turn } = this.speaking;
+    const { text, turn, done } = this.speaking;
     this.speaking = null;
     this.emit("vision.reply", { text: text.trim(), turn_id: turn });
     this.setState("idle");
+    done?.();
   }
 
   private interrupt(): void {

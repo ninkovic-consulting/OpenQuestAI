@@ -1,3 +1,4 @@
+import type { AutomationsApi } from "./automations-api";
 import type { SettingsApi } from "./settings-api";
 import type { InboundEvent, NewRoom, PostResult, ProposeResult } from "./types";
 
@@ -10,4 +11,6 @@ export interface Daemon {
   proposeTools(project: string): Promise<ProposeResult>;
   /** The settings routes: settings, models, voice, downloads, folders, doctor, resets, rooms. */
   readonly settings: SettingsApi;
+  /** The automations routes. */
+  readonly automations: AutomationsApi;
 }

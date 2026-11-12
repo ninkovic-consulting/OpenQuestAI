@@ -2,7 +2,7 @@
 
 A backup holds copies of some of these items, by name: `config.toml`,
 `house.toml`, `house` (the memory vault), `log.db` with its `-wal` and `-shm`
-files, and `budget.json`. The API key is never one of them. Nothing here
+files, `budget.json` and `automations.json`. The API key is never one of them. Nothing here
 decides what to reset; `reset.py` does.
 """
 
@@ -19,6 +19,7 @@ from typing import Any
 
 from vision.brains.budget import FILE_NAME as BUDGET_FILE
 from vision.core.config import Config
+from vision.scheduler.store import FILE_NAME as AUTOMATIONS_FILE
 
 MANIFEST = "manifest.json"
 LEVELS = ("settings", "house", "everything", "restore")
@@ -52,6 +53,7 @@ def items(config: Config) -> dict[str, Path]:
         "log.db-wal": log_db.with_name(log_db.name + "-wal"),
         "log.db-shm": log_db.with_name(log_db.name + "-shm"),
         "budget.json": config.paths.home / BUDGET_FILE,
+        AUTOMATIONS_FILE: config.paths.home / AUTOMATIONS_FILE,
     }
 
 

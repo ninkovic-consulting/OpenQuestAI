@@ -35,6 +35,11 @@ Who publishes what on the bus:
 - Budget: `budget` after every `record`, `notice` at the warning threshold and the cap.
 - ToolHost (gate): `gate.request`, `gate.resolved`; it consumes `gate.decision`.
 - House: `house.changed` after its plan changes.
+- Scheduler: `automation.changed` after any change to an automation,
+  `automation.started` and `automation.finished` around each run, and
+  `notice` when the assistant schedules, changes or removes one. A run is a
+  session turn with source `automation`: no `user.utterance`, the usual
+  `state.changed`, `vision.delta` and `vision.reply`.
 - Server: forwards window events (`input.*`, `gate.decision`) onto the bus.
 
 HTTP routes from other packages: build a FastAPI `APIRouter` and protect it
@@ -55,7 +60,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 from fastapi import APIRouter
 
-from vision.core.events import BrainName, GateOutcome, RoomLight, UtteranceSource
+from vision.core.events import BrainName, GateOutcome, RoomLight, TurnSource
 
 # ---------------------------------------------------------------- brain events
 
@@ -251,7 +256,7 @@ class TurnRecord:
     turn_id: str
     started_at: float
     ended_at: float
-    source: UtteranceSource
+    source: TurnSource
     user_text: str
     reply: str
     status: TurnStatus

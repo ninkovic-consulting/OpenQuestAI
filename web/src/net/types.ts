@@ -74,6 +74,10 @@ export interface OutboundData {
   "gate.request": { id: string; tool: string; summary: string; detail: string; expires_at: number };
   "gate.resolved": { id: string; decision: "allow" | "deny" | "timeout" };
   "brain.fallback": { from: BrainName; to: BrainName; reason: string };
+  /** `automation` is null when deleted; `reloaded` (empty id) means refetch the whole list. */
+  "automation.changed": { id: string; change: "created" | "updated" | "deleted" | "reloaded"; automation: unknown };
+  "automation.started": { id: string; name: string };
+  "automation.finished": { id: string; name: string; status: string; reply: string };
   notice: { level: NoticeLevel; text: string };
 }
 
@@ -116,7 +120,11 @@ export interface StateSnapshot {
   /** Recent notices, each shaped like a `notice` event's data. */
   notices: OutboundData["notice"][];
   budget: OutboundData["budget"];
+  /** The automation running now, if any. */
+  automation?: RunningAutomation | null;
 }
+
+export type RunningAutomation = OutboundData["automation.started"];
 
 /** Body of `POST /api/house/rooms`. `at` is the free slot that was clicked. */
 export interface NewRoom {
@@ -146,6 +154,9 @@ const OUTBOUND_TYPES: ReadonlySet<string> = new Set<OutboundType>([
   "gate.request",
   "gate.resolved",
   "brain.fallback",
+  "automation.changed",
+  "automation.started",
+  "automation.finished",
   "notice",
 ]);
 

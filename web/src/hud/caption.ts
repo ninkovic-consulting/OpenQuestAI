@@ -35,6 +35,7 @@ export function mountCaption(parent: HTMLElement, store: Store): void {
 
   const render = (s: ViewState, prev: ViewState | null): void => {
     setText(name, s.plan?.assistant.name ?? "");
+    setText(you, s.caption.source === "automation" ? "Automation" : "You");
     setText(user, s.caption.user);
     setText(replyText, s.caption.reply);
     reply.dataset["size"] = replySize(s.caption.reply);

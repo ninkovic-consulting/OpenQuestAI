@@ -140,8 +140,21 @@ class GateConfig(_Section):
             "open_app": "free",
             "open_url": "free",
             "shell": "ask",
+            "create_automation": "free",
+            "list_automations": "free",
+            "update_automation": "free",
+            "pause_automation": "free",
+            "resume_automation": "free",
+            "run_automation": "free",
+            "delete_automation": "ask",
         }
     )
+
+
+class AutomationsConfig(_Section):
+    missed_grace_s: float = Field(default=3600.0, ge=0)
+    """A run missed while the daemon was off (or the Mac asleep) still runs once if it is
+    late by no more than this; later than that it is skipped and recorded as missed."""
 
 
 class PathsConfig(_Section):
@@ -180,6 +193,7 @@ class Config(BaseModel):
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     gate: GateConfig = Field(default_factory=GateConfig)
+    automations: AutomationsConfig = Field(default_factory=AutomationsConfig)
     paths: PathsConfig
     agents: dict[str, Any] = Field(default_factory=dict)
     """Free-form; interpreted by `vision.house`, not validated here."""

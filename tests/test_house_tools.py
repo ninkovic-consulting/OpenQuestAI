@@ -20,7 +20,20 @@ from vision.house.tools import (
     tool_refs,
 )
 
-BUILT_IN = ["remember", "recall", "open_app", "open_url", "shell"]
+BUILT_IN = [
+    "remember",
+    "recall",
+    "open_app",
+    "open_url",
+    "shell",
+    "create_automation",
+    "list_automations",
+    "update_automation",
+    "pause_automation",
+    "resume_automation",
+    "run_automation",
+    "delete_automation",
+]
 PROJECT = ["git", "gh", "npm", "maven", "gradle", "python", "docker", "xcode", "unity", "godot"]
 
 

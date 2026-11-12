@@ -51,6 +51,10 @@ class Tool:
     """What the gate card says the tool wants to do."""
     detail_arg: str
     """The argument shown as the card's detail."""
+    describe: Callable[[dict[str, Any]], str] | None = None
+    """Words for the card's detail, when the bare argument would not say enough."""
+    unattended_refusal: str | None = None
+    """When set, the tool is refused during an automation's run, with this explanation."""
 
 
 async def run_command(

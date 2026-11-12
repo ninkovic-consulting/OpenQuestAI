@@ -9,14 +9,16 @@ import type {
   OutboundEvent,
   Plan,
   RoomLight,
+  RunningAutomation,
   StateSnapshot,
 } from "./types";
 
 export type Connection = "connecting" | "open" | "offline";
 
 export interface Caption {
+  /** What the user said or typed; for an automation's run, the automation's name. */
   user: string;
-  source: "voice" | "text" | null;
+  source: "voice" | "text" | "automation" | null;
   reply: string;
   /** True while deltas are still streaming in. */
   streaming: boolean;
@@ -43,6 +45,10 @@ export interface ViewState {
   gates: GateRequest[];
   toasts: Toast[];
   nextToastId: number;
+  /** The automation running now, shown beside the assistant's state. */
+  automation: RunningAutomation | null;
+  /** Counts automation changes, so the Automations group knows to refetch. */
+  automationsRevision: number;
 }
 
 export type Action =
@@ -70,6 +76,8 @@ export function initialState(): ViewState {
     gates: [],
     toasts: [],
     nextToastId: 1,
+    automation: null,
+    automationsRevision: 0,
   };
 }
 
@@ -127,6 +135,16 @@ function reduceEvent(s: ViewState, e: OutboundEvent): ViewState {
         "warn",
         `Switched from ${e.data.from} to ${e.data.to}: ${e.data.reason}`,
       );
+    case "automation.changed":
+      return { ...s, automationsRevision: s.automationsRevision + 1 };
+    case "automation.started":
+      return {
+        ...s,
+        automation: e.data,
+        caption: { user: e.data.name, source: "automation", reply: "", streaming: false },
+      };
+    case "automation.finished":
+      return { ...s, automation: s.automation?.id === e.data.id ? null : s.automation };
     case "notice":
       return addToast(s, e.data.level, e.data.text);
   }
@@ -145,6 +163,7 @@ function reduceSnapshot(s: ViewState, snap: StateSnapshot, initial: boolean): Vi
     brain: snap.brain,
     budget: snap.budget,
     gates: [],
+    automation: snap.automation ?? null,
   };
   for (const gate of snap.gate_pending) next = addGate(next, gate);
   if (initial) for (const notice of snap.notices) next = addToast(next, notice.level, notice.text);

@@ -10,8 +10,12 @@ still sees them via `/api/state`.
 
 Start-up order: `$VISION_HOME` is made private (0700); the house's agent
 personas are copied into the vault (never overwriting), so memory reads the
-house's host persona; then memory, the house, the brain and voice start, the
-budget is published, and the Hall's light starts following the conversation.
+house's host persona; then memory, the house, the automations, the brain and
+voice start, the budget is published, the Hall's light starts following the
+conversation, and once the session runs, so does the scheduler's runner.
+
+The automations belong to the daemon, not to `Components`, so a daemon on
+fakes has them too; their tools are offered to the real gate only.
 """
 
 from __future__ import annotations
@@ -27,7 +31,7 @@ from pathlib import Path
 
 import uvicorn
 
-from vision import brains, gate, house, memory, voice
+from vision import brains, gate, house, memory, scheduler, voice
 from vision.core.bus import Bus, Subscription
 from vision.core.config import Config
 from vision.core.events import BudgetUpdate, Notice, NoticeLevel, RoomLight, RoomState, StateChanged
@@ -36,6 +40,7 @@ from vision.core.server import create_app
 from vision.core.session import Session
 from vision.core.snapshot import Snapshot
 from vision.core.token import ensure_token
+from vision.scheduler.model import Automation, RunStatus
 from vision.testing.fakes import FakeBrain, FakeVoice
 
 log = logging.getLogger(__name__)
@@ -58,13 +63,20 @@ class Components:
 
 
 def build_components(
-    config: Config, bus: Bus, *, fake_brain: bool = False, voice_factory: VoiceFactory | None = None
+    config: Config,
+    bus: Bus,
+    *,
+    automations: scheduler.Automations | None = None,
+    fake_brain: bool = False,
+    voice_factory: VoiceFactory | None = None,
 ) -> tuple[Components, list[Notice]]:
-    """Call every package's factory. `voice_factory` replaces `vision.voice.make_voice`."""
+    """Call every package's factory. `voice_factory` replaces `vision.voice.make_voice`;
+    `automations` puts the scheduler's tools behind the gate."""
     notices: list[Notice] = []
     mem = memory.make_memory(config)
     budget = brains.make_budget(config, bus)
-    tools = gate.make_tool_host(config, bus, mem)
+    extra = scheduler.build_tools(automations) if automations is not None else []
+    tools = gate.make_tool_host(config, bus, mem, extra)
     brain: Brain
     if fake_brain:
         notices.append(Notice(level="info", text="Running on the fake brain (--fake-brain)."))
@@ -108,9 +120,14 @@ class Daemon:
         ensure_home(config.paths.home)
         self.bus = Bus()
         self.token = ensure_token(config.paths.token)
+        self.automations = scheduler.Automations(config, self.bus)
         if components is None:
             built = build_components(
-                config, self.bus, fake_brain=fake_brain, voice_factory=voice
+                config,
+                self.bus,
+                automations=self.automations,
+                fake_brain=fake_brain,
+                voice_factory=voice,
             )
             self.components, self._notices = built
         else:
@@ -125,6 +142,7 @@ class Daemon:
         self.session: Session | None = None
         self._session_task: asyncio.Task[None] | None = None
         self._lights_task: asyncio.Task[None] | None = None
+        self._runner_task: asyncio.Task[None] | None = None
         self.app = create_app(self)
 
     def notice(self, level: NoticeLevel, text: str) -> None:
@@ -139,6 +157,7 @@ class Daemon:
         await asyncio.to_thread(house.seed_personas, self.config)
         await c.memory.start()
         await c.house.start()
+        await self.automations.start()
         await c.brain.start()
         self.bus.publish(BudgetUpdate(**dataclasses.asdict(c.budget.status())))
         try:
@@ -154,6 +173,26 @@ class Daemon:
         self._lights_task = asyncio.create_task(self._light_the_hall(states))
         self.session = Session(self.bus, c.brain, c.voice.speaker, c.memory, c.tools)
         self._session_task = asyncio.create_task(self.session.run())
+        runner = scheduler.Runner(self.config, self.automations, self._run_automation, self._busy)
+        self._runner_task = asyncio.create_task(runner.run())
+
+    def _busy(self) -> bool:
+        """An automation waits while a turn runs, someone speaks, or a gate request waits."""
+        session = self.session
+        return (
+            (session is not None and session.busy)
+            or self.snapshot.state in ("listening", "transcribing")
+            or self.components.tools.waiting
+        )
+
+    async def _run_automation(self, a: Automation) -> tuple[RunStatus, str]:
+        assert self.session is not None
+        record, origin = await self.session.run_automation(
+            a.instruction, automation_id=a.id, name=a.name, speak=a.speak
+        )
+        if origin.needed_approval:
+            return "needed_approval", record.reply
+        return record.status, record.reply or record.error
 
     async def set_voice(self, enabled: bool) -> None:
         """Turn the microphone loop on or off now, without a restart.
@@ -198,7 +237,7 @@ class Daemon:
                     self.bus.publish(RoomState(room=HALL, state=light))
 
     async def stop(self) -> None:
-        for task in (self._session_task, self._lights_task):
+        for task in (self._runner_task, self._session_task, self._lights_task):
             if task is not None:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)

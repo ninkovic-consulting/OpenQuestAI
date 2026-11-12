@@ -24,7 +24,8 @@ export function mountPanel(parent: HTMLElement, store: Store): Panel {
   const stateDot = el("span", "dot");
   const stateText = el("span");
   const brain = el("span", "brain");
-  state.append(stateDot, stateText, brain);
+  const running = el("span", "automation-running");
+  state.append(stateDot, stateText, brain, running);
   const residents = el("ul", "residents");
   residents.setAttribute("aria-label", "Residents");
   const budget = el("section", "budget");
@@ -54,6 +55,8 @@ export function mountPanel(parent: HTMLElement, store: Store): Panel {
     setText(stateText, offline ? (s.connection === "connecting" ? "connecting" : "offline") : s.assistant);
     state.className = `state caps${offline ? " is-offline" : s.assistant === "idle" ? " is-idle" : ""}`;
     setText(brain, s.brain === "local" ? "local model" : "");
+    setText(running, !offline && s.automation ? `automation: ${s.automation.name}` : "");
+    running.title = s.automation ? `Running the automation "${s.automation.name}"` : "";
 
     const key = JSON.stringify([s.plan?.revision, s.plan?.agents, s.roomLights, s.assistant]);
     if (key !== residentsKey) {

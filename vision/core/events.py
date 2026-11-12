@@ -31,6 +31,9 @@ Direction = Literal["out", "in"]
 State = Literal["idle", "listening", "transcribing", "thinking", "speaking"]
 BrainName = Literal["claude", "local", "fake"]
 UtteranceSource = Literal["voice", "text"]
+TurnSource = Literal["voice", "text", "automation"]
+"""Where a turn came from: said, typed, or an automation that came due."""
+AutomationChange = Literal["created", "updated", "deleted", "reloaded"]
 RoomLight = Literal["dark", "idle", "active"]
 GateOutcome = Literal["allow", "deny", "timeout"]
 GateChoice = Literal["allow", "deny"]
@@ -176,6 +179,45 @@ class HouseChanged(Event):
     revision: int = Field(ge=0)
 
 
+class AutomationChanged(Event):
+    """An automation was created, changed (including its run results) or deleted.
+
+    `automation` is the automation in the shape of `GET /api/automations`, or
+    None when it was deleted. `reloaded` (with an empty `id`) means the whole
+    list was replaced, after a reset or a restore; the window refetches it.
+    """
+
+    TYPE: ClassVar[str] = "automation.changed"
+    DIRECTION: ClassVar[Direction] = "out"
+    id: str
+    change: AutomationChange
+    automation: dict[str, Any] | None = None
+
+
+class AutomationStarted(Event):
+    """An automation's run began: its instruction is now a turn of its own."""
+
+    TYPE: ClassVar[str] = "automation.started"
+    DIRECTION: ClassVar[Direction] = "out"
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+
+
+class AutomationFinished(Event):
+    """An automation's run ended. `reply` is the start of what the assistant answered.
+
+    `status` is `ok`, `failed`, `interrupted` (the user started a turn of
+    their own) or `needed_approval` (a tool asked first and nobody answered).
+    """
+
+    TYPE: ClassVar[str] = "automation.finished"
+    DIRECTION: ClassVar[Direction] = "out"
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    status: str = Field(min_length=1)
+    reply: str
+
+
 class Notice(Event):
     """A message for the user, shown in the window."""
 
@@ -244,6 +286,9 @@ EVENT_TYPES: dict[str, type[Event]] = {
         GateResolved,
         BrainFallback,
         HouseChanged,
+        AutomationChanged,
+        AutomationStarted,
+        AutomationFinished,
         Notice,
         Hello,
         InputText,

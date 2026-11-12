@@ -51,7 +51,20 @@ export const DEFAULT_VOICE: VoiceState = {
   models_size_bytes: SPEECH_BYTES,
 };
 
-export const DEFAULT_TIERS = { remember: "free", recall: "free", open_app: "free", open_url: "ask", shell: "ask" } as const;
+export const DEFAULT_TIERS = {
+  remember: "free",
+  recall: "free",
+  open_app: "free",
+  open_url: "ask",
+  shell: "ask",
+  create_automation: "free",
+  list_automations: "free",
+  update_automation: "free",
+  pause_automation: "free",
+  resume_automation: "free",
+  run_automation: "free",
+  delete_automation: "ask",
+} as const;
 
 export const TOOL_TEXT: Record<string, string> = {
   remember: "Writes a note into the memory vault.",
@@ -59,6 +72,13 @@ export const TOOL_TEXT: Record<string, string> = {
   open_app: "Opens an app on this Mac.",
   open_url: "Opens a link in the browser.",
   shell: "Runs a shell command.",
+  create_automation: "Sets up an instruction to carry out at set times.",
+  list_automations: "Reads the automations, their next runs and last results.",
+  update_automation: "Changes an automation's name, schedule, instruction or voice.",
+  pause_automation: "Stops an automation from running until it is resumed.",
+  resume_automation: "Lets a paused automation run on its schedule again.",
+  run_automation: "Runs an automation once, now, outside its schedule.",
+  delete_automation: "Removes an automation and its results.",
 };
 
 /** A small home folder: which folders each folder holds. */

@@ -74,13 +74,14 @@ anything = [1, 2, 3]
     assert config.budget.prices["claude-haiku-5-5"].output_per_mtok == 0.50
     assert config.budget.prices["claude-opus-5-5"].output_per_mtok == 20
     assert config.budget.prices["my-model"].output_per_mtok == 2
-    assert config.gate.tiers == {
+    assert {k: config.gate.tiers[k] for k in ("remember", "recall", "open_app", "open_url", "shell")} == {
         "remember": "free",
         "recall": "free",
         "open_app": "ask",
         "open_url": "free",
         "shell": "never",
     }
+    assert config.gate.tiers["delete_automation"] == "ask"
     assert config.paths.home == isolated_env  # never taken from the file
     assert config.paths.log_db == isolated_env / "data" / "log.db"
     assert config.paths.logs == Path("/var/tmp/vision-logs")

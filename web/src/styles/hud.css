@@ -90,6 +90,28 @@ select {
   font-size: 11px;
 }
 
+/* While an automation runs, its name sits under the state. */
+.state {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.state .automation-running {
+  flex-basis: 100%;
+  min-width: 0;
+  padding-left: 19px;
+  overflow: hidden;
+  color: var(--lamp);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state .automation-running:empty {
+  display: none;
+}
+
 .dot {
   flex: none;
   width: 7px;

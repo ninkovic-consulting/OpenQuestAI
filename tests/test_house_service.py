@@ -99,6 +99,13 @@ def test_plan_shape_and_first_use(config: Config) -> None:
                 ("open_app", "Open app"),
                 ("open_url", "Open link"),
                 ("shell", "Shell"),
+                ("create_automation", "Schedule an automation"),
+                ("list_automations", "List automations"),
+                ("update_automation", "Change an automation"),
+                ("pause_automation", "Pause an automation"),
+                ("resume_automation", "Resume an automation"),
+                ("run_automation", "Run an automation now"),
+                ("delete_automation", "Delete an automation"),
             ]
         ],
         "state": "idle",

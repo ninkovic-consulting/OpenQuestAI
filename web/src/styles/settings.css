@@ -1276,3 +1276,151 @@
     padding-left: 17px;
   }
 }
+
+/* ---------------------------------------------------------------- automations */
+
+.settings textarea {
+  display: block;
+  width: 100%;
+  min-height: 72px;
+  padding: 9px 10px;
+  resize: vertical;
+  background: var(--scene);
+  border: 1px solid var(--hairline-strong);
+  color: var(--text);
+  font: 400 15px/1.45 var(--sans);
+  outline: none;
+}
+
+.settings textarea:focus {
+  border-color: var(--mustard);
+}
+
+.settings textarea::placeholder {
+  color: var(--muted);
+}
+
+.automations-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.automations-head .field-note {
+  margin: 0;
+}
+
+.automation-card,
+.automation-editor {
+  padding: 18px 20px 20px;
+  border: 1px solid var(--hairline);
+}
+
+.automation-card + .automation-card {
+  margin-top: 12px;
+}
+
+.automation-card.is-running {
+  border-color: var(--mustard);
+}
+
+.automation-card.is-paused .card-title,
+.automation-card.is-paused .schedule-words {
+  color: var(--muted);
+}
+
+.instruction-text {
+  margin: 6px 0 12px;
+  color: var(--muted-light);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.automation-facts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.schedule-words {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 17px;
+  color: var(--text);
+}
+
+.automation-facts .status {
+  overflow-wrap: anywhere;
+}
+
+.automation-editor .card-head {
+  margin-bottom: 14px;
+}
+
+.schedule-fields {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.schedule-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.schedule-line .joiner {
+  color: var(--muted-light);
+  font-size: 14px;
+}
+
+.settings .schedule-line input {
+  width: auto;
+  min-width: 0;
+}
+
+.settings .schedule-line input[type="number"] {
+  width: 90px;
+}
+
+.settings .schedule-line .cron-input {
+  width: min(100%, 260px);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.settings .schedule-line input[type="date"],
+.settings .schedule-line input[type="time"] {
+  color-scheme: dark;
+}
+
+.day-toggles {
+  display: inline-flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--hairline-strong);
+}
+
+.day-toggles .segment[aria-pressed="true"] {
+  background: var(--mustard);
+  color: var(--ground);
+}
+
+.schedule-preview {
+  margin: 10px 0 0;
+  color: var(--muted-light);
+  font-size: 14px;
+}
+
+.schedule-preview.is-bad {
+  color: var(--alert);
+}
+
+.empty-list {
+  margin-top: 18px;
+}

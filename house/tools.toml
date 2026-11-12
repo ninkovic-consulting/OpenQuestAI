@@ -38,6 +38,41 @@ title = "Shell"
 description = "Runs a shell command, always after asking you."
 built_in = true
 
+[tools.create_automation]
+title = "Schedule an automation"
+description = "Sets up an instruction to carry out at set times."
+built_in = true
+
+[tools.list_automations]
+title = "List automations"
+description = "Reads the automations, their next runs and last results."
+built_in = true
+
+[tools.update_automation]
+title = "Change an automation"
+description = "Changes an automation's name, schedule, instruction or voice."
+built_in = true
+
+[tools.pause_automation]
+title = "Pause an automation"
+description = "Stops an automation from running until it is resumed."
+built_in = true
+
+[tools.resume_automation]
+title = "Resume an automation"
+description = "Lets a paused automation run on its schedule again."
+built_in = true
+
+[tools.run_automation]
+title = "Run an automation now"
+description = "Runs an automation once, now, outside its schedule."
+built_in = true
+
+[tools.delete_automation]
+title = "Delete an automation"
+description = "Removes an automation and its results."
+built_in = true
+
 [tools.git]
 title = "Git"
 description = "Reads history, branches and changes in the project's repository."
