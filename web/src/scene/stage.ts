@@ -16,6 +16,7 @@ import { Materials } from "./materials";
 import { palette } from "./palette";
 import { Post, Streaks } from "./post";
 import { Props, PROPS_TOP } from "./props";
+import { Residents } from "./residents";
 
 /** Screen kept clear around the fitted house, in CSS pixels (the bottom at least a share of the height): the key hints above, the caption below. */
 const CLEAR = { top: 56, side: 24, bottom: 112, bottomShare: 0.12 };
@@ -33,6 +34,7 @@ export class Stage {
   private readonly rig: CameraRig;
   private readonly house: HouseView;
   private readonly props: Props;
+  private readonly residents: Residents;
   private readonly lighting: Lighting;
   private readonly grounds: Grounds;
   private readonly post: Post;
@@ -75,10 +77,11 @@ export class Stage {
     this.rig = new CameraRig(this.renderer.domElement);
     this.house = new HouseView(mats, (plan) => hostRoom(plan)?.id);
     this.props = new Props(missing);
+    this.residents = new Residents(this.house, missing);
     this.lighting = new Lighting(this.scene, this.renderer);
     this.grounds = new Grounds(mats);
     this.post = new Post(this.renderer, this.scene, this.rig.camera);
-    this.scene.add(this.house.root, this.props.root, this.grounds.root, this.streaks.mesh, this.build.root);
+    this.scene.add(this.house.root, this.props.root, this.residents.root, this.grounds.root, this.streaks.mesh, this.build.root);
 
     void this.props.load();
     this.listen();
@@ -109,6 +112,7 @@ export class Stage {
 
   private onState(s: ViewState, prev: ViewState): void {
     if (s.plan && (s.plan !== this.plan || prev.plan === null)) this.rebuild(s.plan);
+    if (s.plan && (s.plan !== prev.plan || s.roomLights !== prev.roomLights)) this.residents.sync(s.plan, s.roomLights);
     this.props.setTalking(s.assistant === "speaking");
   }
 
@@ -190,6 +194,7 @@ export class Stage {
     this.rig.update(dt);
     this.house.update(dt);
     this.props.update(dt);
+    this.residents.update(dt, this.rig.camera);
     this.lighting.update(dt, s.roomLights, hostId, s.voiceLevel);
     this.streaks.update(time, dt, s.assistant === "speaking" ? s.voiceLevel : 0, this.rig.camera);
     this.build.update(time);

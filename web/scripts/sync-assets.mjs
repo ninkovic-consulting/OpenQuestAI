@@ -1,4 +1,5 @@
-// Copies the shared models and textures into public/assets before dev and build.
+// Copies the shared models (with the agents' figures under models/agents/) and
+// textures into public/assets before dev and build.
 // The copy is git-ignored; the originals live in ../assets.
 import { cpSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";

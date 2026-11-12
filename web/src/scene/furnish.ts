@@ -1,7 +1,8 @@
 // One or two built pieces for each default room, so idle rooms read from
 // above: shelves of books, a long table, a counter, a desk with dark screens.
 // Made from boxes and cylinders with the house's own textures. Pieces stand
-// against a wall with no door; extra rooms are left as they are.
+// against a wall with no door; extra rooms are left as they are. Each room
+// names its main piece, the one its resident works at.
 
 import * as THREE from "three";
 import type { DecorContext } from "./decor";
@@ -43,6 +44,11 @@ class Wall {
     const [ax, az] = this.point(u0, v0);
     const [bx, bz] = this.point(u1, v1);
     this.ctx.add(material, box(Math.min(ax, bx), y0, Math.min(az, bz), Math.max(ax, bx), y1, Math.max(az, bz)));
+  }
+
+  /** A point on the floor, in metres. */
+  at(u: number, v: number): THREE.Vector2 {
+    return new THREE.Vector2(...this.point(u, v));
   }
 
   cylinder(material: THREE.Material, u: number, v: number, radius: number, y0: number, y1: number): void {
@@ -131,7 +137,8 @@ function chair(w: Wall, ctx: DecorContext, u: number, v: number, backAway: boole
   w.box(ctx.mats.wood, u - 0.22, u + 0.22, back, back + 0.04, 0.47, 0.92);
 }
 
-const FURNISH: Record<string, (ctx: DecorContext) => void> = {
+/** Builds a room's pieces and returns the middle of its main piece on the floor. */
+const FURNISH: Record<string, (ctx: DecorContext) => THREE.Vector2> = {
   library(ctx) {
     const w = freeWall(ctx, ["n", "w", "s", "e"]);
     const half = w.length / 2 - 0.85;
@@ -141,6 +148,7 @@ const FURNISH: Record<string, (ctx: DecorContext) => void> = {
     const c = centre(ctx);
     c.cylinder(ctx.mats.capWood, 0.3, 0.4, 0.42, 0.62, 0.66);
     c.cylinder(ctx.mats.wood, 0.3, 0.4, 0.05, 0, 0.62);
+    return w.at(0, 0.18);
   },
 
   "control-room"(ctx) {
@@ -156,6 +164,7 @@ const FURNISH: Record<string, (ctx: DecorContext) => void> = {
     }
     chair(w, ctx, -0.55, 1.25, true);
     chair(w, ctx, 0.55, 1.25, true);
+    return w.at(0, 0.39);
   },
 
   "comms-room"(ctx) {
@@ -166,6 +175,7 @@ const FURNISH: Record<string, (ctx: DecorContext) => void> = {
     w.cylinder(ctx.mats.gilt, 0.06, 0.3, 0.05, 0.76, 1.0);
     w.box(ctx.mats.capWood, 0.3, 0.75, 0.15, 0.5, 0.76, 0.82);
     chair(w, ctx, -0.2, 1.1, true);
+    return w.at(0, 0.37);
   },
 
   kitchen(ctx) {
@@ -177,6 +187,7 @@ const FURNISH: Record<string, (ctx: DecorContext) => void> = {
     for (const u of [-0.22, 0.22]) w.cylinder(M.iron, u, 0.3, 0.12, 0.95, 1.08);
     const c = centre(ctx);
     table(c, ctx, -0.45, 0.45, -0.9, 0.9, 0.86);
+    return w.at(0, 0.32);
   },
 
   "game-room"(ctx) {
@@ -187,6 +198,7 @@ const FURNISH: Record<string, (ctx: DecorContext) => void> = {
     for (const u of [-hu + 0.15, hu - 0.15]) for (const v of [-hv + 0.15, hv - 0.15]) c.box(ctx.mats.wood, u - 0.07, u + 0.07, v - 0.07, v + 0.07, 0, 0.68);
     c.cylinder(M.linen, 0.1, -0.4, 0.03, 0.815, 0.875);
     c.cylinder(M.drum, -0.2, 0.3, 0.03, 0.815, 0.875);
+    return c.at(0, 0);
   },
 
   garage(ctx) {
@@ -195,6 +207,7 @@ const FURNISH: Record<string, (ctx: DecorContext) => void> = {
     w.box(ctx.mats.wood, -1.1, 1.1, 0, 0.03, 0.9, 1.25);
     for (const u of [-0.7, -0.4, 0.2, 0.6]) w.box(M.iron, u - 0.03, u + 0.03, 0.03, 0.07, 1.0, 1.2);
     w.cylinder(M.drum, 1.45, 0.35, 0.28, 0, 0.88);
+    return w.at(0, 0.37);
   },
 
   workshop(ctx) {
@@ -205,6 +218,8 @@ const FURNISH: Record<string, (ctx: DecorContext) => void> = {
     c.box(ctx.mats.capStone, 0.1, 0.5, -0.2, 0.25, 0.88, 0.94);
     c.cylinder(ctx.mats.gilt, half - 0.5, 0.1, 0.07, 0.88, 1.08);
     for (const u of [-1, 0, 1].map((k) => k * half * 0.6)) c.cylinder(ctx.mats.wood, u, 0.85, 0.17, 0, 0.62);
+    // The vice at the bench's west end.
+    return c.at(-half + 0.55, -0.1);
   },
 
   "spare-room"(ctx) {
@@ -215,14 +230,13 @@ const FURNISH: Record<string, (ctx: DecorContext) => void> = {
     w.box(ctx.mats.surface("red-carpet"), -0.78, 0.78, 0.8, 2.08, 0.5, 0.56);
     for (const u of [-0.38, 0.38]) w.box(M.linen, u - 0.3, u + 0.3, 0.16, 0.5, 0.52, 0.64);
     w.box(ctx.mats.wood, 0.95, 1.4, 0.04, 0.48, 0, 0.56);
+    return w.at(0, 1.1);
   },
 };
 
-/** Furnish a default room. Returns false when there is nothing to build for it. */
-export function furnish(ctx: DecorContext): boolean {
-  if (ctx.room.kind !== "default") return false;
+/** Furnish a default room. Returns the middle of its main piece, or null when there is nothing to build for it. */
+export function furnish(ctx: DecorContext): THREE.Vector2 | null {
+  if (ctx.room.kind !== "default") return null;
   const build = FURNISH[ctx.room.id];
-  if (!build) return false;
-  build(ctx);
-  return true;
+  return build ? build(ctx) : null;
 }

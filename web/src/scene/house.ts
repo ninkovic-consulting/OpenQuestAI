@@ -27,6 +27,10 @@ export interface RoomView {
   wallTop: number;
   /** Where the room's lamp light hangs, in the group's space. */
   lampPosition: THREE.Vector3;
+  /** Door centres on the floor, in metres (x, z). */
+  doors: THREE.Vector2[];
+  /** The middle of the room's main built piece (x, z), or null when it has none. */
+  focus: THREE.Vector2 | null;
   /** Lamp shades and window glass; its emissive follows the room's light. */
   glow: THREE.MeshStandardMaterial;
   /** Light thrown on the lawn under the windows. */
@@ -381,12 +385,14 @@ class Builder {
     floorDressing(ctx, this.order.get(room.id) ?? 0);
     const center = new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2);
     let lampPosition: THREE.Vector3;
+    let focus: THREE.Vector2 | null = null;
     if (room.id === this.furnishedId) {
       // Hung high and back, so the lamp warms the room without blowing out the seated figure.
       lampPosition = center.clone().add(new THREE.Vector3(HOST_LAYOUT.lamp.x * 0.6, 2.9, -1.6));
     } else {
       lampPosition = lamp(ctx);
-      if (!furnish(ctx)) {
+      focus = furnish(ctx);
+      if (!focus) {
         const art = painting(ctx, this.order.get(room.id) ?? 0);
         if (art) this.extra(room.id, art);
       }
@@ -403,6 +409,8 @@ class Builder {
       extent: new THREE.Vector2(x1 - x0, z1 - z0),
       wallTop: this.hExt,
       lampPosition,
+      doors: ctx.doors,
+      focus,
       glow,
       spill: this.spills.get(room.id) as THREE.MeshBasicMaterial,
     };
@@ -491,6 +499,8 @@ class Builder {
       extent: new THREE.Vector2(r * 2, r * 2),
       wallTop: this.plan.wall_height_m * DIM.towerCut,
       lampPosition: new THREE.Vector3(cx, 1.5, cz),
+      doors: this.doorCentres(room),
+      focus: null,
       glow: this.glows.get(room.id) as THREE.MeshStandardMaterial,
       spill,
     };
