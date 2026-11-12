@@ -114,7 +114,7 @@ class Router:
         if not self._claude.has_key:
             return (
                 f"{self._name} has no Anthropic API key yet and is running on the local model. "
-                "Run `vision auth` to add one."
+                "Add one in Settings, under API key."
             )
         if self._budget.exhausted():
             return (

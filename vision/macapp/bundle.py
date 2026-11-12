@@ -1,8 +1,10 @@
 """Building the Mac app: where it goes, its Info.plist, and the call to `macos/build.sh`.
 
-The app is a small Swift shell around the daemon and the web window. The
-build writes the project path, the port and the home into Info.plist so the
-app knows where its daemon lives.
+The app is a small Swift shell around the daemon and the web window. The thin
+build (the default, for development) writes the project path, the port and
+the home into Info.plist so the app runs the project's `.venv`. The standalone
+build (`vision.macapp.standalone`) hands over a payload of Python, packages,
+house and window to put inside the bundle, and the app uses `~/.vision`.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from xml.sax.saxutils import escape
 
 from vision import __version__
 from vision.core.config import Config
-from vision.core.secrets import REPO_ROOT
+from vision.core.resources import SOURCE_ROOT as REPO_ROOT
 
 BUNDLE_ID = "org.openquestai.vision"
 MIN_MACOS = "14.0"
@@ -28,6 +30,8 @@ TEMPLATE = MACOS_DIR / "Info.plist"
 BUILD_SCRIPT = MACOS_DIR / "build.sh"
 ICON = REPO_ROOT / "assets" / "icon" / "Vision.icns"
 DIST = REPO_ROOT / "dist"
+STANDALONE_HOME = "~/.vision"
+"""Expanded by the app on the Mac it runs on, never on the one that built it."""
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -57,9 +61,17 @@ def find_swiftc(run: Runner = subprocess.run) -> Path | None:
 
 
 def info_plist(
-    config: Config, *, project: Path = REPO_ROOT, template: Path = TEMPLATE, icon: bool = True
+    config: Config,
+    *,
+    project: Path = REPO_ROOT,
+    template: Path = TEMPLATE,
+    icon: bool = True,
+    standalone: bool = False,
 ) -> bytes:
-    """The rendered Info.plist; without an icon the system's default icon is used."""
+    """The rendered Info.plist; without an icon the system's default icon is used.
+
+    A standalone app names no project and uses `~/.vision` on whichever Mac it runs.
+    """
     name = app_name(config)
     values = {
         "name": config.assistant.name,
@@ -67,9 +79,10 @@ def info_plist(
         "bundle_id": BUNDLE_ID,
         "version": __version__,
         "min_macos": MIN_MACOS,
-        "project": str(project),
-        "home": str(config.paths.home),
+        "project": "" if standalone else str(project),
+        "home": STANDALONE_HOME if standalone else str(config.paths.home),
         "port": str(config.server.port),
+        "standalone": "true" if standalone else "false",
     }
     text = Template(template.read_text(encoding="utf-8")).substitute(
         {key: escape(value) for key, value in values.items()}
@@ -86,9 +99,14 @@ def build(
     project: Path = REPO_ROOT,
     dist: Path = DIST,
     icon: Path = ICON,
+    payload: Path | None = None,
     run: Runner = subprocess.run,
 ) -> Path:
-    """Compile and assemble `dist/<name>.app`, signed ad hoc. Returns its path."""
+    """Compile and assemble `dist/<name>.app`, signed ad hoc. Returns its path.
+
+    With a `payload` (a folder of signed files for `Contents/Resources`), the app
+    is standalone; without one it runs the project's `.venv`.
+    """
     swiftc = find_swiftc(run)
     if swiftc is None:
         raise AppBuildError(
@@ -96,20 +114,25 @@ def build(
             "Tools with `xcode-select --install`, then run `vision app build` again."
         )
     python = project / ".venv" / "bin" / "python"
-    if not python.exists():
+    if payload is None and not python.exists():
         raise AppBuildError(f"There is no {python}; run `uv sync --all-extras` first.")
     has_icon = icon.is_file()
     app = built_app(config, dist)
     dist.mkdir(parents=True, exist_ok=True)
     plist = dist / "Info.plist"
-    plist.write_bytes(info_plist(config, project=project, icon=has_icon))
+    plist.write_bytes(
+        info_plist(config, project=project, icon=has_icon, standalone=payload is not None)
+    )
     argv = [
         "/bin/sh", str(BUILD_SCRIPT), str(app), str(plist), app_name(config), BUNDLE_ID, MIN_MACOS
     ]
     if has_icon:
         argv.append(str(icon))
     try:
-        done = run(argv, env={**os.environ, "SWIFTC": str(swiftc)}, check=False)
+        env = {**os.environ, "SWIFTC": str(swiftc)}
+        if payload is not None:
+            env["PAYLOAD"] = str(payload)
+        done = run(argv, env=env, check=False)
     finally:
         plist.unlink(missing_ok=True)
     if done.returncode != 0:

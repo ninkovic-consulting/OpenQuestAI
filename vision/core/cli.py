@@ -8,7 +8,9 @@
     vision doctor [--json] [--online]      check what is set up; changes nothing
     vision setup                           set up step by step, asking before each change
     vision ui [--browser]                  (developer) open the window without the app
-    vision app build|install|open          build the Mac app, copy it to ~/Applications, open it
+    vision app build [--standalone]        build the Mac app (with everything inside it)
+    vision app package                     zip the standalone app for another Mac
+    vision app install|open                copy it to ~/Applications, open it
     vision install [--dry-run]             install the LaunchAgent
     vision uninstall                       remove the LaunchAgent
 """
@@ -40,6 +42,8 @@ def cmd_run(config: Config, args: argparse.Namespace) -> int:
     from vision.app import Daemon  # heavy imports only when running the daemon
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # httpx prints whole request URLs at INFO, and a Discord button answer's URL holds a short-lived token.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     if (args.voice_in is None) != (args.voice_out is None):
         print("--voice-in and --voice-out go together.")
         return 2
@@ -151,7 +155,10 @@ def cmd_app(config: Config, args: argparse.Namespace) -> int:
 
     try:
         if args.action == "build":
-            print(f"Built {macapp.build(config)}")
+            build = macapp.build_standalone if args.standalone else macapp.build
+            print(f"Built {build(config)}")
+        elif args.action == "package":
+            print(f"Packaged {macapp.package(config)}")
         elif args.action == "install":
             print(f"Installed {macapp.install(config)}")
         else:
@@ -215,7 +222,12 @@ def build_parser() -> argparse.ArgumentParser:
     ui.set_defaults(func=cmd_ui)
 
     app = sub.add_parser("app", help="build, install or open the Mac app")
-    app.add_argument("action", choices=["build", "install", "open"])
+    app.add_argument("action", choices=["build", "package", "install", "open"])
+    app.add_argument(
+        "--standalone",
+        action="store_true",
+        help="build: put Python, every package, the house and the window inside the app",
+    )
     app.set_defaults(func=cmd_app)
 
     install = sub.add_parser("install", help="install and load the LaunchAgent")

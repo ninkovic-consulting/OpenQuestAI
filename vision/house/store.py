@@ -11,9 +11,10 @@ from typing import Any
 
 import tomli_w
 
+from vision.core import resources
 from vision.house.model import HouseError
 
-DEFAULT_FILE = Path(__file__).resolve().parents[2] / "house" / "default.toml"
+DEFAULT_FILE = resources.house_dir() / "default.toml"
 AGENTS_DIR = DEFAULT_FILE.parent / "agents"
 
 Stamp = tuple[int, int]

@@ -7,6 +7,10 @@
 # signed ad hoc with a designated requirement on the bundle id alone, so its
 # identity (and the permissions macOS gives it) survives a rebuild, and with
 # the audio-input entitlement Apple's capture documentation asks for.
+#
+# With PAYLOAD set to a folder (the standalone build), its contents go into
+# Contents/Resources before the bundle is signed. Every Mach-O file in it must
+# already be signed; the bundle's seal then covers all of it.
 set -eu
 
 if [ "$#" -lt 5 ]; then
@@ -35,10 +39,14 @@ fi
     -o "$app/Contents/MacOS/$executable" \
     "$here"/Sources/*.swift
 
+if [ -n "${PAYLOAD:-}" ]; then
+    ditto "$PAYLOAD" "$app/Contents/Resources"
+fi
+
 plutil -lint -s "$app/Contents/Info.plist"
 codesign --force --sign - --timestamp=none \
     --identifier "$bundle_id" \
     --requirements "=designated => identifier \"$bundle_id\"" \
     --entitlements "$here/Vision.entitlements" \
     "$app"
-codesign --verify --strict "$app"
+codesign --verify --deep --strict "$app"

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from keyring.errors import NoKeyringError
 
-from vision.core import secrets
+from vision.core import resources, secrets
 
 
 @pytest.fixture
@@ -60,7 +60,18 @@ def test_keyring_failure_falls_through(env_file: Path, monkeypatch: pytest.Monke
 
 def test_default_env_file_is_repo_root(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("VISION_ENV_FILE")
-    assert secrets.env_file_path() == Path(__file__).resolve().parents[1] / ".env"
+    assert resources.env_file() == Path(__file__).resolve().parents[1] / ".env"
+
+
+def test_standalone_never_reads_an_env_file(
+    env_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("keyring.get_password", lambda s, a: None)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    env_file.write_text("ANTHROPIC_API_KEY=from-file\n")
+    monkeypatch.setenv(resources.ENV, str(tmp_path))
+    assert resources.env_file() is None
+    assert secrets.get_api_key() is None and secrets.api_key_source() is None
 
 
 def test_store_uses_keychain(monkeypatch: pytest.MonkeyPatch) -> None:

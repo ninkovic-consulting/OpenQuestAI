@@ -8,7 +8,7 @@ Apple Silicon, no server, no tools.
   remote code is never trusted.
 - If the model is not on disk yet, the first local turn downloads it after a
   `notice` that says so and how big it is. If it cannot be fetched (offline),
-  the turn fails with a `BrainError` that says to run `vision setup` online.
+  the turn fails with a `BrainError` that says to download it in Settings while online.
 - All MLX work runs on one dedicated thread, off the event loop. `interrupt()`
   ends the stream at once and stops generation at the next token.
 - The system prompt is `memory.core()`, cut short if the conversation would
@@ -310,7 +310,7 @@ class MlxBrain:
     async def _fetch(self, repo: str) -> Path:
         not_here = (
             f"The local model {repo} is not downloaded yet and cannot be fetched now. "
-            "Run `vision setup` while online to download it."
+            "Download it in Settings, under Models, while online."
         )
         try:
             size = await self._call(self._runtime.download_size, repo)

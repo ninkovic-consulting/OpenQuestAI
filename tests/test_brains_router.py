@@ -136,7 +136,7 @@ async def test_no_key_runs_local_from_start_with_notice(config: Config) -> None:
     await router.start()
     assert router.name == "local"
     [notice] = events_of(sub)
-    assert isinstance(notice, Notice) and "vision auth" in notice.text
+    assert isinstance(notice, Notice) and "Settings, under API key" in notice.text
     assert config.assistant.name in notice.text
     text, _ = await run(router)
     assert text == LOCAL_LINE + "Local answer." and claude.sent == []

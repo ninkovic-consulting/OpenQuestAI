@@ -224,7 +224,7 @@ async def test_missing_and_offline_fails_clearly(config: Config) -> None:
         await brain.close()
     [error] = events
     assert isinstance(error, BrainError) and error.kind == "unavailable"
-    assert "vision setup" in error.message and runtime.loads == 0
+    assert "Download it in Settings" in error.message and runtime.loads == 0
 
 
 async def test_missing_extra_fails_clearly(config: Config) -> None:

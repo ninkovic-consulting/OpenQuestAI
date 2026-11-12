@@ -210,6 +210,16 @@ def test_api_key_is_verified_only_online(config: Config) -> None:
         assert check.status == status and words in check.detail
 
 
+def test_python_inside_the_app(
+    config: Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("VISION_RESOURCES", str(tmp_path))
+    system = FakeSystem(programs=set())
+    check = checks.python(config, system)
+    assert check.status == "ok" and check.detail == "Python 3.12.11, inside the app"
+    assert system.ran == []
+
+
 def test_python_and_uv(config: Config) -> None:
     ok = checks.python(config, FakeSystem())
     assert ok.status == "ok" and ok.detail == "uv 0.12.0, Python 3.12.11"
@@ -436,7 +446,10 @@ def test_setup_walks_through_and_fixes(config: Config, tmp_path: Path) -> None:
     assert "A cap is a number of dollars" in io.text
 
     saved = tomllib.loads(config.paths.config_file.read_text())
-    assert saved == {"assistant": {"name": "Ada"}, "budget": {"monthly_cap_usd": 40.0}}
+    assert saved == {
+        "assistant": {"name": "Ada", "setup_completed": True},
+        "budget": {"monthly_cap_usd": 40.0},
+    }
     house = tomllib.loads(config.paths.house_file.read_text())
     workshop = next(r for r in house["rooms"] if r["id"] == "workshop")
     assert workshop["project"] == str(folder.resolve())
@@ -452,7 +465,10 @@ def test_setup_twice_changes_nothing(config: Config) -> None:
     io = Script(answers=[])  # input ended: every question takes its default
     assert run_setup(config, system, io) == 0
     assert system.calls == [] and system.stored == []
-    assert not config.paths.config_file.exists()
+    written = config.paths.config_file.read_bytes()
+    assert tomllib.loads(written.decode()) == {"assistant": {"setup_completed": True}}
+    assert run_setup(load_config(config.paths.home), system, Script(answers=[])) == 0
+    assert config.paths.config_file.read_bytes() == written
     assert "Done: Vision starts at login." in io.text
     assert "Done: all speech models are downloaded." in io.text
     assert "Everything needed is in place." in io.text

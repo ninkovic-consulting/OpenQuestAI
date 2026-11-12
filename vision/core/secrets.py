@@ -3,6 +3,7 @@
 Order:
 1. The macOS Keychain (service `vision`, account `anthropic_api_key`), via `keyring`.
 2. `ANTHROPIC_API_KEY` in a `.env` file: `$VISION_ENV_FILE`, or `.env` at the repo root.
+   Never in the standalone app (`vision.core.resources.env_file`).
 3. `ANTHROPIC_API_KEY` in the process environment.
 
 `vision auth` stores a key in the Keychain with `store_api_key`.
@@ -17,17 +18,13 @@ from pathlib import Path
 import keyring
 from keyring.errors import KeyringError
 
+from vision.core import resources
+
 log = logging.getLogger(__name__)
 
 KEYRING_SERVICE = "vision"
 KEYRING_ACCOUNT = "anthropic_api_key"
 ENV_NAME = "ANTHROPIC_API_KEY"
-REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-def env_file_path() -> Path:
-    override = os.environ.get("VISION_ENV_FILE")
-    return Path(override).expanduser() if override else REPO_ROOT / ".env"
 
 
 def _from_keychain() -> str | None:
@@ -38,8 +35,10 @@ def _from_keychain() -> str | None:
         return None
 
 
-def _from_env_file(path: Path) -> str | None:
+def _from_env_file(path: Path | None) -> str | None:
     """Read one key from a dotenv file: `KEY=value`, optional `export` and quotes."""
+    if path is None:
+        return None
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -65,7 +64,7 @@ def get_api_key() -> str | None:
     """The Anthropic API key, or None when none is stored anywhere."""
     return (
         _from_keychain()
-        or _from_env_file(env_file_path())
+        or _from_env_file(resources.env_file())
         or (os.environ.get(ENV_NAME) or None)
     )
 
@@ -74,7 +73,7 @@ def api_key_source() -> str | None:
     """Where the key would come from: `keychain`, `env_file`, `environment`, or None."""
     if _from_keychain():
         return "keychain"
-    if _from_env_file(env_file_path()):
+    if _from_env_file(resources.env_file()):
         return "env_file"
     if os.environ.get(ENV_NAME):
         return "environment"

@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 from vision import macapp
+from vision.core import resources
 from vision.core.config import Config
 from vision.house import HouseError, store
 from vision.house.model import HOST
@@ -107,8 +108,10 @@ def api_key(config: Config, system: System, *, online: bool = False) -> Check:
 
 
 def python(config: Config, system: System) -> Check:
-    uv = system.output(["uv", "--version"])
     version = system.python_version()
+    if resources.standalone():
+        return PYTHON.result(True, f"Python {version}, inside the app")
+    uv = system.output(["uv", "--version"])
     recent = tuple(int(p) for p in version.split(".")[:2]) >= MIN_PYTHON
     uv_text = " ".join(uv.split()[:2]) if uv else "uv not found"
     return PYTHON.result(

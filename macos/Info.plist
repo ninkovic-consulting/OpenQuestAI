@@ -60,5 +60,7 @@
 	<string>${home}</string>
 	<key>VisionPort</key>
 	<integer>${port}</integer>
+	<key>VisionStandalone</key>
+	<${standalone}/>
 </dict>
 </plist>

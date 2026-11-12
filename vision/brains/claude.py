@@ -157,7 +157,7 @@ class ClaudeBrain:
 
     async def send(self, text: str, *, heavy: bool = False) -> AsyncIterator[BrainEvent]:
         if self._client is None:
-            yield BrainError("auth", "No Anthropic API key is stored. Run `vision auth`.", False)
+            yield BrainError("auth", "No Anthropic API key is stored. Add one in Settings, under API key.", False)
             return
         self._trim()
         if self._system is None:

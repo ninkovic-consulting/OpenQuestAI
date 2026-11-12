@@ -1,6 +1,7 @@
 import Foundation
 
-/// The daemon as this app's child: `<project>/.venv/bin/python -m vision run`.
+/// The daemon as this app's child: `<python> -m vision run`, with the project's
+/// `.venv` Python in a thin app and the bundled one in a standalone app.
 ///
 /// Because the app starts it, macOS treats the app as the responsible process,
 /// so the microphone and folder prompts name the app.
@@ -15,8 +16,11 @@ final class DaemonProcess {
     init(settings: Settings, onExit: @escaping @MainActor (Int32) -> Void) throws {
         let fm = FileManager.default
         guard fm.isExecutableFile(atPath: settings.python.path) else {
-            throw ShellError("No Python at \(settings.python.path). Run `uv sync --all-extras` in \(settings.project.path).")
+            throw ShellError(settings.missingPython)
         }
+        try fm.createDirectory(
+            at: settings.home, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+        )
         try fm.createDirectory(at: settings.log.deletingLastPathComponent(), withIntermediateDirectories: true)
         if !fm.fileExists(atPath: settings.log.path) {
             fm.createFile(atPath: settings.log.path, contents: nil)
@@ -27,13 +31,22 @@ final class DaemonProcess {
         var arguments = ["-m", "vision", "run", "--port", String(settings.port)]
         if settings.fakeBrain { arguments.append("--fake-brain") }
         var environment = ProcessInfo.processInfo.environment
+        // Nothing from the launching shell may point Python somewhere else.
+        for name in ["PYTHONHOME", "PYTHONPATH", "VIRTUAL_ENV", "VISION_ENV_FILE", "VISION_RESOURCES"] {
+            environment.removeValue(forKey: name)
+        }
+        if let resources = settings.resources {
+            environment["VISION_RESOURCES"] = resources.path
+            // The bundle is signed and may be read-only: never write bytecode into it.
+            environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        }
         environment["VISION_HOME"] = settings.home.path
         environment["PYTHONUNBUFFERED"] = "1"
         environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
 
         process.executableURL = settings.python
         process.arguments = arguments
-        process.currentDirectoryURL = settings.project
+        process.currentDirectoryURL = settings.workingDirectory
         process.environment = environment
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = log

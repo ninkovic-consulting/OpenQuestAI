@@ -24,7 +24,7 @@ from vision.setup.hf_cache import gigabytes
 from vision.setup.system import System
 from vision.voice.settings import VoiceSettings
 
-LOCAL_ESTIMATE = "about 2.3 GB"
+LOCAL_ESTIMATE = "about 2.1 GB"
 TOOLS_NOTE = (
     "Project tools are stored and shown now; they start working when the other agents "
     "wake up in the next slice. Today only {name}'s five built-in tools run."
@@ -94,9 +94,16 @@ class Setup:
             self.io.say("\nStopped. Run `vision setup` again to go on.")
             return 130
         self.io.say()
+        self.mark_completed()
         found = checks.run_checks(self.config, self.system)
         self.io.say(doctor.as_text(found, self.config.assistant.name))
         return doctor.exit_code(found)
+
+    def mark_completed(self) -> None:
+        """`[assistant] setup_completed`, which the window's first-start wizard also sets."""
+        if getattr(self.config.assistant, "setup_completed", False) is not True:
+            update_config(self.config.paths.config_file, "assistant", {"setup_completed": True})
+            self.config = load_config(self.config.paths.home)
 
     def api_key(self) -> None:
         source = self.system.api_key_source()

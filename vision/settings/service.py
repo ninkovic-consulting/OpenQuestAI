@@ -204,14 +204,13 @@ class SettingsService:
             await asyncio.to_thread(self.outside.store_key, key)
         except (KeyringError, OSError) as exc:
             raise Refused(
-                f"The Keychain did not store the key ({type(exc).__name__}). Try again, or "
-                "run `vision auth` in Terminal."
+                f"The Keychain did not store the key ({type(exc).__name__}). Try again."
             ) from None
         source = await asyncio.to_thread(self.outside.key_source)
         if source != "keychain":
             raise Refused(
                 "The Keychain did not keep the key, so nothing was stored. Unlock the Keychain "
-                "and try again, or run `vision auth` in Terminal."
+                "and try again."
             )
         verdict = await self.models.fetch(key)
         self.key_replaced = self.key_replaced or had_key

@@ -16,13 +16,14 @@ from pathlib import Path
 from typing import Literal, Protocol
 
 from vision import macapp
-from vision.core import launchd, secrets
+from vision.core import launchd, resources, secrets
 from vision.core.config import Config
 from vision.core.programs import find_program
 from vision.setup import hf_cache
 
 KeyVerdict = Literal["accepted", "refused", "unreachable", "none"]
-WEB_DIR = secrets.REPO_ROOT / "web"
+WEB_DIR = resources.SOURCE_ROOT / "web"
+"""Where the window is built from; only in a source checkout."""
 SPEECH_SKIP = {"spacy/en_core_web_sm": ["*.whl"]}
 """Files left out of a repo's download, as the voice itself fetches it."""
 RUN_TIMEOUT_S = 15.0
@@ -138,7 +139,7 @@ class MacSystem:
         return self.exit_code(["launchctl", "print", target]) == 0
 
     def window_built(self) -> bool:
-        return (WEB_DIR / "dist" / "index.html").is_file()
+        return (resources.web_dist() / "index.html").is_file()
 
     def swiftc(self) -> Path | None:
         return macapp.find_swiftc()
