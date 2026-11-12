@@ -16,7 +16,9 @@ dependencies = [
 # The native fullscreen window for `vision ui`.
 ui = ["pywebview>=6.2.1"]
 # Owned by the brains/gate agent: the Anthropic SDK and the local-model client go here.
-brains = []
+brains = [
+    "anthropic>=2.8.0",
+]
 # Owned by the voice agent: audio I/O, VAD, STT and TTS packages go here.
 voice = []
 
