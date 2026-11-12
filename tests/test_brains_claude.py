@@ -346,7 +346,8 @@ async def test_usage_is_charged_per_model_when_a_fallback_ran(config: Config) ->
     final = text_message("ok", model="claude-opus-4-8", usage=usage)
     brain, _, budget, _ = await make_brain(config, [StubStream(["ok"], final)])
     events = await collect(brain, "hi", heavy=True)
-    assert budget.spent_usd == pytest.approx(1000 * 4 / 1e6)  # the unpriced fallback model costs 0 here
+    # Each model at its own price: Opus 5.5 for the first call, Opus 4.8 for the fallback.
+    assert budget.spent_usd == pytest.approx((1000 * 4 + 10 * 5 + 5 * 25) / 1e6)
     assert events[-1].input_tokens == 1010
 
 

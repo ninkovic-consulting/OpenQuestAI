@@ -2,7 +2,10 @@
 
 `house/default.toml` in the repo is the default house. The user's file at
 `config.paths.house_file` overrides it and is created from it on first use.
-`[agents.<id>]` tables in config.toml override both for agents.
+`[agents.<id>]` tables in config.toml override both for agents. The agent
+personas in the repo's `house/agents/` are copied into the memory vault by
+`seed_personas` before memory starts, so the host persona the user edits is
+`$VISION_HOME/house/agents/host.md`.
 """
 
 from __future__ import annotations
@@ -16,12 +19,25 @@ from vision.house.house import GridHouse
 from vision.house.model import HouseError, UnknownRoom
 from vision.house.parse import build_agents
 
-__all__ = ["AgentModels", "GridHouse", "HouseError", "UnknownRoom", "agent_models", "make_house"]
+__all__ = [
+    "AgentModels",
+    "GridHouse",
+    "HouseError",
+    "UnknownRoom",
+    "agent_models",
+    "make_house",
+    "seed_personas",
+]
 
 
 def make_house(config: Config, bus: Bus) -> GridHouse:
     """Build the house. Reads nothing until the plan is first asked for."""
     return GridHouse(config, bus)
+
+
+def seed_personas(config: Config) -> None:
+    """Copy the default agent personas into the vault without overwriting the user's."""
+    store.seed_personas(config.paths.house)
 
 
 class AgentModels(NamedTuple):

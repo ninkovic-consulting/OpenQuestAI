@@ -41,9 +41,10 @@ Mutation = Callable[[dict[str, Any], Layout], str | None]
 class GridHouse:
     """Implements `vision.core.interfaces.House` on a square grid of rooms.
 
-    Nothing is read until the first `plan()` or change. Watching the user's
-    file for hand edits starts lazily, from the first call made inside the
-    running event loop; `close()` stops it.
+    Nothing is read until `start()`, the first `plan()` or the first change.
+    `start()` loads the files and starts watching the user's file for hand
+    edits (a plan or change made inside the running loop starts it too);
+    `close()` stops it.
     """
 
     def __init__(
@@ -118,6 +119,11 @@ class GridHouse:
     @property
     def revision(self) -> int:
         return self._revision
+
+    async def start(self) -> None:
+        """Load the house and start watching the file; a broken file becomes a notice."""
+        await asyncio.to_thread(self._load)
+        self._watch_lazily()
 
     def set_room_state(self, room_id: str, state: RoomLight) -> None:
         """Record a room's light (`dark`, `idle`, `active`) for the plan.

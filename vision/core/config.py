@@ -39,8 +39,16 @@ class ServerConfig(_Section):
 class BrainConfig(_Section):
     talk_model: str = "claude-haiku-5-5"
     heavy_model: str = "claude-opus-5-5"
-    local_model: str = "qwen3.8:27b-mlx"
+    local_backend: Literal["mlx", "openai"] = "mlx"
+    """`mlx` runs `local_model` inside the daemon (Apple Silicon, `uv sync --extra local`);
+    `openai` streams from an OpenAI-compatible server at `local_base_url`."""
+    local_model: str = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+    """A Hugging Face repo for `mlx`, or the server's model name for `openai`."""
     local_base_url: str = "http://127.0.0.1:11434/v1"
+    local_idle_unload_s: float = Field(default=600.0, gt=0)
+    """`mlx` only: free the model's memory after this long without a local turn."""
+    local_context_tokens: int = Field(default=32_768, ge=1024)
+    """`mlx` only: the most tokens of prompt and reply given to the model at once."""
     max_output_tokens: int = 1024
     """Per-reply output limit (spec section 11, runaway spend)."""
     request_timeout_s: float = 30.0
@@ -66,6 +74,18 @@ def _default_prices() -> dict[str, Price]:
             cache_read_per_mtok=0.01,
             cache_write_per_mtok=0.125,
         ),
+        "claude-sonnet-5-5": Price(
+            input_per_mtok=2.00,
+            output_per_mtok=10.00,
+            cache_read_per_mtok=0.10,
+            cache_write_per_mtok=2.50,
+        ),
+        "claude-opus-4-8": Price(
+            input_per_mtok=5.00,
+            output_per_mtok=25.00,
+            cache_read_per_mtok=0.50,
+            cache_write_per_mtok=6.25,
+        ),
         "claude-opus-5-5": Price(
             input_per_mtok=4.00,
             output_per_mtok=20.00,
@@ -73,6 +93,20 @@ def _default_prices() -> dict[str, Price]:
             cache_write_per_mtok=5.00,
         ),
     }
+
+
+def ceiling_price(prices: dict[str, Price]) -> Price:
+    """The highest known rate for each kind of token, for models missing from the table.
+
+    An unknown model is never counted as free: it is priced at least as high as
+    every model in the table.
+    """
+    return Price(
+        input_per_mtok=max((p.input_per_mtok for p in prices.values()), default=0.0),
+        output_per_mtok=max((p.output_per_mtok for p in prices.values()), default=0.0),
+        cache_read_per_mtok=max((p.cache_read_per_mtok for p in prices.values()), default=0.0),
+        cache_write_per_mtok=max((p.cache_write_per_mtok for p in prices.values()), default=0.0),
+    )
 
 
 class BudgetConfig(_Section):

@@ -208,5 +208,6 @@ async def _serve_socket(websocket: WebSocket, daemon: Daemon) -> None:
         sender.cancel()
         await asyncio.gather(sender, return_exceptions=True)
         if websocket.application_state == WebSocketState.CONNECTED:
-            with contextlib.suppress(RuntimeError):
+            # The window may already be gone; closing a dead socket is not an error.
+            with contextlib.suppress(RuntimeError, WebSocketDisconnect):
                 await websocket.close()

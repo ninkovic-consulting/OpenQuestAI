@@ -3,6 +3,7 @@
     vision run [--fake-brain] [--port N]   run the daemon in the foreground
     vision status                          ask the running daemon how it is
     vision auth                            store the Anthropic API key in the Keychain
+    vision setup                           download the local model (for the `mlx` backend)
     vision ui [--browser]                  open the window (or a browser tab)
     vision install [--dry-run]             install the LaunchAgent
     vision uninstall                       remove the LaunchAgent
@@ -13,7 +14,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import getpass
-import json
 import logging
 import sys
 import webbrowser
@@ -64,7 +64,7 @@ def cmd_status(config: Config, args: argparse.Namespace) -> int:
     print(f"state:     {state['state']} on {state['brain']}")
     print(f"budget:    ${budget['spent_usd']:.2f} of ${budget['cap_usd']:.2f} in {budget['month']}")
     for notice in state["notices"][-5:]:
-        print(f"notice:    [{notice['data']['level']}] {notice['data']['text']}")
+        print(f"notice:    [{notice['level']}] {notice['text']}")
     return 0
 
 
@@ -75,6 +75,25 @@ def cmd_auth(config: Config, args: argparse.Namespace) -> int:
         return 1
     secrets.store_api_key(key)
     print("Stored in the macOS Keychain. Restart the daemon to use it.")
+    return 0
+
+
+def cmd_setup(config: Config, args: argparse.Namespace) -> int:
+    if config.brain.local_backend != "mlx":
+        print(f"Nothing to set up: the local model is served by {config.brain.local_base_url}.")
+        return 0
+    try:
+        from vision.brains.mlx_local import setup_model
+
+        path, fetched = setup_model(config)
+    except ImportError:
+        print("The local model needs Apple Silicon and `uv sync --extra local`.")
+        return 1
+    except Exception as exc:
+        print(f"Could not download {config.brain.local_model} ({type(exc).__name__}: {exc}).")
+        return 1
+    done = "already downloaded" if fetched is None else f"downloaded {fetched / 1e9:.1f} GB"
+    print(f"{config.brain.local_model}: {done}, in {path}")
     return 0
 
 
@@ -146,6 +165,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     auth = sub.add_parser("auth", help="store the Anthropic API key in the Keychain")
     auth.set_defaults(func=cmd_auth)
+
+    setup = sub.add_parser("setup", help="download the local model")
+    setup.set_defaults(func=cmd_setup)
 
     ui = sub.add_parser("ui", help="open the window")
     ui.add_argument("--browser", action="store_true", help="open in the default browser instead")

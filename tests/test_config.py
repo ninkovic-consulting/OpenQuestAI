@@ -10,7 +10,8 @@ def test_defaults(isolated_env: Path) -> None:
     assert (config.server.host, config.server.port) == ("127.0.0.1", 7341)
     assert config.brain.talk_model == "claude-haiku-5-5"
     assert config.brain.heavy_model == "claude-opus-5-5"
-    assert config.brain.local_model == "qwen3.8:27b-mlx"
+    assert config.brain.local_backend == "mlx"
+    assert config.brain.local_model == "mlx-community/Qwen3-4B-Instruct-2507-4bit"
     assert config.budget.monthly_cap_usd == 150
     assert config.budget.prices["claude-haiku-5-5"].input_per_mtok == 0.10
     assert config.gate.tiers["shell"] == "ask"

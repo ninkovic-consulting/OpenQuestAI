@@ -4,6 +4,7 @@ path and no Keychain, so nothing touches the real home or the repo's `.env`."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import socket
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
@@ -11,8 +12,17 @@ from pathlib import Path
 import pytest
 import uvicorn
 
-from vision.app import Daemon
+from vision.app import Components, Daemon
+from vision.core.bus import Bus
 from vision.core.config import Config, load_config
+from vision.testing.fakes import (
+    FakeBrain,
+    FakeBudget,
+    FakeHouse,
+    FakeMemory,
+    FakeToolHost,
+    FakeVoice,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -36,10 +46,9 @@ def free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-@pytest.fixture
-async def daemon(config: Config) -> AsyncIterator[Daemon]:
-    """A daemon on the fake brain, served by uvicorn on a free local port."""
-    d = Daemon(config, fake_brain=True, port=free_port())
+@contextlib.asynccontextmanager
+async def served(d: Daemon) -> AsyncIterator[Daemon]:
+    """Run the daemon's app under uvicorn on its port until the block ends."""
     server = uvicorn.Server(
         uvicorn.Config(d.app, host="127.0.0.1", port=d.port, log_level="warning")
     )
@@ -54,3 +63,28 @@ async def daemon(config: Config) -> AsyncIterator[Daemon]:
     finally:
         server.should_exit = True
         await asyncio.wait_for(task, 10)
+
+
+def all_fakes(bus: Bus) -> Components:
+    return Components(
+        brain=FakeBrain(),
+        tools=FakeToolHost(),
+        memory=FakeMemory(),
+        budget=FakeBudget(),
+        voice=FakeVoice(),
+        house=FakeHouse(),
+    )
+
+
+@pytest.fixture
+async def daemon(config: Config) -> AsyncIterator[Daemon]:
+    """A daemon with the real parts on the fake brain, on a free local port."""
+    async with served(Daemon(config, fake_brain=True, port=free_port())) as d:
+        yield d
+
+
+@pytest.fixture
+async def fake_daemon(config: Config) -> AsyncIterator[Daemon]:
+    """A daemon whose every part is a fake from `vision.testing.fakes`."""
+    async with served(Daemon(config, port=free_port(), components=all_fakes)) as d:
+        yield d

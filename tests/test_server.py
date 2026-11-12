@@ -1,13 +1,17 @@
+import asyncio
+import dataclasses
 import json
 import stat
 
 import httpx
 import pytest
+from conftest import all_fakes
 from fastapi import APIRouter
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 
-from vision.app import Daemon
+from vision.app import Components, Daemon
+from vision.core.bus import Bus
 from vision.core.config import Config
 from vision.core.events import Hello, InputText
 from vision.core.server import allowed_origins
@@ -65,9 +69,11 @@ async def test_state_and_index(daemon: Daemon) -> None:
         assert state["state"] == "idle"
         assert state["brain"] == "fake"
         assert set(state["budget"]) == {"month", "spent_usd", "cap_usd"}
-        texts = [n["data"]["text"] for n in state["notices"]]
-        assert "Running on the fake brain (--fake-brain)." in texts
-        assert (await client.get("/api/house")).json() == FakeHouse().plan()
+        assert {"level": "info", "text": "Running on the fake brain (--fake-brain)."} in state[
+            "notices"
+        ]
+        plan = (await client.get("/api/house")).json()
+        assert len(plan["rooms"]) == 10 and len(plan["agents"]) == 6
         index = await client.get("/", headers={})
         assert index.status_code == 200
         assert "Vision is running" in index.text
@@ -120,14 +126,10 @@ async def test_house_router_is_mounted_behind_auth(config: Config) -> None:
         def router(self) -> APIRouter:
             return router
 
-    import vision.app as app_module
+    def parts(bus: Bus) -> Components:
+        return dataclasses.replace(all_fakes(bus), house=RoutedHouse())
 
-    original = app_module.house.make_house
-    app_module.house.make_house = lambda config, bus: RoutedHouse()  # type: ignore[assignment]
-    try:
-        d = Daemon(config, fake_brain=True, port=7399)
-    finally:
-        app_module.house.make_house = original
+    d = Daemon(config, port=7399, components=parts)
     transport = httpx.ASGITransport(app=d.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:7399") as client:
         assert (await client.get("/api/house/rooms")).status_code == 401
@@ -137,3 +139,15 @@ async def test_house_router_is_mounted_behind_auth(config: Config) -> None:
             "/api/house/rooms", headers={**auth(d), "Origin": "http://evil.example"}
         )
         assert foreign.status_code == 403
+
+
+async def test_window_closing_its_socket_is_not_an_error(
+    daemon: Daemon, caplog: pytest.LogCaptureFixture
+) -> None:
+    for _ in range(3):
+        async with connect(f"ws://127.0.0.1:{daemon.port}/ws") as ws:
+            await ws.send(Hello(token=daemon.token).to_json())
+            await ws.send(InputText(text="hi").to_json())
+            await ws.recv()
+    await asyncio.sleep(0.3)
+    assert "Exception in ASGI application" not in caplog.text

@@ -1,12 +1,14 @@
 """The SQLite log at `$VISION_HOME/log.db`: turns, audit, and full-text search.
 
 One connection shared by every thread, serialised by a lock. All methods
-block; callers run them with `asyncio.to_thread`.
+block; callers run them with `asyncio.to_thread`. The database and its `-wal`
+and `-shm` files are private to the user (mode 0600).
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 import threading
@@ -70,11 +72,18 @@ class Log:
 
     def open(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        # SQLite gives the -wal and -shm files the database file's mode, so
+        # create it private before connecting.
+        os.close(os.open(self._path, os.O_RDWR | os.O_CREAT, 0o600))
         db = sqlite3.connect(self._path, check_same_thread=False, isolation_level=None)
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("PRAGMA synchronous=NORMAL")
         db.execute("PRAGMA busy_timeout=5000")
         db.executescript(_SCHEMA)
+        for suffix in ("", "-wal", "-shm"):
+            path = self._path.with_name(self._path.name + suffix)
+            if path.exists():
+                os.chmod(path, 0o600)
         self._db = db
 
     def close(self) -> None:

@@ -1,5 +1,5 @@
 [project]
-name = "vision"
+name = "openquestai"
 version = "0.1.0"
 description = "Vision: a personal always-on assistant daemon for one Mac."
 requires-python = ">=3.12"
@@ -11,14 +11,16 @@ dependencies = [
     "httpx>=0.28.1",
     "websockets>=17.4",
     "tomli-w>=1.2.0",
+    "anthropic>=2.8.0",
 ]
 
 [project.optional-dependencies]
 # The native fullscreen window for `vision ui`.
 ui = ["pywebview>=6.2.1"]
-# Owned by the brains/gate agent: the Anthropic SDK and the local-model client go here.
-brains = [
-    "anthropic>=2.8.0",
+# The in-process local model on Apple Silicon (`[brain] local_backend = "mlx"`).
+local = [
+    "mlx-lm>=0.32.2; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "huggingface-hub>=1.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 # Owned by the voice agent: audio I/O, VAD, STT and TTS packages go here.
 voice = []

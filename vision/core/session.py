@@ -15,6 +15,11 @@ with `source="voice"` (from the voice loop), `input.interrupt` and
 `input.interrupt`, `input.ptt` pressed, or a new input arriving mid-turn
 interrupts the brain, stops the speaker, and closes the turn as
 `interrupted` (it is still replied to and logged with what was said).
+
+While a gate request is waiting (the turn in progress is blocked on the
+user's yes), typed or spoken input is first offered to `ToolHost.answer`. A
+short clear yes or no settles the request and starts no turn, so the waiting
+turn carries on; anything else interrupts as usual.
 """
 
 from __future__ import annotations
@@ -46,6 +51,7 @@ from vision.core.interfaces import (
     Memory,
     Speaker,
     TextDelta,
+    ToolHost,
     TurnDone,
     TurnRecord,
     TurnStatus,
@@ -96,11 +102,14 @@ class _Turn:
 class Session:
     """Runs turns one at a time. Start `run()` as a task; cancel it to stop."""
 
-    def __init__(self, bus: Bus, brain: Brain, speaker: Speaker, memory: Memory) -> None:
+    def __init__(
+        self, bus: Bus, brain: Brain, speaker: Speaker, memory: Memory, tools: ToolHost
+    ) -> None:
         self.bus = bus
         self.brain = brain
         self.speaker = speaker
         self.memory = memory
+        self.tools = tools
         self._task: asyncio.Task[None] | None = None
         # Subscribe now, so input published before `run()` starts is not lost.
         self._sub = bus.subscribe(
@@ -117,13 +126,19 @@ class Session:
                 async for event in sub:
                     match event:
                         case InputText(text=text):
-                            await self.submit(text, "text")
+                            await self._accept(text, "text")
                         case UserUtterance(text=text, source="voice"):
-                            await self.submit(text, "voice")
+                            await self._accept(text, "voice")
                         case InputInterrupt() | InputPtt(down=True):
                             await self.interrupt()
             finally:
                 await self.interrupt()
+
+    async def _accept(self, text: str, source: UtteranceSource) -> None:
+        """Use the input as the gate's answer if it is one, else start a turn with it."""
+        if self.tools.waiting and self.tools.answer(text):
+            return
+        await self.submit(text, source)
 
     async def submit(self, text: str, source: UtteranceSource) -> None:
         """Start a turn, interrupting the one in progress."""

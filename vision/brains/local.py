@@ -1,6 +1,8 @@
-"""The local brain: any OpenAI-compatible chat endpoint, streamed, no tools.
+"""The local brain over HTTP (`[brain] local_backend = "openai"`): any
+OpenAI-compatible chat endpoint, streamed, no tools.
 
-The default is Ollama on this Mac (`[brain] local_base_url`, `local_model`).
+The server is `[brain] local_base_url` (Ollama's address by default) and the
+model is `local_model`.
 Pointing `local_base_url` at LM Studio, OpenRouter or another compatible
 server is a config change. If that server needs a key, set
 `[brain] local_api_key_env` to the name of the environment variable holding

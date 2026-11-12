@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 import tomllib
 from pathlib import Path
@@ -13,6 +14,7 @@ import tomli_w
 from vision.house.model import HouseError
 
 DEFAULT_FILE = Path(__file__).resolve().parents[2] / "house" / "default.toml"
+AGENTS_DIR = DEFAULT_FILE.parent / "agents"
 
 Stamp = tuple[int, int]
 """A file's (modification time in ns, size), to notice hand edits."""
@@ -38,6 +40,16 @@ def ensure_user_file(path: Path, default: Path) -> None:
     """Create the user's house file as a copy of the default, keeping its comments."""
     if not path.exists():
         _write_atomic(path, default.read_bytes())
+
+
+def seed_personas(vault: Path, source: Path = AGENTS_DIR) -> None:
+    """Copy the repo's agent personas into `<vault>/agents/`, never overwriting one."""
+    target = vault / "agents"
+    target.mkdir(parents=True, exist_ok=True)
+    for persona in sorted(source.glob("*.md")):
+        dest = target / persona.name
+        if not dest.exists():
+            shutil.copyfile(persona, dest)
 
 
 def write_toml(path: Path, doc: dict[str, Any]) -> Stamp | None:

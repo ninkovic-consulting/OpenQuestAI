@@ -3,6 +3,10 @@
 Follows the bus: the current conversational state, gate requests still
 waiting for an answer, and the most recent notices (including the ones
 published at startup, before any window was connected).
+
+Gate requests and notices are listed in the shape of their event's `data`
+(`{"level": ..., "text": ...}` for a notice), the same shape the window gets
+inside a `notice` or `gate.request` envelope on the socket.
 """
 
 from __future__ import annotations
@@ -61,6 +65,6 @@ class Snapshot:
     def as_dict(self) -> dict[str, Any]:
         return {
             "state": self.state,
-            "gate_pending": [req.to_envelope() for req in self.gate_pending.values()],
-            "notices": [notice.to_envelope() for notice in self.notices],
+            "gate_pending": [req.data() for req in self.gate_pending.values()],
+            "notices": [notice.data() for notice in self.notices],
         }

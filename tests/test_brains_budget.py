@@ -6,7 +6,7 @@ from datetime import datetime
 import pytest
 
 from vision.brains import make_budget
-from vision.brains.budget import FILE_NAME, MonthlyBudget
+from vision.brains.budget import FILE_NAME, MonthlyBudget, usd
 from vision.core.bus import Bus
 from vision.core.config import Config
 from vision.core.events import BudgetUpdate, Notice
@@ -46,14 +46,31 @@ def test_cost_maths_includes_cache_tokens(config: Config) -> None:
     assert budget.status().spent_usd == pytest.approx(expected + opus)
 
 
-def test_local_model_is_free_and_silent(config: Config) -> None:
+def test_unknown_model_counts_at_the_highest_rate_with_one_notice(config: Config) -> None:
     bus = Bus()
     sub = bus.subscribe()
     budget = MonthlyBudget(config, bus, now=Clock(datetime(2026, 11, 12)))
     budget.status()
     drain(sub)
-    assert budget.record("qwen3.8:27b-mlx", 1000, 1000) == 0
-    assert drain(sub) == []
+    cost = budget.record("claude-new-model", 1000, 100, cache_read_tokens=100, cache_write_tokens=100)
+    # Ceiling of the default table: input and output from Opus 4.8, cache from Opus 4.8.
+    assert cost == pytest.approx((1000 * 5 + 100 * 25 + 100 * 0.5 + 100 * 6.25) / 1e6)
+    budget.record("claude-new-model", 1000, 100)
+    notices = [e for e in drain(sub) if isinstance(e, Notice)]
+    assert len(notices) == 1 and "claude-new-model" in notices[0].text
+
+
+def test_new_default_prices(config: Config) -> None:
+    budget = MonthlyBudget(config, Bus())
+    assert budget.record("claude-sonnet-5-5", 1_000_000, 0) == pytest.approx(2.0)
+    assert budget.record("claude-opus-4-8", 0, 1_000_000) == pytest.approx(25.0)
+
+
+def test_budget_file_is_private(config: Config) -> None:
+    budget = MonthlyBudget(config, Bus())
+    budget.record("claude-haiku-5-5", 1000, 100)
+    path = config.paths.home / FILE_NAME
+    assert path.stat().st_mode & 0o777 == 0o600
 
 
 def test_persists_and_reloads(config: Config) -> None:
@@ -107,3 +124,22 @@ def test_corrupt_file_starts_from_zero(config: Config) -> None:
     config.paths.home.mkdir(parents=True, exist_ok=True)
     (config.paths.home / FILE_NAME).write_text("{not json")
     assert MonthlyBudget(config, Bus()).status().spent_usd == 0.0
+
+
+def test_money_is_readable_at_any_size() -> None:
+    assert (usd(150), usd(0.5), usd(0.00078)) == ("$150.00", "$0.50", "$0.00078")
+
+
+def test_raising_the_cap_rearms_the_notices(config: Config) -> None:
+    clock = Clock(datetime(2026, 11, 12))
+    config.budget.monthly_cap_usd = 0.0001
+    MonthlyBudget(config, Bus(), now=clock).record("claude-haiku-5-5", 4000, 150)
+    config.budget.monthly_cap_usd = 0.001
+    bus = Bus()
+    sub = bus.subscribe({Notice.TYPE})
+    budget = MonthlyBudget(config, bus, now=clock)
+    assert not budget.exhausted()
+    for _ in range(3):
+        budget.record("claude-haiku-5-5", 4000, 150)
+    texts = [n.text for n in drain(sub)]
+    assert any("reached the $0.001 cap" in t for t in texts)

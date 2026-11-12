@@ -14,8 +14,8 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from vision.core.config import Config, Price
-from vision.core.events import BrainName
+from vision.core.config import Config, Price, ceiling_price
+from vision.core.events import BrainName, RoomLight
 from vision.core.interfaces import (
     AuditRecord,
     BrainError,
@@ -102,7 +102,11 @@ ToolFn = Callable[[dict[str, Any]], Awaitable[str]]
 
 
 class FakeToolHost:
-    """Runs the async functions it was given, with no gate. No tools by default."""
+    """Runs the async functions it was given, with no gate. No tools by default.
+
+    Nothing ever waits for an answer, so `waiting` is False and `answer` never
+    takes the user's words.
+    """
 
     def __init__(self, tools: dict[str, tuple[ToolSpec, ToolFn]] | None = None) -> None:
         self._tools = dict(tools or {})
@@ -120,6 +124,13 @@ class FakeToolHost:
             return ToolResult(ok=True, content=await entry[1](args))
         except Exception as exc:  # a fake reports failures like the real host
             return ToolResult(ok=False, content=f"{name} failed: {exc}")
+
+    @property
+    def waiting(self) -> bool:
+        return False
+
+    def answer(self, text: str) -> bool:
+        return False
 
 
 class FakeMemory:
@@ -211,7 +222,11 @@ class FakeVoice:
 
 
 class FakeBudget:
-    """Adds up cost from a price table in memory. Never persists or publishes."""
+    """Adds up cost from a price table in memory. Never persists or publishes.
+
+    Like the real budget, a model missing from the table is charged at the
+    highest known rate.
+    """
 
     def __init__(self, cap_usd: float = 150.0, prices: dict[str, Price] | None = None) -> None:
         self.cap_usd = cap_usd
@@ -231,9 +246,7 @@ class FakeBudget:
         cache_read_tokens: int = 0,
         cache_write_tokens: int = 0,
     ) -> float:
-        price = self.prices.get(model)
-        if price is None:
-            return 0.0
+        price = self.prices.get(model) or ceiling_price(self.prices)
         cost = (
             input_tokens * price.input_per_mtok
             + output_tokens * price.output_per_mtok
@@ -251,20 +264,57 @@ class FakeBudget:
 
 
 class FakeHouse:
-    """A fixed plan with one room, the Hall, and no editing routes."""
+    """The Hall alone, in the plan shape of spec section 4.8, with no editing routes."""
+
+    def __init__(self, assistant: str = "Vision") -> None:
+        self.assistant = assistant
+        self.states: dict[str, RoomLight] = {"hall": "idle"}
+        self.running = False
+
+    async def start(self) -> None:
+        self.running = True
+
+    async def close(self) -> None:
+        self.running = False
+
+    def set_room_state(self, room_id: str, state: RoomLight) -> None:
+        if room_id not in self.states:
+            raise KeyError(room_id)
+        self.states[room_id] = state
 
     def plan(self) -> dict[str, Any]:
         return {
             "revision": 0,
+            "cell_m": 4.0,
+            "wall_height_m": 2.6,
+            "max_extra_rooms": 20,
+            "assistant": {"name": self.assistant},
+            "agents": [
+                {
+                    "id": "host",
+                    "name": self.assistant,
+                    "model": "claude-haiku-5-5",
+                    "heavy_model": "claude-opus-5-5",
+                }
+            ],
             "rooms": [
                 {
                     "id": "hall",
                     "name": "Hall",
-                    "outline": [[0, 0], [8, 0], [8, 6], [0, 6]],
-                    "wall_height": 3.0,
-                    "resident": "assistant",
+                    "kind": "default",
+                    "shape": "rect",
+                    "at": [1, 1],
+                    "size": [2, 2],
+                    "agent": "host",
+                    "model": "claude-haiku-5-5",
+                    "project": None,
+                    "floor": "red-carpet",
+                    "wall": "teal-panel",
+                    "state": self.states["hall"],
                 }
             ],
+            "doors": [],
+            "free_slots": [[0, 1], [0, 2], [1, 0], [2, 0], [3, 1], [3, 2], [1, 3], [2, 3]],
         }
 
     @property

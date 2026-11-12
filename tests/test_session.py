@@ -13,7 +13,7 @@ from vision.core.events import (
 )
 from vision.core.interfaces import BrainError
 from vision.core.session import FAILED_LINE, Session, wants_heavy
-from vision.testing.fakes import FakeBrain, FakeMemory, FakeSpeaker
+from vision.testing.fakes import FakeBrain, FakeMemory, FakeSpeaker, FakeToolHost
 
 
 class Rig:
@@ -22,7 +22,7 @@ class Rig:
         self.brain = brain
         self.speaker = speaker or FakeSpeaker()
         self.memory = FakeMemory()
-        self.session = Session(self.bus, brain, self.speaker, self.memory)
+        self.session = Session(self.bus, brain, self.speaker, self.memory, FakeToolHost())
         self.events: Subscription = self.bus.subscribe()
 
     def drain(self) -> list[Event]:

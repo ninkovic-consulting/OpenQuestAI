@@ -1,8 +1,9 @@
 """Monthly API spend, priced from `config.budget.prices` and persisted under `$VISION_HOME`.
 
-The running total lives in `<home>/budget.json`. It is read on first use (never
-in the constructor) and rewritten after every priced call. A new calendar month
-starts again from zero.
+The running total lives in `<home>/budget.json` (mode 0600). It is read on first
+use (never in the constructor) and rewritten after every priced call. A new
+calendar month starts again from zero. A model missing from the price table is
+charged at the highest known rate, with one notice per model, never as free.
 """
 
 from __future__ import annotations
@@ -15,13 +16,18 @@ from datetime import datetime
 from pathlib import Path
 
 from vision.core.bus import Bus
-from vision.core.config import Config
+from vision.core.config import Config, Price, ceiling_price
 from vision.core.events import BudgetUpdate, Notice
 from vision.core.interfaces import BudgetStatus
 
 log = logging.getLogger(__name__)
 
 FILE_NAME = "budget.json"
+
+
+def usd(amount: float) -> str:
+    """Dollars for people: cents normally, more digits for amounts under ten cents."""
+    return f"${amount:.2f}" if amount >= 0.1 else f"${amount:.2g}"
 
 
 class MonthlyBudget:
@@ -39,6 +45,7 @@ class MonthlyBudget:
         self._spent = 0.0
         self._warned = False
         self._capped = False
+        self._unpriced: set[str] = set()
 
     # ------------------------------------------------------------ protocol
 
@@ -52,9 +59,7 @@ class MonthlyBudget:
         cache_write_tokens: int = 0,
     ) -> float:
         self._sync_month()
-        price = self._prices.get(model)
-        if price is None:
-            return 0.0
+        price = self._prices.get(model) or self._unknown(model)
         cost = (
             input_tokens * price.input_per_mtok
             + output_tokens * price.output_per_mtok
@@ -79,6 +84,20 @@ class MonthlyBudget:
 
     # ------------------------------------------------------------ internals
 
+    def _unknown(self, model: str) -> Price:
+        if model not in self._unpriced:
+            self._unpriced.add(model)
+            self._bus.publish(
+                Notice(
+                    level="warn",
+                    text=(
+                        f"{model} has no price in [budget.prices], so it is counted at the "
+                        "highest known rate. Add its price to config.toml for an exact total."
+                    ),
+                )
+            )
+        return ceiling_price(self._prices)
+
     def _current_month(self) -> str:
         return self._now().strftime("%Y-%m")
 
@@ -98,7 +117,7 @@ class MonthlyBudget:
                 Notice(
                     level="warn",
                     text=(
-                        f"This month's API spend reached the ${self._cap:.2f} cap, so talk moves "
+                        f"This month's API spend reached the {usd(self._cap)} cap, so talk moves "
                         "to the local model until the month turns. Raise "
                         "[budget] monthly_cap_usd in config.toml to continue on Claude."
                     ),
@@ -110,8 +129,8 @@ class MonthlyBudget:
                 Notice(
                     level="info",
                     text=(
-                        f"API spend this month is ${self._spent:.2f}, "
-                        f"{self._warn_fraction:.0%} of the ${self._cap:.2f} cap."
+                        f"API spend this month is {usd(self._spent)}, "
+                        f"{self._warn_fraction:.0%} of the {usd(self._cap)} cap."
                     ),
                 )
             )
@@ -127,8 +146,11 @@ class MonthlyBudget:
             data = json.loads(self._path.read_text(encoding="utf-8"))
             self._month = str(data["month"])
             self._spent = float(data["spent_usd"])
-            self._warned = bool(data.get("warned", False))
-            self._capped = bool(data.get("capped", False))
+            # Flags only hold while the cap they were raised for still applies.
+            self._warned = bool(data.get("warned", False)) and (
+                self._spent >= self._cap * self._warn_fraction
+            )
+            self._capped = bool(data.get("capped", False)) and self._spent >= self._cap
         except FileNotFoundError:
             return
         except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -144,7 +166,10 @@ class MonthlyBudget:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(data), encoding="utf-8")
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps(data))
+            os.chmod(tmp, 0o600)
             os.replace(tmp, self._path)
         except OSError as exc:
             log.warning("could not save the budget: %s", exc)

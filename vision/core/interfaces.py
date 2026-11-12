@@ -22,7 +22,11 @@ Who publishes what on the bus:
 
 - Session (core): `user.utterance` for typed input, `state.changed` for
   thinking / speaking / idle, `vision.delta`, `vision.reply`, `notice` for
-  failed turns.
+  failed turns. A short yes or no while a gate request waits goes to
+  `ToolHost.answer` instead of starting a turn.
+- Daemon (core): `budget` once at startup, and `room.state` for the Hall
+  (`active` while thinking or speaking, else `idle`) after recording it with
+  `House.set_room_state`.
 - Voice: `user.utterance` (source voice), `state.changed` for listening /
   transcribing (and back to idle when an utterance is dropped), `voice.level`,
   `input.interrupt` when it hears "Vision, stop".
@@ -50,7 +54,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 from fastapi import APIRouter
 
-from vision.core.events import BrainName, GateOutcome, UtteranceSource
+from vision.core.events import BrainName, GateOutcome, RoomLight, UtteranceSource
 
 # ---------------------------------------------------------------- brain events
 
@@ -67,7 +71,7 @@ class TurnDone:
     """The reply finished. Always the last event of a successful `send`.
 
     `model` is the model that produced the final answer (e.g.
-    `claude-haiku-5-5`, `qwen3.8:27b-mlx`). Token counts are summed over every
+    `claude-haiku-5-5`, `mlx-community/Qwen3-4B-Instruct-2507-4bit`). Token counts are summed over every
     model call made for the turn, tool-loop calls included. `stop_reason` is
     the provider's final stop reason, or `"interrupted"` if `interrupt()` ended
     the turn early.
@@ -196,6 +200,20 @@ class ToolHost(Protocol):
 
     async def call(self, name: str, args: dict[str, Any]) -> ToolResult:
         """Run one tool call through the gate. Never raises for tool failures."""
+        ...
+
+    @property
+    def waiting(self) -> bool:
+        """True while an `ask` call waits for the user's answer."""
+        ...
+
+    def answer(self, text: str) -> bool:
+        """Settle the oldest waiting request from a spoken or typed reply.
+
+        Only a short, clear yes or no counts; anything else returns False. When
+        it returns True the reply was used as the answer, and the session must
+        not start a turn with it.
+        """
         ...
 
 
@@ -383,9 +401,11 @@ class Budget(Protocol):
     ) -> float:
         """Add one model call's cost and return it in dollars.
 
-        Local models (not in the price table) cost nothing. Persists the
-        running total under `$VISION_HOME`, rolls over when the month turns,
-        and publishes a `budget` event.
+        Only API calls are recorded; local models never reach the budget. A
+        model missing from the price table is charged at the highest known
+        rate (see `vision.core.config.ceiling_price`), never as free. Persists
+        the running total under `$VISION_HOME`, rolls over when the month
+        turns, and publishes a `budget` event.
         """
         ...
 
@@ -411,6 +431,21 @@ class House(Protocol):
     route. The router must not define `GET ""` or `GET "/"`, which belong to
     the plan.
     """
+
+    async def start(self) -> None:
+        """Load the house files and start watching for hand edits.
+
+        Problems with the user's file become a `notice`, never an exception.
+        """
+        ...
+
+    async def close(self) -> None:
+        """Stop watching the house file."""
+        ...
+
+    def set_room_state(self, room_id: str, state: RoomLight) -> None:
+        """Record a room's light for the plan. Does not publish `room.state`."""
+        ...
 
     def plan(self) -> dict[str, Any]:
         """The JSON-ready plan the window draws the house from.

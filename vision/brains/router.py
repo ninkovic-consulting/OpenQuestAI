@@ -4,7 +4,7 @@
 - If Claude still cannot answer (or the key is rejected, or credit is gone),
   the turn goes to the local model, `brain.fallback` is published, and Claude
   is tried again after `[brain] retry_claude_after_s`.
-- No key, no SDK, an exhausted monthly budget or exhausted credit means the
+- No key, an exhausted monthly budget or exhausted credit means the
   local model from the start, with a `notice` that says why.
 - The first local reply after a switch begins with a short spoken line saying
   so, and `name` always reports the backend answering now.
@@ -15,16 +15,12 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
-from typing import TYPE_CHECKING
 
-from vision.brains.local import LocalBrain
+from vision.brains.claude import ClaudeBrain
 from vision.core.bus import Bus
 from vision.core.config import Config
 from vision.core.events import BrainFallback, BrainName, Notice
-from vision.core.interfaces import BrainError, BrainEvent, Budget, TextDelta
-
-if TYPE_CHECKING:  # the SDK is an optional extra; the router runs without it
-    from vision.brains.claude import ClaudeBrain
+from vision.core.interfaces import Brain, BrainError, BrainEvent, Budget, TextDelta
 
 FALLBACK_KINDS = frozenset({"rate_limit", "auth", "credits", "timeout", "offline", "unavailable"})
 LOCAL_LINE = "I'm running on the local model right now. "
@@ -35,8 +31,8 @@ class Router:
         self,
         config: Config,
         bus: Bus,
-        claude: ClaudeBrain | None,
-        local: LocalBrain,
+        claude: ClaudeBrain,
+        local: Brain,
         budget: Budget,
         *,
         clock: Callable[[], float] = time.monotonic,
@@ -60,8 +56,7 @@ class Router:
 
     async def start(self) -> None:
         await self._local.start()
-        if self._claude is not None:
-            await self._claude.start()
+        await self._claude.start()
         reason = self._blocker()
         if reason is not None:
             self._current = "local"
@@ -69,17 +64,15 @@ class Router:
             self._bus.publish(Notice(level="warn", text=reason))
 
     async def interrupt(self) -> None:
-        if self._claude is not None:
-            await self._claude.interrupt()
+        await self._claude.interrupt()
         await self._local.interrupt()
 
     async def close(self) -> None:
-        if self._claude is not None:
-            await self._claude.close()
+        await self._claude.close()
         await self._local.close()
 
     async def send(self, text: str, *, heavy: bool = False) -> AsyncIterator[BrainEvent]:
-        if self._claude is not None and await self._use_claude():
+        if await self._use_claude():
             failure: BrainError | None = None
             for attempt in range(2):
                 failure, spoke = None, False
@@ -115,11 +108,6 @@ class Router:
 
     def _blocker(self) -> str | None:
         """Why Claude cannot be used right now, as a notice for the user, or None."""
-        if self._claude is None:
-            return (
-                f"The Anthropic SDK is not installed, so {self._name} is running on the local "
-                "model. Install it with `uv sync --extra brains`."
-            )
         if not self._claude.has_key:
             return (
                 f"{self._name} has no Anthropic API key yet and is running on the local model. "
@@ -138,7 +126,6 @@ class Router:
         return None
 
     async def _use_claude(self) -> bool:
-        assert self._claude is not None
         if self._current == "claude":
             reason = self._blocker()
             if reason is None:

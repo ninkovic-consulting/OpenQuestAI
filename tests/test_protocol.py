@@ -26,10 +26,15 @@ async def collect_turn(ws: ClientConnection, timeout: float = 10) -> list[dict[s
 
 
 def compress(events: list[dict[str, Any]]) -> list[str]:
-    """Event names in order, with runs of deltas collapsed and states spelled out."""
+    """Event names in order, with runs of deltas collapsed and states spelled out.
+
+    `room.state` follows the conversation state asynchronously, so it is left out.
+    """
     out: list[str] = []
     for e in events:
         name = e["type"]
+        if name == "room.state":
+            continue
         if name == "state.changed":
             name = f"state:{e['data']['state']}"
         if name == "vision.delta" and out and out[-1] == "vision.delta":
@@ -44,7 +49,8 @@ async def open_socket(daemon: Daemon) -> ClientConnection:
     return ws
 
 
-async def test_text_turn_event_sequence_and_log(daemon: Daemon) -> None:
+async def test_text_turn_event_sequence_and_log(fake_daemon: Daemon) -> None:
+    daemon = fake_daemon
     ws = await open_socket(daemon)
     try:
         await ws.send(InputText(text="Hello there").to_json())
@@ -87,7 +93,8 @@ async def test_text_turn_event_sequence_and_log(daemon: Daemon) -> None:
     assert [t["turn_id"] for t in history["turns"]] == [reply["turn_id"]]
 
 
-async def test_interrupt_over_socket(daemon: Daemon) -> None:
+async def test_interrupt_over_socket(fake_daemon: Daemon) -> None:
+    daemon = fake_daemon
     brain = daemon.components.brain
     assert isinstance(brain, FakeBrain)
     brain.delay = 0.2  # slow enough to interrupt mid-reply
