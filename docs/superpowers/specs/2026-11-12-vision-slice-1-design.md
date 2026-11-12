@@ -26,6 +26,9 @@ Vision's own mind runs on the Anthropic API, paid from the promotional credits g
 | Talk model | `claude-haiku-5-5`, for speed and cost |
 | Heavy model | `claude-opus-5-5`, when asked to think something through |
 | Speech | Local models: Whisper in, Kokoro out |
+| House | Modular grid. Default rooms plus up to 20 more, placed where you choose |
+| Agents | Predefined in config, each with its own persona and model |
+| Open source | Planned. The repo ships neutral defaults; your cast, projects and memory live in `~/.vision/` |
 
 ### The whole system, in six slices
 
@@ -51,6 +54,7 @@ Each later slice gets its own spec. Nothing in this spec builds for them beyond 
 7. Asking Vision to run a shell command produces a card that needs your yes. Yes runs it, no does not, and both are in the audit log.
 8. With the network off, Vision still answers through the local model and says it is running locally.
 9. The house shows this month's API spend against the cap. When the cap is reached, talk moves to the local model by itself.
+10. Adding a room, by clicking a free slot in the house or by editing `house.toml`, makes it appear without a restart, with walls and doors redrawn around it. A 21st extra room is refused with a clear message.
 
 ### Out of scope
 
@@ -142,7 +146,7 @@ The pipeline can also run from a WAV file and write its speech to a WAV file. Th
 - `log.py`. SQLite at `~/.vision/log.db`: `turns` (every exchange), `audit` (every tool call and gate decision), with FTS5 search over turns and notes.
 - `core.py`. Builds the memory core that goes into the system prompt: persona, the library, and the most recent notes, within a fixed size budget.
 
-The repo ships a starter persona and a starter library seeded with what is already known about the projects of the person who runs it. They are copied to `~/.vision/house/` on first run and never overwritten.
+The repo ships a generic starter persona and an empty library template. They are copied to `~/.vision/house/` on first run and never overwritten. Anything personal, including what is known about your own projects, is written only under `~/.vision/` and never into the repo.
 
 ### 4.5 Tools and the gate: `vision/gate/`
 
@@ -162,7 +166,8 @@ Slice 1 gives Vision five tools:
 
 Vite, TypeScript, Three.js. Built to static files that the daemon serves.
 
-- `scene/house.ts`. Builds the mansion from `assets/house/plan.json`: each room's floor outline, wall height, doors, materials, lamp position, resident anchor and camera preset. Walls are cut low so every room is visible from above, as on board 04.
+- `scene/house.ts`. Builds the mansion from the plan served at `/api/house` (section 4.8): floors per room, walls along every cell edge where two different rooms or the outside meet, door gaps, materials, a lamp and a camera preset per room. Walls are cut low so every room is visible from above, as on board 04. When `house.changed` arrives it rebuilds, and a new room rises into place.
+- `scene/build.ts`. Build mode: free slots glow, clicking one opens a short form (name, agent, project folder, model) and posts the new room.
 - `scene/props.ts`. Loads GLB furniture and characters and places them from the plan.
 - `scene/lighting.ts`. Dusk ambient and a low moon. Each room has its own warm lamp whose brightness follows the room's state: dark, idle or active.
 - `scene/camera.ts`. Default isometric view of the whole house, orbit and zoom within limits, fly-to-room on double-click, Escape to return.
@@ -174,7 +179,7 @@ Vite, TypeScript, Three.js. Built to static files that the daemon serves.
 
 ### 4.7 Assets: `assets/`
 
-**House shell.** Built in code from the plan, so it costs nothing to change. Nine rooms with the Hall at the centre, plus a round turret Attic, matching board 03.
+**House shell.** Built in code from the plan, so it costs nothing to change and grows as rooms are added. The default is nine rooms with the Hall at the centre, plus a round turret Attic, matching board 03.
 
 **Textures.** Wallpaper, teal panelling, wood floor, red carpet, pale stone. Generated with Higgsfield as tileable images.
 
@@ -186,6 +191,72 @@ Vite, TypeScript, Three.js. Built to static files that the daemon serves.
 
 Rooms other than the Hall are lit shells in this slice. They get furniture when their resident moves in.
 
+### 4.8 A house that grows: `vision/house/`
+
+The house is a set of room modules on a square grid. This package owns the house file, validates it, works out doors and free slots, and serves the plan the window draws from.
+
+**Two files.** `house/default.toml` in the repo holds the neutral default: six agents (Host, Steward, Envoy, Maker, Checker, Scout) and the default rooms. `~/.vision/house.toml` is yours and overrides it: your agent names, your projects, your extra rooms. On first run it is created from the default.
+
+```toml
+[agents.host]
+name = "Vision"
+persona = "agents/host.md"
+model = "claude-haiku-5-5"
+heavy_model = "claude-opus-5-5"
+
+[agents.maker]
+name = "D.U.M.-E."
+persona = "agents/maker.md"
+model = "claude-opus-5-5"
+
+[[rooms]]
+id = "hall"
+name = "Hall"
+at = [1, 1]          # grid cell of the room's north-west corner
+size = [2, 2]        # cells wide, cells deep; default [1, 1]
+agent = "host"
+
+[[rooms]]
+id = "garage"
+name = "Garage"
+at = [0, 3]
+agent = "maker"                          # which predefined agent runs this room
+project = "~/Projects/my-platform"       # optional project folder attached to the room
+model = "claude-sonnet-5-5"              # optional, overrides the agent's model here
+```
+
+**Rules.**
+- Every agent has a model. A room may override it. A room names exactly one agent.
+- Default rooms are the Hall, the eight rooms around it and the round Attic. They can be renamed and reassigned but not removed.
+- Up to 20 extra rooms. An extra room is one to four cells, must share a wall with a room already in the house, and may not overlap another.
+- If `at` is left out, the room goes into the free slot nearest the Hall.
+- Removing an extra room is refused if it would cut another room off from the Hall.
+- Doors are worked out, not configured: every room gets a door on the shortest path toward the Hall.
+
+**The plan** returned by `GET /api/house`:
+
+```json
+{
+  "revision": 3,
+  "cell_m": 4.0,
+  "wall_height_m": 2.6,
+  "max_extra_rooms": 20,
+  "assistant": {"name": "Vision"},
+  "agents": [{"id": "host", "name": "Vision", "model": "claude-haiku-5-5", "heavy_model": "claude-opus-5-5"}],
+  "rooms": [{"id": "hall", "name": "Hall", "kind": "default", "shape": "rect", "at": [1, 1], "size": [2, 2],
+             "agent": "host", "model": "claude-haiku-5-5", "project": null,
+             "floor": "red-carpet", "wall": "teal-panel", "state": "idle"}],
+  "doors": [{"a": "hall", "b": "library", "cell": [1, 1], "side": "n"}],
+  "free_slots": [[4, 1], [4, 2]]
+}
+```
+
+`kind` is `default` or `extra`. `shape` is `rect` or `round` (the Attic). `model` on a room is already resolved, so the window never repeats the override logic. `floor` and `wall` name files in `assets/textures/`.
+
+**Routes**, all behind the token: `GET /api/house`, `POST /api/house/rooms`, `PATCH /api/house/rooms/{id}`, `DELETE /api/house/rooms/{id}`. A change writes `~/.vision/house.toml`, raises the revision and publishes `house.changed`. Editing the file by hand does the same within a couple of seconds.
+
+**In this slice** only the Host agent is awake. The other agents and their models are stored and shown in the house, and slice 2 puts them to work. Other packages read an agent's models through `vision.house.agent_models(config, agent_id)`.
+
 ## 5. Protocol
 
 One JSON envelope in both directions: `{"type": "...", "ts": 1731400000.0, "data": {...}}`.
@@ -196,6 +267,7 @@ One JSON envelope in both directions: `{"type": "...", "ts": 1731400000.0, "data
 |---|---|
 | `state.changed` | `state`: idle, listening, transcribing, thinking, speaking; `brain`: claude or local |
 | `budget` | `month`, `spent_usd`, `cap_usd` |
+| `house.changed` | `revision` (the window then reloads `/api/house`) |
 | `user.utterance` | `text`, `source`: voice or text |
 | `vision.delta` | `text` (a streamed fragment) |
 | `vision.reply` | `text` (the finished reply), `turn_id` |
@@ -216,7 +288,7 @@ One JSON envelope in both directions: `{"type": "...", "ts": 1731400000.0, "data
 | `input.interrupt` | none |
 | `gate.decision` | `id`, `decision`: allow or deny |
 
-**HTTP.** `GET /api/health`, `GET /api/state`, `GET /api/history?limit=50`. All need the token in an `Authorization` header.
+**HTTP.** `GET /api/health`, `GET /api/state`, `GET /api/history?limit=50`, and the house routes in section 4.8. All need the token in an `Authorization` header.
 
 ## 6. One turn, end to end
 
@@ -248,7 +320,8 @@ One JSON envelope in both directions: `{"type": "...", "ts": 1731400000.0, "data
 - **Unit (pytest).** Bus, sentence splitter, wake matcher, echo guard, gate policy and timeout, router fallback with fake brains, memory store and search, config loading.
 - **Protocol.** A test client connects to a daemon running the fake brain, sends `input.text`, and checks the event sequence and the log row. It also checks that a wrong token and a foreign `Origin` are refused.
 - **Voice.** WAV in, WAV out, with the fake brain: the right utterance is detected, the reply is spoken, "stop" interrupts.
-- **Web (vitest).** Store reducers and the plan loader.
+- **House.** Default plan loads; a personal file overrides it; a room with no position lands in the nearest free slot; overlapping, detached, unknown-agent and 21st-room requests are refused; removing a room that would strand another is refused; doors always connect every room to the Hall; a hand edit to the file raises the revision.
+- **Web (vitest).** Store reducers, and wall and door geometry from a plan.
 - **Live checks, done by the orchestrator.** Each "done when" item in section 2 is exercised for real: the daemon under launchd, the window in a browser with screenshots, a real Claude turn on the API credits with the measured time to first audio and its measured cost, a restart-and-recall, a gate yes and no, an offline turn, and a cap set low enough to trip.
 - **Yours.** One pass at the real microphone, because nobody else can speak into it.
 
@@ -259,10 +332,10 @@ Python 3.12 with `uv`; FastAPI and uvicorn; the `anthropic` SDK; `keyring` for t
 ## 10. Layout
 
 ```
-vision/            core/ brains/ voice/ memory/ gate/
+vision/            core/ brains/ voice/ memory/ gate/ house/
 web/               src/scene/ src/hud/ src/net/
-assets/            house/plan.json  models/  textures/
-house/             starter persona and library (templates only)
+assets/            models/  textures/  design/
+house/             default.toml, agent personas, library template (neutral, no personal data)
 tests/
 docs/superpowers/specs/
 pyproject.toml
@@ -276,7 +349,8 @@ pyproject.toml
 4. **Subscription brains later.** Using Codex and Gemini through their subscription logins in slice 2 raises the same terms question this slice avoids for Claude. It gets checked then, before any code depends on it.
 5. **Microphone under launchd.** macOS ties microphone permission to the program that asks. A background agent may need a one-time manual grant.
 6. **Look.** A modelled house will start plainer than the painted concept on board 04. Lighting, textures and post-processing carry most of the look; furniture fills in room by room.
+7. **Going public.** Three things must be settled before the repo is published. The cast: the repo ships original names (Vision as the assistant, then Brass, Wren, Tink, Tock and Rook), with no characters from any film or series. The project name: `OpenVision` is already a known AI project and is taken on PyPI, so the public name is still open. The generated models and textures: each service's terms for the plan in use decide whether they can be redistributed, and that has to be checked before they are committed to a public repo.
 
 ## 12. How it gets built
 
-The orchestrator fixes this spec's protocol and layout first, then hands independent parts to Opus and Sonnet subagents: core and protocol, brains and gate, voice, the Mindspace, and memory. Asset generation stays with the orchestrator because it spends credits. The orchestrator reviews every part, runs the tests, and performs the live checks in section 8 before calling the slice done.
+The orchestrator fixes this spec's protocol and layout first, then hands independent parts to Opus and Sonnet subagents: core and protocol, brains and gate, the house, voice, the Mindspace, and memory. Asset generation stays with the orchestrator because it spends credits. The orchestrator reviews every part, runs the tests, and performs the live checks in section 8 before calling the slice done.
