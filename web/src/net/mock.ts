@@ -1,0 +1,222 @@
+// Mock mode (`?mock=1`): a pretend daemon for development and screenshots.
+// It serves the sample plan and plays a scripted sequence through the same
+// store actions the real socket uses.
+
+import { cellKey, cellOwners } from "../scene/grid";
+import type { Daemon } from "./daemon";
+import { hostRoom } from "./plan";
+import { samplePlan } from "./sample-plan";
+import type { Store } from "./store";
+import type {
+  AssistantState,
+  Cell,
+  Door,
+  InboundEvent,
+  NewRoom,
+  OutboundData,
+  OutboundEvent,
+  OutboundType,
+  Plan,
+  PostResult,
+  Room,
+} from "./types";
+
+const WORD_MS = 75;
+const LEVEL_MS = 33;
+
+export class MockDaemon implements Daemon {
+  private plan: Plan = samplePlan();
+  private speaking: { timers: number[]; text: string; turn: string } | null = null;
+  private turn = 0;
+
+  constructor(private readonly store: Store) {}
+
+  start(): void {
+    this.store.dispatch({ kind: "connection", connection: "open" });
+    this.store.dispatch({ kind: "plan", plan: structuredClone(this.plan) });
+    const name = (id: string): string => this.plan.agents.find((a) => a.id === id)?.name ?? id;
+    const workshop = this.plan.rooms.find((r) => r.agent === "maker")?.name ?? "Workshop";
+    this.at(300, () => this.emit("budget", { month: "2026-11", spent_usd: 18.42, cap_usd: 150 }));
+    this.at(600, () => this.setState("listening"));
+    this.at(1600, () => this.emit("user.utterance", { text: "What got done on the engine this afternoon?", source: "voice" }));
+    this.at(1700, () => this.setState("thinking"));
+    this.at(2600, () =>
+      this.say(
+        `The tests pass now. ${name("checker")} found one bad date format, and ${name("maker")} is fixing it in the ${workshop}.`,
+      ),
+    );
+    this.at(4200, () => this.emit("room.state", { room: "workshop", state: "active" }));
+    this.at(9000, () =>
+      this.emit("gate.request", {
+        id: "gate-1",
+        tool: "shell",
+        summary: `${this.plan.assistant.name} wants to run the test suite in the project folder.`,
+        detail: "npm test -- --run",
+        expires_at: Date.now() / 1000 + 60,
+      }),
+    );
+    this.at(10_000, () => this.emit("notice", { level: "info", text: "Mock mode: no daemon is connected." }));
+    this.at(12_000, () => this.addScriptedRoom());
+  }
+
+  send(event: InboundEvent): void {
+    switch (event.type) {
+      case "input.text":
+        this.answer(event.data.text, "text");
+        break;
+      case "input.ptt":
+        if (event.data.down) {
+          this.interrupt();
+          this.setState("listening");
+        } else {
+          this.setState("transcribing");
+          this.at(500, () => this.answer("Is everything quiet in the house?", "voice"));
+        }
+        break;
+      case "input.interrupt":
+        this.interrupt();
+        break;
+      case "gate.decision":
+        this.emit("gate.resolved", { id: event.data.id, decision: event.data.decision });
+        this.emit("notice", {
+          level: "info",
+          text: event.data.decision === "allow" ? "Command allowed." : "Command declined.",
+        });
+        break;
+      case "hello":
+        break;
+    }
+  }
+
+  postRoom(room: NewRoom): Promise<PostResult> {
+    const extras = this.plan.rooms.filter((r) => r.kind === "extra").length;
+    if (extras >= this.plan.max_extra_rooms)
+      return Promise.resolve({ ok: false, message: `The house already has ${extras} extra rooms, the most it can hold.` });
+    if (!this.plan.free_slots.some(([x, y]) => x === room.at[0] && y === room.at[1]))
+      return Promise.resolve({ ok: false, message: "That slot is not free." });
+    const agent = this.plan.agents.find((a) => a.id === room.agent);
+    if (!agent) return Promise.resolve({ ok: false, message: `Unknown agent: ${room.agent}` });
+    this.addRoom({
+      id: room.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+      name: room.name,
+      kind: "extra",
+      shape: "rect",
+      at: room.at,
+      size: [1, 1],
+      agent: agent.id,
+      model: room.model ?? agent.model,
+      project: room.project ?? null,
+      floor: "wood-floor",
+      wall: "wallpaper",
+      state: "idle",
+    });
+    return Promise.resolve({ ok: true });
+  }
+
+  // ---------------------------------------------------------------- script helpers
+
+  private at(ms: number, fn: () => void): number {
+    return window.setTimeout(fn, ms);
+  }
+
+  private emit<K extends OutboundType>(type: K, data: OutboundData[K]): void {
+    this.store.dispatch({ kind: "event", event: { type, ts: Date.now() / 1000, data } as OutboundEvent });
+  }
+
+  private setState(state: AssistantState): void {
+    this.emit("state.changed", { state, brain: "claude" });
+  }
+
+  private answer(text: string, source: "voice" | "text"): void {
+    this.interrupt();
+    this.emit("user.utterance", { text, source });
+    this.setState("thinking");
+    this.at(900, () => this.say("Everything is quiet. The workshop lights are on and the tests are green."));
+  }
+
+  private say(text: string): void {
+    const turn = `turn-${++this.turn}`;
+    const words = text.split(/(?<= )/);
+    const timers: number[] = [];
+    this.speaking = { timers, text: "", turn };
+    this.setState("speaking");
+    this.emit("room.state", { room: hostRoom(this.plan)?.id ?? "", state: "active" });
+    words.forEach((word, i) =>
+      timers.push(
+        this.at(i * WORD_MS, () => {
+          if (this.speaking) this.speaking.text += word;
+          this.emit("vision.delta", { text: word });
+        }),
+      ),
+    );
+    const total = words.length * WORD_MS + 1200;
+    for (let t = 0; t < total; t += LEVEL_MS) {
+      const syllable = Math.abs(Math.sin(t / 95)) * 0.6 + Math.abs(Math.sin(t / 37)) * 0.3;
+      const fade = Math.min(1, (total - t) / 400);
+      timers.push(this.at(t, () => this.emit("voice.level", { level: Math.min(1, syllable * fade + 0.05) })));
+    }
+    timers.push(this.at(total, () => this.finish()));
+  }
+
+  private finish(): void {
+    if (!this.speaking) return;
+    const { text, turn } = this.speaking;
+    this.speaking = null;
+    this.emit("vision.reply", { text: text.trim(), turn_id: turn });
+    this.setState("idle");
+  }
+
+  private interrupt(): void {
+    if (!this.speaking) return;
+    for (const t of this.speaking.timers) clearTimeout(t);
+    this.finish();
+  }
+
+  private addScriptedRoom(): void {
+    const slot = this.plan.free_slots[0];
+    const scout = this.plan.agents.find((a) => a.id === "scout") ?? this.plan.agents[0];
+    if (!slot || !scout) return;
+    this.addRoom({
+      id: "observatory",
+      name: "Observatory",
+      kind: "extra",
+      shape: "rect",
+      at: slot,
+      size: [1, 1],
+      agent: scout.id,
+      model: scout.model,
+      project: null,
+      floor: "wood-floor",
+      wall: "wallpaper",
+      state: "idle",
+    });
+    this.emit("notice", { level: "info", text: "A new room was added to the house." });
+  }
+
+  /** Add a room the way the house backend would: a door toward a neighbour, slots recomputed. */
+  private addRoom(room: Room): void {
+    const plan = this.plan;
+    const owners = cellOwners(plan);
+    const [x, y] = room.at;
+    const sides: [Door["side"], Cell][] = [
+      ["w", [x - 1, y]],
+      ["n", [x, y - 1]],
+      ["e", [x + 1, y]],
+      ["s", [x, y + 1]],
+    ];
+    const neighbour = sides
+      .map(([side, c]) => ({ side, owner: owners.get(cellKey(c[0], c[1])) }))
+      .find((n) => n.owner !== undefined && n.owner.shape === "rect");
+    plan.rooms.push(room);
+    if (neighbour?.owner) plan.doors.push({ a: room.id, b: neighbour.owner.id, cell: room.at, side: neighbour.side });
+    owners.set(cellKey(x, y), room);
+    plan.free_slots = plan.free_slots.filter(([fx, fy]) => fx !== x || fy !== y);
+    for (const [, c] of sides) {
+      const taken = owners.has(cellKey(c[0], c[1])) || plan.free_slots.some(([fx, fy]) => fx === c[0] && fy === c[1]);
+      if (!taken) plan.free_slots.push(c);
+    }
+    plan.revision += 1;
+    this.emit("house.changed", { revision: plan.revision });
+    this.at(120, () => this.store.dispatch({ kind: "plan", plan: structuredClone(plan) }));
+  }
+}
