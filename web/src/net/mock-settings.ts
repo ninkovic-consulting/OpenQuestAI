@@ -58,6 +58,8 @@ export interface MockHouse {
   tools(ids: readonly string[] | null, agent: string): ToolRef[];
   /** Starting over: no automations either. */
   forgetAutomations(): void;
+  /** Starting over: unpaired, the phone's settings back to defaults; its token only when asked. */
+  forgetPhone(removeToken: boolean): void;
 }
 
 const DOWNLOAD_MS = 15_000;
@@ -345,7 +347,7 @@ export class MockSettings implements SettingsApi {
   // ------------------------------------------------------------ reset and backups
 
   reset(level: ResetLevel, removeKey: boolean): Promise<Result<ResetAnswer>> {
-    const files = { settings: ["config.toml"], house: ["house.toml"], everything: ["config.toml", "house.toml", "house", "log.db", "budget.json", "automations.json"] }[level];
+    const files = { settings: ["config.toml"], house: ["house.toml"], everything: ["config.toml", "house.toml", "house", "log.db", "budget.json", "automations.json", "phone.json"] }[level];
     const backup = this.backup(level, files);
     if (level !== "house") {
       const completed = level === "settings" && this.config.completed;
@@ -356,11 +358,12 @@ export class MockSettings implements SettingsApi {
     if (level === "everything") {
       this.spent = 0;
       this.house.forgetAutomations();
+      this.house.forgetPhone(removeKey);
       if (removeKey) this.key = { stored: false, replaced: false };
     }
     const restart = level === "everything" || this.snapshot().restart_pending.length > 0;
     const words = { settings: "Settings are back to their defaults.", house: "The house is back to the default rooms and agents.", everything: "Everything is fresh." }[level];
-    const message = `${words}${removeKey && level === "everything" ? " The API key was removed from the Keychain." : ""}${restart ? " Restart the assistant to finish." : ""}`;
+    const message = `${words}${removeKey && level === "everything" ? " The API key and the phone's bot token were removed from the Keychain." : ""}${restart ? " Restart the assistant to finish." : ""}`;
     return wait(400).then(() => ok({ backup, restart, message }));
   }
 

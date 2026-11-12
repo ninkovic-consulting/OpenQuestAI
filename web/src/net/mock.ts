@@ -6,9 +6,11 @@ import { cellKey, cellOwners } from "../scene/grid";
 import type { Automation, RunStatus } from "./automation-types";
 import type { Daemon } from "./daemon";
 import { MockAutomations } from "./mock-automations";
+import { MockPhone } from "./mock-phone";
 import { MockSettings } from "./mock-settings";
 import { hostAgentId, hostRefusal, hostRoom } from "./plan";
 import { HOST_TOOLS, samplePlan } from "./sample-plan";
+import type { Result } from "./settings-api";
 import type { Store } from "./store";
 import type {
   AssistantState,
@@ -52,10 +54,12 @@ export class MockDaemon implements Daemon {
   private plan: Plan = samplePlan();
   private speaking: { timers: number[]; text: string; turn: string; done: (() => void) | null } | null = null;
   private turn = 0;
+  private pending: number | null = null;
   readonly automations = new MockAutomations({
     changed: (id) => this.emit("automation.changed", { id, change: "updated", automation: null }),
     perform: (a) => this.runAutomation(a),
   });
+  readonly phone = new MockPhone();
   readonly settings = new MockSettings({
     plan: () => this.plan,
     changed: () => this.publish(),
@@ -67,6 +71,7 @@ export class MockDaemon implements Daemon {
     },
     tools: (ids, agent) => (ids ? ids.flatMap((id) => MOCK_CATALOG.filter((t) => t.id === id).map((t) => ({ ...t }))) : agentTools(agent)),
     forgetAutomations: () => this.automations.clear(),
+    forgetPhone: (removeToken) => this.phone.reset(removeToken),
   });
 
   constructor(private readonly store: Store) {}
@@ -136,6 +141,32 @@ export class MockDaemon implements Daemon {
     }
   }
 
+  /** A few earlier turns, in the shape `/api/history` answers with. */
+  history(): Promise<Result<unknown>> {
+    const hour = 3600;
+    const now = Date.now() / 1000;
+    const turn = (ago: number, source: string, user_text: string, reply: string, status = "ok"): Record<string, unknown> => ({
+      turn_id: `earlier-${ago}`,
+      started_at: now - ago,
+      ended_at: now - ago + 4,
+      source,
+      user_text,
+      reply,
+      status,
+    });
+    return Promise.resolve({
+      ok: true,
+      value: {
+        turns: [
+          turn(5 * hour, "text", "Remember that the renderer rewrite is due in March.", "Noted. I will keep that with the engine notes."),
+          turn(3 * hour, "automation", "", "It is time: there are two notes for today, both about the engine."),
+          turn(2 * hour, "phone", "Is the Mac still awake?", "Yes. Nothing is running and the house is quiet."),
+          turn(1 * hour, "voice", "Open the project notes.", "Opening them", "interrupted"),
+        ],
+      },
+    });
+  }
+
   proposeTools(project: string): Promise<ProposeResult> {
     if (project.includes("nowhere")) return Promise.resolve({ ok: false, message: `${project} is not a folder.` });
     return Promise.resolve({ ok: true, tools: MOCK_PROPOSAL.map((t) => ({ ...t })) });
@@ -191,7 +222,10 @@ export class MockDaemon implements Daemon {
     this.setState("thinking");
     // Asking for detail gets a reply several lines long, to exercise the caption.
     const long = /\b(more|detail|explain|why)\b/i.test(text);
-    this.at(900, () => this.say(long ? LONG_REPLY : "Everything is quiet. The workshop lights are on and the tests are green."));
+    this.pending = this.at(900, () => {
+      this.pending = null;
+      this.say(long ? LONG_REPLY : "Everything is quiet. The workshop lights are on and the tests are green.");
+    });
   }
 
   /** An automation's run: no words from the user, the automation's name in the caption. */
@@ -243,6 +277,12 @@ export class MockDaemon implements Daemon {
   }
 
   private interrupt(): void {
+    if (this.pending !== null) {
+      // A reply that was still being thought about is dropped, as the daemon drops it.
+      clearTimeout(this.pending);
+      this.pending = null;
+      if (!this.speaking) this.setState("idle");
+    }
     if (!this.speaking) return;
     for (const t of this.speaking.timers) clearTimeout(t);
     this.finish();

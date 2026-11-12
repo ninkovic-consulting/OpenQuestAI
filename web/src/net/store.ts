@@ -18,7 +18,7 @@ export type Connection = "connecting" | "open" | "offline";
 export interface Caption {
   /** What the user said or typed; for an automation's run, the automation's name. */
   user: string;
-  source: "voice" | "text" | "automation" | null;
+  source: "voice" | "text" | "automation" | "phone" | null;
   reply: string;
   /** True while deltas are still streaming in. */
   streaming: boolean;

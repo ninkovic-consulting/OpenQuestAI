@@ -3,6 +3,7 @@
 
 import type { AutomationsApi } from "../../net/automations-api";
 import type { NativeHelpers } from "../../net/native";
+import type { PhoneApi } from "../../net/phone-api";
 import type { SettingsApi } from "../../net/settings-api";
 import type { Settings } from "../../net/settings-types";
 import type { Store } from "../../net/store";
@@ -10,11 +11,12 @@ import type { ProposeResult } from "../../net/types";
 import type { ModelSource } from "../pickers/model-picker";
 import type { Draft } from "./draft";
 
-export type GroupId = "assistant" | "models" | "agents" | "rooms" | "voice" | "asking" | "automations" | "key" | "mac" | "reset";
+export type GroupId = "assistant" | "models" | "agents" | "rooms" | "voice" | "asking" | "automations" | "phone" | "key" | "mac" | "reset";
 
 export interface SettingsContext {
   api: SettingsApi;
   automations: AutomationsApi;
+  phone: PhoneApi;
   store: Store;
   native: NativeHelpers;
   models: ModelSource;

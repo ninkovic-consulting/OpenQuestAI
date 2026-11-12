@@ -4,6 +4,7 @@
 
 import type { AutomationsApi } from "../../net/automations-api";
 import { nativeHelpers, type NativeHelpers } from "../../net/native";
+import type { PhoneApi } from "../../net/phone-api";
 import type { SettingsApi } from "../../net/settings-api";
 import type { Settings } from "../../net/settings-types";
 import type { Store } from "../../net/store";
@@ -20,17 +21,19 @@ import { automationsGroup } from "./groups/automations";
 import { keyGroup } from "./groups/key";
 import { macGroup } from "./groups/mac";
 import { modelsGroup } from "./groups/models";
+import { phoneGroup } from "./groups/phone";
 import { resetGroup } from "./groups/reset";
 import { roomsGroup } from "./groups/rooms";
 import { voiceGroup } from "./groups/voice";
 
-const GROUPS: readonly Group[] = [assistantGroup, modelsGroup, agentsGroup, roomsGroup, voiceGroup, askingGroup, automationsGroup, keyGroup, macGroup, resetGroup];
+const GROUPS: readonly Group[] = [assistantGroup, modelsGroup, agentsGroup, roomsGroup, voiceGroup, askingGroup, automationsGroup, phoneGroup, keyGroup, macGroup, resetGroup];
 const RESTART_POLL_MS = 1500;
 const RESTART_WAIT_MS = 30_000;
 
 export interface SettingsDeps {
   api: SettingsApi;
   automations: AutomationsApi;
+  phone: PhoneApi;
   store: Store;
   models: ModelSource;
   propose(folder: string): Promise<ProposeResult>;
@@ -214,6 +217,7 @@ export function mountSettings(parent: HTMLElement, deps: SettingsDeps): Settings
     return {
       api: deps.api,
       automations: deps.automations,
+      phone: deps.phone,
       store: deps.store,
       native,
       models: deps.models,

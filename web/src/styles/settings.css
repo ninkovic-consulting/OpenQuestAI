@@ -1424,3 +1424,29 @@
 .empty-list {
   margin-top: 18px;
 }
+
+/* Phone: the one-time pairing code, large enough to read from across the desk. */
+.pairing-code {
+  margin: 14px 0 4px;
+  color: var(--mustard);
+  font-family: var(--caps);
+  font-size: 34px;
+  letter-spacing: 0.24em;
+  font-variant-numeric: tabular-nums;
+}
+
+.pairing .btn,
+.pairing .confirm {
+  margin-top: 12px;
+}
+
+.phone .choices .check-choice:first-child {
+  margin-top: 0;
+}
+
+.phone-tools .tool-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}

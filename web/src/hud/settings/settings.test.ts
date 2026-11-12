@@ -11,7 +11,7 @@ import { agentsFor, isHostRoom, roomEditFrom, roomPatch } from "./room-edit";
 import { back, forward, skip, startFlow, stepCount, stepOf, summary } from "./wizard/flow";
 
 function mockHouse(plan: Plan = samplePlan()) {
-  return { plan: () => plan, changed: () => {}, reset: () => {}, tools: () => [], forgetAutomations: () => {} };
+  return { plan: () => plan, changed: () => {}, reset: () => {}, tools: () => [], forgetAutomations: () => {}, forgetPhone: () => {} };
 }
 
 async function settings(): Promise<Settings> {

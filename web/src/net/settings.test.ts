@@ -7,7 +7,7 @@ import { foldersQuery } from "./settings-http";
 import type { Plan } from "./types";
 
 function mock(plan: Plan = samplePlan()): MockSettings {
-  return new MockSettings({ plan: () => plan, changed: () => {}, reset: () => {}, tools: () => [], forgetAutomations: () => {} });
+  return new MockSettings({ plan: () => plan, changed: () => {}, reset: () => {}, tools: () => [], forgetAutomations: () => {}, forgetPhone: () => {} });
 }
 
 afterEach(() => {

@@ -82,7 +82,7 @@ async function main(): Promise<void> {
   stage.onSlot = (cell) => form.open(cell);
 
   const wizard = mountWizard(stageRoot, { api: daemon.settings, store, models, propose });
-  const view = mountSettings(stageRoot, { api: daemon.settings, automations: daemon.automations, store, models, propose, openWizard: () => wizard.open(),
+  const view = mountSettings(stageRoot, { api: daemon.settings, automations: daemon.automations, phone: daemon.phone, store, models, propose, openWizard: () => wizard.open(),
     onShown: (open) => panel.settingsToggle.classList.toggle("is-on", open),
   });
   settings = view;
@@ -112,7 +112,7 @@ async function main(): Promise<void> {
       return true;
     },
     () => stage.home(),
-  ]);
+  ], () => daemon.history());
   daemon.start();
   void daemon.settings.settings().then((r) => {
     if (r.ok && r.value.setup.first_run) wizard.open();

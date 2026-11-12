@@ -66,7 +66,7 @@ export interface OutboundData {
   "state.changed": { state: AssistantState; brain: BrainName | null };
   budget: { month: string; spent_usd: number; cap_usd: number };
   "house.changed": { revision: number };
-  "user.utterance": { text: string; source: "voice" | "text" };
+  "user.utterance": { text: string; source: "voice" | "text" | "phone" };
   "vision.delta": { text: string };
   "vision.reply": { text: string; turn_id: string };
   "voice.level": { level: number };
