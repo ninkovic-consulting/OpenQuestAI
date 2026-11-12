@@ -43,6 +43,8 @@ export class Stage {
   onFrame: (anchors: RoomAnchor[]) => void = () => {};
   /** Called when a glowing free slot is clicked in build mode. */
   onSlot: (cell: Cell) => void = () => {};
+  /** Called with the room the camera flies into, and with null when it returns home. */
+  onRoom: (roomId: string | null) => void = () => {};
 
   constructor(
     private readonly container: HTMLElement,
@@ -88,6 +90,7 @@ export class Stage {
     if (this.rig.room === null) return false;
     this.rig.home();
     this.post.setMiniature(true);
+    this.onRoom(null);
     return true;
   }
 
@@ -146,6 +149,7 @@ export class Stage {
       if (view) {
         this.rig.flyTo(view.room.id, view.center, view.extent);
         this.post.setMiniature(false);
+        this.onRoom(view.room.id);
       }
     });
     dom.addEventListener("pointerdown", (ev) => this.down.set(ev.clientX, ev.clientY));

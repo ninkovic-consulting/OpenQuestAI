@@ -5,7 +5,8 @@
                                            (developer) hear a WAV file, speak into one
     vision status                          ask the running daemon how it is
     vision auth                            store the Anthropic API key in the Keychain
-    vision setup                           download the local model (for the `mlx` backend)
+    vision doctor [--json] [--online]      check what is set up; changes nothing
+    vision setup                           set up step by step, asking before each change
     vision ui [--browser]                  open the window (or a browser tab)
     vision install [--dry-run]             install the LaunchAgent
     vision uninstall                       remove the LaunchAgent
@@ -93,23 +94,18 @@ def cmd_auth(config: Config, args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_setup(config: Config, args: argparse.Namespace) -> int:
-    if config.brain.local_backend != "mlx":
-        print(f"Nothing to set up: the local model is served by {config.brain.local_base_url}.")
-        return 0
-    try:
-        from vision.brains.mlx_local import setup_model
+def cmd_doctor(config: Config, args: argparse.Namespace) -> int:
+    from vision.setup import MacSystem, doctor, run_checks
 
-        path, fetched = setup_model(config)
-    except ImportError:
-        print("The local model needs Apple Silicon and `uv sync --extra local`.")
-        return 1
-    except Exception as exc:
-        print(f"Could not download {config.brain.local_model} ({type(exc).__name__}: {exc}).")
-        return 1
-    done = "already downloaded" if fetched is None else f"downloaded {fetched / 1e9:.1f} GB"
-    print(f"{config.brain.local_model}: {done}, in {path}")
-    return 0
+    found = run_checks(config, MacSystem(), online=args.online)
+    print(doctor.as_json(found) if args.json else doctor.as_text(found, config.assistant.name))
+    return doctor.exit_code(found)
+
+
+def cmd_setup(config: Config, args: argparse.Namespace) -> int:
+    from vision.setup import MacSystem, run_setup
+
+    return run_setup(config, MacSystem())
 
 
 class _Bridge:
@@ -186,7 +182,14 @@ def build_parser() -> argparse.ArgumentParser:
     auth = sub.add_parser("auth", help="store the Anthropic API key in the Keychain")
     auth.set_defaults(func=cmd_auth)
 
-    setup = sub.add_parser("setup", help="download the local model")
+    doctor = sub.add_parser("doctor", help="check what is set up; changes nothing")
+    doctor.add_argument("--json", action="store_true", help="print the checks as JSON")
+    doctor.add_argument(
+        "--online", action="store_true", help="also verify the API key (one unbilled API call)"
+    )
+    doctor.set_defaults(func=cmd_doctor)
+
+    setup = sub.add_parser("setup", help="set up step by step, asking before each change")
     setup.set_defaults(func=cmd_setup)
 
     ui = sub.add_parser("ui", help="open the window")

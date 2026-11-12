@@ -14,7 +14,7 @@ from vision.app import Components, Daemon
 from vision.core.bus import Bus
 from vision.core.config import Config
 from vision.core.events import Hello, InputText
-from vision.core.server import allowed_origins
+from vision.core.server import WEB_DIST, allowed_origins
 from vision.core.token import ensure_token
 from vision.testing.fakes import FakeHouse
 
@@ -76,7 +76,9 @@ async def test_state_and_index(daemon: Daemon) -> None:
         assert len(plan["rooms"]) == 10 and len(plan["agents"]) == 6
         index = await client.get("/", headers={})
         assert index.status_code == 200
-        assert "Vision is running" in index.text
+        # The built window when web/dist exists, the placeholder page otherwise.
+        expected = '<html lang="en">' if WEB_DIST.is_dir() else "Vision is running"
+        assert expected in index.text
 
 
 async def test_ws_bad_token_closes(daemon: Daemon) -> None:

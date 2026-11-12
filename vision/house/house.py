@@ -26,13 +26,14 @@ from vision.house.model import (
 )
 from vision.house.parse import build_layout
 from vision.house.routes import build_router
+from vision.house.tools import tool_refs
 
 log = logging.getLogger(__name__)
 
 POLL_S = 1.0
-ADD_KEYS = {"id", "name", "at", "size", "agent", "model", "project", "floor", "wall"}
-EDIT_KEYS = {"name", "agent", "model", "project", "floor", "wall", "at", "size"}
-CLEARABLE = {"model", "project"}
+ADD_KEYS = {"id", "name", "at", "size", "agent", "model", "project", "floor", "wall", "tools"}
+EDIT_KEYS = {"name", "agent", "model", "project", "floor", "wall", "at", "size", "tools"}
+CLEARABLE = {"model", "project", "tools"}
 
 Mutation = Callable[[dict[str, Any], Layout], str | None]
 """Edits the user's document in place; returns the id of the room to report, if any."""
@@ -102,6 +103,7 @@ class GridHouse:
                     "project": r.project,
                     "floor": r.floor,
                     "wall": r.wall,
+                    "tools": tool_refs(agents[r.agent].tools if r.tools is None else r.tools),
                     "state": self._states.get(r.id, "idle" if r.id == HALL else "dark"),
                 }
                 for r in layout.rooms

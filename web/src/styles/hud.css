@@ -374,17 +374,33 @@ select {
   line-height: 1.5;
 }
 
+/* The band grows upward with the reply, up to about a third of the scene;
+   long replies step the type down, and only what still does not fit scrolls. */
 .caption .reply {
   font-family: var(--serif);
   font-weight: 400;
   font-size: 30px;
   line-height: 1.22;
   color: var(--text);
-  max-height: calc(1.22em * 3);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
+  max-height: 34vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-strong) transparent;
+}
+
+.caption .reply[data-size="long"] {
+  font-size: 24px;
+  line-height: 1.28;
+}
+
+.caption .reply[data-size="longer"] {
+  font-size: 20px;
+  line-height: 1.34;
+}
+
+.caption .reply.is-scrolling {
+  pointer-events: auto;
 }
 
 .composer {
@@ -594,4 +610,197 @@ select {
 .build-form .actions button:disabled {
   opacity: 0.5;
   cursor: wait;
+}
+
+/* ---------------------------------------------------------------- tools in the build form */
+
+.build-form .tools {
+  border: 0;
+  margin: 16px 0 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.build-form .tools[hidden] {
+  display: none;
+}
+
+.build-form .tools legend {
+  padding: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.build-form .tool-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.build-form .tool-list:empty {
+  display: none;
+}
+
+.tool-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 5px;
+  background: none;
+  border: 1px solid var(--hairline-strong);
+  color: var(--muted-light);
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+
+.tool-toggle .dot {
+  width: 6px;
+  height: 6px;
+  color: var(--muted);
+}
+
+.tool-toggle[aria-pressed="true"] {
+  border-color: var(--mustard);
+  color: var(--text);
+}
+
+.tool-toggle[aria-pressed="true"] .dot {
+  color: var(--mustard);
+}
+
+.tool-toggle.is-unavailable {
+  color: var(--muted);
+}
+
+.tool-toggle.is-unavailable .dot {
+  color: var(--alert);
+}
+
+.tool-toggle .tag,
+.room-card .tag {
+  font-family: var(--caps);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 9px;
+  color: var(--muted);
+}
+
+.build-form .tool-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- room card */
+
+.room-card {
+  position: absolute;
+  top: 64px;
+  left: 28px;
+  width: 300px;
+  padding: 20px 22px 18px;
+  background: var(--ground);
+  border: 1px solid var(--hairline-strong);
+  z-index: 3;
+  animation: rise 0.3s ease-out;
+}
+
+.room-card[hidden] {
+  display: none;
+}
+
+.room-card .kicker {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.room-card h2 {
+  margin: 4px 0 14px;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 24px;
+}
+
+.room-card dl {
+  margin: 0 0 18px;
+}
+
+.room-card .row {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  align-items: baseline;
+  padding: 7px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.room-card dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.room-card dd {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted-light);
+  overflow-wrap: anywhere;
+}
+
+.room-card dd.is-muted {
+  color: var(--muted);
+}
+
+.card-tools {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.card-tools li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 0;
+  font-size: 14px;
+  color: var(--muted-light);
+}
+
+.card-tools .dot {
+  width: 6px;
+  height: 6px;
+}
+
+.card-tools .tag {
+  margin-left: auto;
+}
+
+.card-tools .is-runs .dot {
+  color: var(--mustard);
+}
+
+.card-tools .is-waits .dot {
+  color: var(--muted-light);
+}
+
+.card-tools .is-missing {
+  color: var(--muted);
+}
+
+.card-tools .is-missing .dot {
+  color: var(--alert);
+}
+
+.card-tools .is-empty {
+  color: var(--muted);
+}
+
+.room-card .note {
+  margin: 14px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
 }

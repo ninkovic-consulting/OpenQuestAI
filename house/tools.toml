@@ -1,0 +1,105 @@
+# The tool catalog. A room lists tools by id (`tools = ["git", "npm"]`), and a
+# room with no list uses its agent's.
+#
+# Built-in tools are the assistant's own and run today. Project tools are
+# stored and shown for each room, and start working when the other agents
+# wake up in the next slice.
+#
+# For a project tool:
+#   program  the command it needs on this Mac
+#   markers  names that mark a project as needing it, matched against the
+#            files and folders in the project's top two levels; a pattern with
+#            a slash is matched against the path inside the project
+#   remote_hosts  hosts that mark it too, read from the remote URLs in the
+#            project's .git/config
+
+[tools.remember]
+title = "Remember"
+description = "Writes a note to the assistant's memory."
+built_in = true
+
+[tools.recall]
+title = "Recall"
+description = "Searches the assistant's notes and past conversations."
+built_in = true
+
+[tools.open_app]
+title = "Open app"
+description = "Opens a Mac app."
+built_in = true
+
+[tools.open_url]
+title = "Open link"
+description = "Opens a link in the default browser."
+built_in = true
+
+[tools.shell]
+title = "Shell"
+description = "Runs a shell command, always after asking you."
+built_in = true
+
+[tools.git]
+title = "Git"
+description = "Reads history, branches and changes in the project's repository."
+program = "git"
+markers = [".git"]
+
+[tools.gh]
+title = "GitHub"
+description = "Works with issues, pull requests and checks on GitHub."
+program = "gh"
+remote_hosts = ["github.com"]
+
+[tools.npm]
+title = "npm"
+description = "Installs packages and runs scripts for a Node.js project."
+program = "npm"
+markers = ["package.json"]
+
+[tools.maven]
+title = "Maven"
+description = "Builds and tests a Java project with Maven."
+program = "mvn"
+markers = ["pom.xml"]
+
+[tools.gradle]
+title = "Gradle"
+description = "Builds and tests a project with Gradle."
+program = "gradle"
+markers = ["build.gradle", "build.gradle.kts"]
+
+[tools.python]
+title = "Python"
+description = "Runs and tests a Python project."
+program = "python3"
+markers = ["pyproject.toml", "requirements.txt"]
+
+[tools.docker]
+title = "Docker"
+description = "Builds images and runs containers for the project."
+program = "docker"
+markers = [
+    "Dockerfile",
+    "compose.yaml",
+    "compose.yml",
+    "docker-compose.yaml",
+    "docker-compose.yml",
+]
+
+[tools.xcode]
+title = "Xcode"
+description = "Builds and tests an Apple platform project."
+program = "xcodebuild"
+markers = ["*.xcodeproj", "*.xcworkspace"]
+
+[tools.unity]
+title = "Unity"
+description = "Opens and builds a Unity project through Unity Hub."
+program = "Unity Hub"
+markers = ["ProjectSettings/ProjectVersion.txt"]
+
+[tools.godot]
+title = "Godot"
+description = "Opens, runs and exports a Godot project."
+program = "godot"
+markers = ["project.godot"]

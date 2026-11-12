@@ -25,6 +25,8 @@ DEFAULT_STT_MODEL = "mlx-community/whisper-large-v3-turbo-asr-fp16"
 DEFAULT_TTS_MODEL = "mlx-community/Kokoro-82M-bf16"
 DEFAULT_TTS_VOICE = "af_heart"
 DEFAULT_VAD_MODEL = "mlx-community/silero-vad"
+SPACY_REPO = "spacy/en_core_web_sm"
+"""spaCy's English tagger, which Kokoro's G2P needs; fetched without its wheel."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,3 +67,7 @@ class VoiceSettings:
             vad_model=str(extra.get("vad_model", DEFAULT_VAD_MODEL)),
             say_voice=str(extra.get("say_voice", "")),
         )
+
+    def model_repos(self) -> tuple[str, ...]:
+        """Every Hugging Face repo the voice downloads on first start."""
+        return (self.stt_model, self.tts_model, self.vad_model, SPACY_REPO)

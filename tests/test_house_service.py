@@ -35,6 +35,7 @@ ROOM_KEYS = {
     "project",
     "floor",
     "wall",
+    "tools",
     "state",
 }
 
@@ -90,6 +91,16 @@ def test_plan_shape_and_first_use(config: Config) -> None:
         "project": None,
         "floor": "red-carpet",
         "wall": "teal-panel",
+        "tools": [
+            {"id": tool_id, "title": title, "available": True, "built_in": True}
+            for tool_id, title in [
+                ("remember", "Remember"),
+                ("recall", "Recall"),
+                ("open_app", "Open app"),
+                ("open_url", "Open link"),
+                ("shell", "Shell"),
+            ]
+        ],
         "state": "idle",
     }
     assert {r["state"] for r in plan["rooms"][1:]} == {"dark"}

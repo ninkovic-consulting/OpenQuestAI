@@ -33,7 +33,7 @@ from vision.core.bus import Bus
 from vision.core.events import VoiceLevel
 from vision.voice.audio_io import LEVEL_RATE, AudioSink, levels
 from vision.voice.errors import VoiceUnavailable
-from vision.voice.settings import VoiceSettings
+from vision.voice.settings import SPACY_REPO, VoiceSettings
 from vision.voice.wake import words
 
 log = logging.getLogger(__name__)
@@ -41,7 +41,6 @@ log = logging.getLogger(__name__)
 T = TypeVar("T")
 Run = Callable[[Callable[[], T]], Awaitable[T]]
 
-SPACY_REPO = "spacy/en_core_web_sm"
 ESPEAK_MAX_PATH = 150
 """espeak-ng keeps its data path in a 160-byte buffer and exits the process if it overflows."""
 

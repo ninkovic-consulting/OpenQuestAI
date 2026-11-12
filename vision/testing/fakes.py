@@ -310,6 +310,9 @@ class FakeHouse:
                     "project": None,
                     "floor": "red-carpet",
                     "wall": "teal-panel",
+                    "tools": [
+                        {"id": "shell", "title": "Shell", "available": True, "built_in": True}
+                    ],
                     "state": self.states["hall"],
                 }
             ],

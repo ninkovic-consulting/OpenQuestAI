@@ -14,6 +14,7 @@ import { mountGate } from "./hud/gate";
 import { mountInput } from "./hud/input";
 import { mountLabels } from "./hud/labels";
 import { mountPanel } from "./hud/panel";
+import { mountRoomCard } from "./hud/room-card";
 import { mountToasts } from "./hud/toasts";
 import type { Daemon } from "./net/daemon";
 import { MockDaemon } from "./net/mock";
@@ -49,6 +50,8 @@ async function main(): Promise<void> {
   const stage = new Stage(stageRoot, store, notify);
   stage.onFrame = mountLabels(stageRoot, store);
   mountCaption(stageRoot, store);
+  const roomCard = mountRoomCard(stageRoot, store);
+  stage.onRoom = (id) => roomCard.show(id);
   stage.start();
 
   const daemon = await connect(store);

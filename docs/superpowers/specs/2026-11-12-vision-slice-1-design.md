@@ -51,7 +51,7 @@ Each later slice gets its own spec. Nothing in this spec builds for them beyond 
 3. You say "Hey Vision" and ask a question. Vision answers aloud, the caption shows both sides, and the Hall reacts while it speaks. Target: speech begins within about three seconds of you finishing. This is a target to measure, not a promise.
 4. You can type instead of talking and get the same answer path.
 5. You can interrupt Vision mid-sentence by holding Space or saying "Vision, stop".
-6. Vision remembers a fact across a daemon restart ("my DCF release is on Friday").
+6. Vision remembers a fact across a daemon restart ("my dentist appointment is on Friday").
 7. Asking Vision to run a shell command produces a card that needs your yes. Yes runs it, no does not, and both are in the audit log.
 8. With the network off, Vision still answers through the local model and says it is running locally.
 9. The house shows this month's API spend against the cap. When the cap is reached, talk moves to the local model by itself.
@@ -59,7 +59,7 @@ Each later slice gets its own spec. Nothing in this spec builds for them beyond 
 
 ### Out of scope
 
-Other residents, delegation, Codex and Gemini, the Workshop, any Mac control beyond `open_app`, `open_url` and `shell` (section 4.5), messaging, routines, and furniture for rooms other than the Hall.
+Other residents, delegation, Codex and Gemini, the Workshop, any Mac control beyond `open_app`, `open_url` and `shell` (section 4.5), messaging, routines, and furniture for rooms other than the Hall. Project tools for rooms (section 4.8) are stored, validated, proposed and shown, but do not run in this slice.
 
 ## 3. Architecture
 
@@ -91,8 +91,9 @@ Each unit has one job and a small interface. Paths are relative to the repo root
 | `config.py` | Loads `~/.vision/config.toml` over built-in defaults. |
 | `server.py` | FastAPI app: static web files, `/api/*`, `/ws`. |
 | `session.py` | One conversation turn end to end: input, brain, sentences, voice, log. |
-| `cli.py` | `vision run`, `vision ui`, `vision auth`, `vision setup`, `vision doctor`, `vision install`, `vision uninstall`, `vision status`. |
+| `cli.py` | `vision run`, `vision ui`, `vision auth`, `vision setup`, `vision doctor [--json] [--online]`, `vision install`, `vision uninstall`, `vision status`. `setup` and `doctor` are section 4.9. |
 | `launchd.py` | Writes and loads the LaunchAgent plist with `KeepAlive` and `RunAtLoad`. |
+| `programs.py` | Finds a program in `PATH` and then in the usual Homebrew, nvm, user and app-bundle folders, because the daemon runs under launchd with a short `PATH`. |
 
 Runtime data lives in `~/.vision/`: `config.toml`, `token`, `log.db`, `logs/`, and `house/` (the memory vault). Nothing personal is written into the repo.
 
@@ -247,17 +248,52 @@ model = "claude-sonnet-5-5"              # optional, overrides the agent's model
   "agents": [{"id": "host", "name": "Vision", "model": "claude-haiku-5-5", "heavy_model": "claude-opus-5-5"}],
   "rooms": [{"id": "hall", "name": "Hall", "kind": "default", "shape": "rect", "at": [1, 1], "size": [2, 2],
              "agent": "host", "model": "claude-haiku-5-5", "project": null,
-             "floor": "red-carpet", "wall": "teal-panel", "state": "idle"}],
+             "floor": "red-carpet", "wall": "teal-panel",
+             "tools": [{"id": "shell", "title": "Shell", "available": true, "built_in": true}],
+             "state": "idle"}],
   "doors": [{"a": "hall", "b": "library", "cell": [1, 1], "side": "n"}],
   "free_slots": [[4, 1], [4, 2]]
 }
 ```
 
-`kind` is `default` or `extra`. `shape` is `rect` or `round` (the Attic). `model` on a room is already resolved, so the window never repeats the override logic. `floor` and `wall` name files in `assets/textures/`.
+`kind` is `default` or `extra`. `shape` is `rect` or `round` (the Attic). `model` and `tools` on a room are already resolved, so the window never repeats the override logic. `floor` and `wall` name files in `assets/textures/`.
 
-**Routes**, all behind the token: `GET /api/house`, `POST /api/house/rooms`, `PATCH /api/house/rooms/{id}`, `DELETE /api/house/rooms/{id}`. A change writes `~/.vision/house.toml`, raises the revision and publishes `house.changed`. Editing the file by hand does the same within a couple of seconds.
+**Routes**, all behind the token: `GET /api/house`, `POST /api/house/rooms`, `PATCH /api/house/rooms/{id}`, `DELETE /api/house/rooms/{id}`, `GET /api/house/tools` and `GET /api/house/tools/propose?project=...`. A change writes `~/.vision/house.toml`, raises the revision and publishes `house.changed`. Editing the file by hand does the same within a couple of seconds.
+
+**Room tools.** Each room has a set of tools suited to its project. In this slice the house stores, validates, proposes and shows them; only the assistant's five built-in tools (section 4.5) run, and project tools start working when the other agents wake up in slice 2. The window and `vision setup` say so wherever a person would otherwise assume they work.
+
+- *Catalog.* `house/tools.toml` in the repo, as data. Each tool has an id, a title, a one-line description, and either `built_in = true` or the `program` it needs on this Mac, plus how a project is recognised as needing it: `markers` (names matched against the project's top two levels; a pattern with a slash matches the path inside the project) and `remote_hosts` (hosts of the remote URLs in `.git/config`). It starts with the five built-in tools and `git` (`.git`), `gh` (a GitHub remote), `npm` (`package.json`), `maven` (`pom.xml`), `gradle` (`build.gradle`, `build.gradle.kts`), `python` (`pyproject.toml`, `requirements.txt`), `docker` (`Dockerfile` or a compose file), `xcode` (`*.xcodeproj`, `*.xcworkspace`), `unity` (`ProjectSettings/ProjectVersion.txt`) and `godot` (`project.godot`).
+- *House file.* A room may list `tools = ["git", "npm"]`, and an agent may list default `tools`. A room with no list uses its agent's; an empty list means none. Unknown ids are refused with a message that lists the known ones. The default house gives the host the five built-in tools and the other agents none.
+- *Proposal.* `vision.house.propose_tools(project_path)` returns catalog ids for a folder. It looks only at file and folder names in the top two levels and at the remote hosts in `.git/config`, reads no other file, and never follows a symlink.
+- *Plan.* Each room carries `tools` as a list of `{id, title, available, built_in}`. `available` says whether the tool's program is on this Mac (found the same way as in `vision/core/programs.py`); built-in tools always are.
+- *Routes.* `POST` and `PATCH` on rooms accept `tools` (`null` on `PATCH` returns a room to its agent's). `GET /api/house/tools` returns the catalog with each tool's availability. `GET /api/house/tools/propose?project=...` expands `~` and returns `{project, tools}` with the proposed tools in the plan's shape; a path that is not a folder is a 400.
+- *Window.* In the add-room form, once a project folder is entered, the proposed tools appear as small toggles. Tools whose program is on this Mac start on; missing ones are marked "not installed" and start off. When the camera flies into a room, a small card shows its agent, model, project folder and tools, each marked as running today, waiting for the next slice, or not installed.
 
 **In this slice** only the Host agent is awake. The other agents and their models are stored and shown in the house, and slice 2 puts them to work. Other packages read an agent's models through `vision.house.agent_models(config, agent_id)`.
+
+### 4.9 Setup and doctor: `vision/setup/`
+
+Each requirement is a check with an id, a short title, what it is needed for, whether it is needed or optional, a status (`ok`, `missing` for something needed, `optional` for something optional that is absent or unchecked), a one-line detail and how to fix it. In order:
+
+| Check | Needed | What it looks at |
+|---|---|---|
+| Anthropic API key | yes | Stored in the Keychain, the `.env` file or the environment, through `vision.core.secrets`. Verified only with `doctor --online` or in `setup` after a yes, by listing one model, which is not billed. |
+| uv and Python | yes | `uv --version` and Python 3.12 or newer. |
+| Optional parts | no | Which of `local`, `voice` and `ui` are installed. |
+| Local fallback model | no | Downloaded in the Hugging Face cache, with its size. |
+| Speech models | no | Whisper, Kokoro, Silero VAD and spaCy's tagger downloaded, about 2 GB. |
+| Microphone | no | Never probed by the doctor, since that can raise a macOS permission prompt; reported as not checked, with the check command. |
+| GitHub CLI | no | `gh` installed, and `gh auth status` exits 0. Only the exit code is read; no token is read or printed. |
+| The window | no | `web/dist` built, and if not, whether Node is there to build it. |
+| Start at login | no | The LaunchAgent installed and loaded (`launchctl print`). |
+| The house | yes | The house files are valid: the assistant's name, how many rooms have a project, the monthly cap. |
+| Tailscale | no | Installed, for reaching the house from a phone in slice 5. |
+
+Programs are found through `vision/core/programs.py`, so the checks work under launchd's short `PATH`. Everything outside the process goes through one `System` interface, which the tests fake.
+
+**`vision doctor`** prints the checklist in two groups, needed and optional, with the purpose and fix for anything not in place. `--json` prints `{ok, checks}` instead. It exits 0 when everything needed is in place and 1 otherwise, and changes nothing.
+
+**`vision setup`** walks the same list in a plain terminal with `input` and `getpass`, and fixes what it can after a yes at each step: store the API key in the Keychain and offer to verify it; download the local model and the speech models, stating the size first; run the three-second microphone check; build the window when Node is present; start at login; set the assistant's name and the monthly cap in `config.toml`; attach project folders to rooms, proposing tools for each. Every step can be skipped, a step already done says so, running it twice changes nothing, and it ends by printing the doctor's checklist.
 
 ## 5. Protocol
 
@@ -290,7 +326,7 @@ One JSON envelope in both directions: `{"type": "...", "ts": 1731400000.0, "data
 | `input.interrupt` | none |
 | `gate.decision` | `id`, `decision`: allow or deny |
 
-**HTTP.** `GET /api/health`, `GET /api/state`, `GET /api/history?limit=50`, and the house routes in section 4.8. All need the token in an `Authorization` header.
+**HTTP.** `GET /api/health`, `GET /api/state`, `GET /api/history?limit=50`, and the house routes in section 4.8, including `GET /api/house/tools` and `GET /api/house/tools/propose?project=...`. All need the token in an `Authorization` header.
 
 ## 6. One turn, end to end
 
@@ -323,7 +359,9 @@ One JSON envelope in both directions: `{"type": "...", "ts": 1731400000.0, "data
 - **Protocol.** A test client connects to a daemon running the fake brain, sends `input.text`, and checks the event sequence and the log row. It also checks that a wrong token and a foreign `Origin` are refused.
 - **Voice.** WAV in, WAV out, with the fake brain: the right utterance is detected, the reply is spoken, "stop" interrupts.
 - **House.** Default plan loads; a personal file overrides it; a room with no position lands in the nearest free slot; overlapping, detached, unknown-agent and 21st-room requests are refused; removing a room that would strand another is refused; doors always connect every room to the Hall; a hand edit to the file raises the revision.
-- **Web (vitest).** Store reducers, and wall and door geometry from a plan.
+- **Tools.** The catalog loads; a proposal on temporary folders finds each marker and the GitHub remote, stays in the top two levels and ignores symlinks; unknown tool ids are refused; a room's tools win over its agent's; the plan carries `tools`; the routes behave, including the 400 for a path that is not a folder.
+- **Setup.** Every check with the outside world faked (no network, no real `gh`, no Keychain, no microphone), the JSON shape, the exit codes, and scripted runs of `vision setup` with answers fed in, including a second run that changes nothing.
+- **Web (vitest).** Store reducers, wall and door geometry from a plan, the tool toggles and the add-room body, the room card's content, the caption's type steps and the spend format.
 - **Live checks, done by the orchestrator.** Each "done when" item in section 2 is exercised for real: the daemon under launchd, the window in a browser with screenshots, a real Claude turn on the API credits with the measured time to first audio and its measured cost, a restart-and-recall, a gate yes and no, an offline turn, and a cap set low enough to trip.
 - **Yours.** One pass at the real microphone, because nobody else can speak into it.
 
@@ -334,10 +372,10 @@ Python 3.12 with `uv`; FastAPI and uvicorn; the `anthropic` SDK; `keyring` for t
 ## 10. Layout
 
 ```
-vision/            core/ brains/ voice/ memory/ gate/ house/
+vision/            core/ brains/ voice/ memory/ gate/ house/ setup/
 web/               src/scene/ src/hud/ src/net/
 assets/            models/  textures/  design/
-house/             default.toml, agent personas, library template (neutral, no personal data)
+house/             default.toml, tools.toml, agent personas, library template (neutral, no personal data)
 tests/
 docs/superpowers/specs/
 pyproject.toml
@@ -347,7 +385,7 @@ pyproject.toml
 
 1. **Credits expire.** Each monthly grant runs out a month after it is issued and does not roll over. The grant issued on 2026-11-10 is good until 2026-12-13. Vision treats the credits as a monthly allowance and never assumes a balance carries forward.
 2. **Runaway spend.** A loop that keeps calling the model could burn credits. The monthly cap, a per-reply output limit and the audit log bound this. With auto-reload off on the Console, the worst case is that the API stops answering and Vision falls back to the local model.
-3. **Latency.** Calling the API directly removes the multi-second start-up that the Claude Code route showed in testing, but time to first audio is still unmeasured. One test call on 2026-11-12 with the talk model returned its first words in 0.9 seconds on a very small prompt; the real prompt is larger, and speech recognition and speech add to it. Three seconds is a target that the live check will measure.
+3. **Latency.** Calling the API directly removes the multi-second start-up that the Claude Code route showed in testing. One test call on 2026-11-12 with the talk model returned its first words in 0.9 seconds on a very small prompt. Measured in file mode (a WAV in, speech written to a WAV), the median from the end of speech to the first audio of the reply is 2.24 seconds, inside the three-second target. A live microphone adds device latency that file mode does not see.
 4. **Subscription brains later.** Using Codex and Gemini through their subscription logins in slice 2 raises the same terms question this slice avoids for Claude. It gets checked then, before any code depends on it.
 5. **Microphone under launchd.** macOS ties microphone permission to the program that asks. A background agent may need a one-time manual grant.
 6. **Look.** A modelled house will start plainer than the painted concept on board 04. Lighting, textures and post-processing carry most of the look; furniture fills in room by room.

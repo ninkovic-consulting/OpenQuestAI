@@ -1,6 +1,7 @@
 // HTTP to the daemon. Every route needs `Authorization: Bearer <token>` (spec 5).
 
-import type { NewRoom, PostResult } from "./types";
+import { asToolRefs } from "./plan";
+import type { NewRoom, PostResult, ProposeResult } from "./types";
 
 export class Api {
   constructor(private readonly token: string) {}
@@ -13,6 +14,18 @@ export class Api {
     const res = await fetch(path, { headers: this.headers() });
     if (!res.ok) throw new Error(`${path} answered ${res.status}`);
     return res.json();
+  }
+
+  async proposeTools(project: string): Promise<ProposeResult> {
+    let res: Response;
+    try {
+      res = await fetch(`/api/house/tools/propose?${new URLSearchParams({ project })}`, { headers: this.headers() });
+    } catch {
+      return { ok: false, message: "The house could not be reached." };
+    }
+    if (!res.ok) return { ok: false, message: await refusal(res) };
+    const tools = asToolRefs(((await res.json()) as { tools?: unknown }).tools);
+    return tools ? { ok: true, tools } : { ok: false, message: "The proposal was not in the expected shape." };
   }
 
   async postRoom(room: NewRoom): Promise<PostResult> {

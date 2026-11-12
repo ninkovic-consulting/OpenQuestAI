@@ -5,7 +5,7 @@ import { Api } from "./api";
 import type { Daemon } from "./daemon";
 import { asPlan } from "./plan";
 import type { Store } from "./store";
-import { asOutbound, envelope, type InboundEvent, type NewRoom, type PostResult, type StateSnapshot } from "./types";
+import { asOutbound, envelope, type InboundEvent, type NewRoom, type PostResult, type ProposeResult, type StateSnapshot } from "./types";
 
 const BACKOFF_MIN_MS = 500;
 const BACKOFF_MAX_MS = 10_000;
@@ -38,6 +38,10 @@ export class SocketDaemon implements Daemon {
     } else {
       this.store.dispatch({ kind: "toast", level: "warn", text: "Not connected to the daemon yet." });
     }
+  }
+
+  proposeTools(project: string): Promise<ProposeResult> {
+    return this.api.proposeTools(project);
   }
 
   postRoom(room: NewRoom): Promise<PostResult> {

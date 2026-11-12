@@ -5,7 +5,7 @@
 import { cellKey, cellOwners } from "../scene/grid";
 import type { Daemon } from "./daemon";
 import { hostRoom } from "./plan";
-import { samplePlan } from "./sample-plan";
+import { HOST_TOOLS, samplePlan } from "./sample-plan";
 import type { Store } from "./store";
 import type {
   AssistantState,
@@ -18,12 +18,32 @@ import type {
   OutboundType,
   Plan,
   PostResult,
+  ProposeResult,
   Room,
   StateSnapshot,
+  ToolRef,
 } from "./types";
 
 const WORD_MS = 75;
 const LEVEL_MS = 33;
+
+const projectTool = (id: string, title: string, available: boolean): ToolRef => ({ id, title, available, built_in: false });
+
+/** What mock mode proposes for any folder: a web app on GitHub with a Dockerfile, on a Mac without Docker. */
+const MOCK_PROPOSAL: readonly ToolRef[] = [
+  projectTool("git", "Git", true),
+  projectTool("gh", "GitHub", true),
+  projectTool("npm", "npm", true),
+  projectTool("docker", "Docker", false),
+];
+const MOCK_CATALOG: readonly ToolRef[] = [...HOST_TOOLS, ...MOCK_PROPOSAL];
+
+const LONG_REPLY =
+  "This afternoon the date parser was rewritten so that every import goes through one function, " +
+  "which removed three copies of the same logic. The checker then ran the whole suite twice and found " +
+  "a single failure: a report that wrote the day before the month. That is fixed in the workshop now, " +
+  "and the suite is green again. Tomorrow the export screen needs the same treatment, and I would " +
+  "start with the CSV path, because it has no tests yet and two people rely on it every Monday.";
 
 export class MockDaemon implements Daemon {
   private plan: Plan = samplePlan();
@@ -97,6 +117,11 @@ export class MockDaemon implements Daemon {
     }
   }
 
+  proposeTools(project: string): Promise<ProposeResult> {
+    if (project.includes("nowhere")) return Promise.resolve({ ok: false, message: `${project} is not a folder.` });
+    return Promise.resolve({ ok: true, tools: MOCK_PROPOSAL.map((t) => ({ ...t })) });
+  }
+
   postRoom(room: NewRoom): Promise<PostResult> {
     const extras = this.plan.rooms.filter((r) => r.kind === "extra").length;
     if (extras >= this.plan.max_extra_rooms)
@@ -117,6 +142,7 @@ export class MockDaemon implements Daemon {
       project: room.project ?? null,
       floor: "wood-floor",
       wall: "wallpaper",
+      tools: room.tools ? room.tools.flatMap((id) => MOCK_CATALOG.filter((t) => t.id === id).map((t) => ({ ...t }))) : agentTools(agent.id),
       state: "idle",
     });
     return Promise.resolve({ ok: true });
@@ -143,7 +169,9 @@ export class MockDaemon implements Daemon {
     this.interrupt();
     this.emit("user.utterance", { text, source });
     this.setState("thinking");
-    this.at(900, () => this.say("Everything is quiet. The workshop lights are on and the tests are green."));
+    // Asking for detail gets a reply several lines long, to exercise the caption.
+    const long = /\b(more|detail|explain|why)\b/i.test(text);
+    this.at(900, () => this.say(long ? LONG_REPLY : "Everything is quiet. The workshop lights are on and the tests are green."));
   }
 
   private say(text: string): void {
@@ -199,6 +227,7 @@ export class MockDaemon implements Daemon {
       project: null,
       floor: "wood-floor",
       wall: "wallpaper",
+      tools: agentTools(scout.id),
       state: "idle",
     });
     this.emit("notice", { level: "info", text: "A new room was added to the house." });
@@ -230,4 +259,9 @@ export class MockDaemon implements Daemon {
     this.emit("house.changed", { revision: plan.revision });
     this.at(120, () => this.store.dispatch({ kind: "plan", plan: structuredClone(plan) }));
   }
+}
+
+/** An agent's default tools in the sample house: the host has the built-ins, the rest none. */
+function agentTools(agent: string): ToolRef[] {
+  return agent === "host" ? HOST_TOOLS.map((t) => ({ ...t })) : [];
 }

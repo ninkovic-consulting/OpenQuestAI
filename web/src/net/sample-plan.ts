@@ -2,10 +2,21 @@
 // (house/default.toml), in the exact shape of spec 4.8. Mock mode and the
 // tests use it, so mock mode looks like the real thing.
 
-import type { Plan, Room } from "./types";
+import type { Plan, Room, ToolRef } from "./types";
 
 const HAIKU = "claude-haiku-5-5";
 const OPUS = "claude-opus-5-5";
+
+const builtIn = (id: string, title: string): ToolRef => ({ id, title, available: true, built_in: true });
+
+/** The host's tools in house/default.toml: the assistant's five built-in tools. */
+export const HOST_TOOLS: readonly ToolRef[] = [
+  builtIn("remember", "Remember"),
+  builtIn("recall", "Recall"),
+  builtIn("open_app", "Open app"),
+  builtIn("open_url", "Open link"),
+  builtIn("shell", "Shell"),
+];
 
 function room(
   id: string,
@@ -19,7 +30,8 @@ function room(
   state: Room["state"] = "dark",
   shape: Room["shape"] = "rect",
 ): Room {
-  return { id, name, kind: "default", shape, at, size, agent, model, project: null, floor, wall, state };
+  const tools = agent === "host" ? HOST_TOOLS.map((t) => ({ ...t })) : [];
+  return { id, name, kind: "default", shape, at, size, agent, model, project: null, floor, wall, tools, state };
 }
 
 export function samplePlan(): Plan {

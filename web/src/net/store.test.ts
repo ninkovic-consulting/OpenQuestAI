@@ -122,4 +122,12 @@ describe("host agent", () => {
     const renamed = { ...noHall, agents: plan.agents.map((a) => (a.id === "host" ? { ...a, id: "main" } : a)) };
     expect(hostAgentId(renamed)).toBe("main");
   });
+
+  it("a reloaded plan carries each room's tools into the view", () => {
+    const plan = samplePlan();
+    const den = { ...plan.rooms[6]!, id: "den", tools: [{ id: "git", title: "Git", available: false, built_in: false }] };
+    const s = run({ kind: "plan", plan }, { kind: "plan", plan: { ...plan, revision: 1, rooms: [...plan.rooms, den] } });
+    expect(s.plan?.rooms.find((r) => r.id === "den")?.tools).toEqual(den.tools);
+    expect(s.plan?.rooms.find((r) => r.id === "hall")?.tools).toHaveLength(5);
+  });
 });

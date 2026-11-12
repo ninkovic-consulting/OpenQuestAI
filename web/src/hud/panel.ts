@@ -5,6 +5,7 @@ import { hostAgentId } from "../net/plan";
 import type { Store, ViewState } from "../net/store";
 import type { RoomLight } from "../net/types";
 import { el, setText } from "./dom";
+import { formatSpend } from "./money";
 
 const LIGHT_WORD: Record<RoomLight, string> = { active: "working", idle: "idle", dark: "asleep" };
 
@@ -56,7 +57,7 @@ export function mountPanel(parent: HTMLElement, store: Store): Panel {
 
     if (s.budget) {
       const share = s.budget.cap_usd > 0 ? s.budget.spent_usd / s.budget.cap_usd : 1;
-      setText(budgetAmount, `$${s.budget.spent_usd.toFixed(2)} of $${s.budget.cap_usd.toFixed(0)}`);
+      setText(budgetAmount, `${formatSpend(s.budget.spent_usd)} of $${s.budget.cap_usd.toFixed(0)}`);
       barFill.style.width = `${Math.min(100, share * 100).toFixed(1)}%`;
       budget.classList.toggle("is-high", share >= 0.8);
       budget.hidden = false;

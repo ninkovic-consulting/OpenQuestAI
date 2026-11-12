@@ -6,6 +6,10 @@
 personas in the repo's `house/agents/` are copied into the memory vault by
 `seed_personas` before memory starts, so the host persona the user edits is
 `$VISION_HOME/house/agents/host.md`.
+
+Rooms and agents list tools from the catalog in the repo's `house/tools.toml`;
+`propose_tools` suggests them for a project folder. Only the assistant's
+built-in tools run in this slice.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from vision.house import store
 from vision.house.house import GridHouse
 from vision.house.model import HouseError, UnknownRoom
 from vision.house.parse import build_agents
+from vision.house.tools import propose_tools
 
 __all__ = [
     "AgentModels",
@@ -26,6 +31,7 @@ __all__ = [
     "UnknownRoom",
     "agent_models",
     "make_house",
+    "propose_tools",
     "seed_personas",
 ]
 

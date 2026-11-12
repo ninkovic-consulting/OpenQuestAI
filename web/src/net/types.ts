@@ -15,6 +15,15 @@ export interface Agent {
   heavy_model?: string | null;
 }
 
+/** A tool on a room, as the plan carries it. Only built-in tools run in this slice. */
+export interface ToolRef {
+  id: string;
+  title: string;
+  /** Whether the program the tool needs is on this Mac; built-in tools always are. */
+  available: boolean;
+  built_in: boolean;
+}
+
 export interface Room {
   id: string;
   name: string;
@@ -27,6 +36,8 @@ export interface Room {
   project: string | null;
   floor: string;
   wall: string;
+  /** The room's own tools, or its agent's when it lists none. */
+  tools: ToolRef[];
   state: RoomLight;
 }
 
@@ -114,9 +125,14 @@ export interface NewRoom {
   at: Cell;
   project?: string;
   model?: string;
+  /** Tool ids; left out, the room uses its agent's. */
+  tools?: string[];
 }
 
 export type PostResult = { ok: true } | { ok: false; message: string };
+
+/** `GET /api/house/tools/propose`: the tools a project folder looks like it needs. */
+export type ProposeResult = { ok: true; tools: ToolRef[] } | { ok: false; message: string };
 
 const OUTBOUND_TYPES: ReadonlySet<string> = new Set<OutboundType>([
   "state.changed",

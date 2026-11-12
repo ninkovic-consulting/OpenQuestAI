@@ -1,0 +1,49 @@
+// The add-room form's logic, apart from the DOM: which proposed tools are
+// switched on, and the body that is posted.
+
+import type { Cell, NewRoom, ToolRef } from "../net/types";
+
+/** The tools proposed for one project folder and which of them are on. */
+export interface ToolPicks {
+  project: string;
+  tools: readonly ToolRef[];
+  on: ReadonlySet<string>;
+}
+
+/** A fresh proposal: every tool whose program is on this Mac starts on, the rest off. */
+export function fromProposal(project: string, tools: readonly ToolRef[]): ToolPicks {
+  return { project, tools, on: new Set(tools.filter((t) => t.available).map((t) => t.id)) };
+}
+
+export function toggle(picks: ToolPicks, id: string): ToolPicks {
+  if (!picks.tools.some((t) => t.id === id)) return picks;
+  const on = new Set(picks.on);
+  if (on.has(id)) on.delete(id);
+  else on.add(id);
+  return { ...picks, on };
+}
+
+export interface RoomFields {
+  name: string;
+  agent: string;
+  at: Cell;
+  project: string;
+  model: string;
+}
+
+/**
+ * The body for `POST /api/house/rooms`. Tools are sent only when a proposal
+ * for this exact project was shown and had tools in it; otherwise the room
+ * uses its agent's tools.
+ */
+export function newRoom(fields: RoomFields, picks: ToolPicks | null): NewRoom {
+  const room: NewRoom = { name: fields.name.trim(), agent: fields.agent, at: fields.at };
+  const project = fields.project.trim();
+  const model = fields.model.trim();
+  if (project) room.project = project;
+  if (model) room.model = model;
+  if (project && picks && picks.project === project && picks.tools.length > 0) {
+    room.tools = picks.tools.filter((t) => picks.on.has(t.id)).map((t) => t.id);
+  }
+  return room;
+}

@@ -1,7 +1,13 @@
-import type { Cell, Plan, Room } from "./types";
+import type { Cell, Plan, Room, ToolRef } from "./types";
 
 function isCell(v: unknown): v is Cell {
   return Array.isArray(v) && v.length === 2 && v.every((n) => Number.isInteger(n));
+}
+
+function isToolRef(v: unknown): v is ToolRef {
+  if (typeof v !== "object" || v === null) return false;
+  const t = v as Record<string, unknown>;
+  return typeof t["id"] === "string" && typeof t["title"] === "string" && typeof t["available"] === "boolean" && typeof t["built_in"] === "boolean";
 }
 
 function isRoom(v: unknown): v is Room {
@@ -14,8 +20,15 @@ function isRoom(v: unknown): v is Room {
     isCell(r["at"]) &&
     isCell(r["size"]) &&
     typeof r["floor"] === "string" &&
-    typeof r["wall"] === "string"
+    typeof r["wall"] === "string" &&
+    Array.isArray(r["tools"]) &&
+    r["tools"].every(isToolRef)
   );
+}
+
+/** Narrow a JSON list to tool refs, or null when it is not one. */
+export function asToolRefs(v: unknown): ToolRef[] | null {
+  return Array.isArray(v) && v.every(isToolRef) ? v : null;
 }
 
 /** Narrow the JSON from `GET /api/house` to a plan, or null when it is not one. */

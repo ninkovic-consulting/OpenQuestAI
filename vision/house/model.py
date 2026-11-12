@@ -58,6 +58,8 @@ class Agent:
     persona: str
     model: str
     heavy_model: str | None
+    tools: tuple[str, ...] = ()
+    """Tool ids for the agent's rooms that list none of their own."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +76,8 @@ class Room:
     project: str | None
     floor: str
     wall: str
+    tools: tuple[str, ...] | None = None
+    """The room's own tool ids; None to use the agent's."""
 
     def cells(self) -> list[Cell]:
         return rect(self.at, self.size)

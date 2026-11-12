@@ -28,11 +28,24 @@ from vision.house.model import (
     Room,
     RoomKind,
 )
+from vision.house.tools import check_tool_ids
 
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 TOP_KEYS = {"agents", "rooms"}
-AGENT_KEYS = {"name", "persona", "model", "heavy_model"}
-ROOM_KEYS = {"id", "name", "at", "size", "shape", "agent", "model", "project", "floor", "wall"}
+AGENT_KEYS = {"name", "persona", "model", "heavy_model", "tools"}
+ROOM_KEYS = {
+    "id",
+    "name",
+    "at",
+    "size",
+    "shape",
+    "agent",
+    "model",
+    "project",
+    "floor",
+    "wall",
+    "tools",
+}
 PLACE_KEYS = ("at", "size", "shape")
 
 
@@ -82,8 +95,11 @@ def _agent(agent_id: str, table: dict[str, Any], config: Config) -> Agent:
     heavy = _text(table, "heavy_model", where, required=False)
     if heavy is None and is_host:
         heavy = config.brain.heavy_model
+    tools = check_tool_ids(table["tools"], where) if "tools" in table else ()
     assert persona is not None
-    return Agent(id=agent_id, name=name, persona=persona, model=model, heavy_model=heavy)
+    return Agent(
+        id=agent_id, name=name, persona=persona, model=model, heavy_model=heavy, tools=tools
+    )
 
 
 def _build_rooms(
@@ -182,6 +198,7 @@ def _room(table: dict[str, Any], kind: RoomKind, agents: dict[str, Agent]) -> Ro
         project=_text(table, "project", where, required=False),
         floor=floor,
         wall=wall,
+        tools=check_tool_ids(table["tools"], where) if "tools" in table else None,
     )
 
 
