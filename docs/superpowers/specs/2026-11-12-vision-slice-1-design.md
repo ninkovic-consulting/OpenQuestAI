@@ -113,7 +113,7 @@ class Brain(Protocol):
 - `router.py`. Sends each turn to Claude. On a rate limit, auth failure, exhausted credits, timeout or no network it retries once, then switches to the local model, publishes `brain.fallback`, and tries Claude again after a cool-down.
 - `budget.py`. Adds up what each reply cost from the token counts the API returns and a price table in `config.toml`. The monthly cap defaults to 150 dollars. Vision gives a notice at 80 percent. At the cap, talk moves to the local model until the month turns or you raise the cap.
 
-**Credentials.** Vision looks for the Anthropic API key in two places, in this order: the macOS Keychain, then a git-ignored `.env` file in the project (`ANTHROPIC_API_KEY`, or the `claude_code_api_key` name already used there). `vision auth` moves a key into the Keychain if you prefer that. The key never goes into the repo, a log, a prompt or the window, and nobody but you handles it.
+**Credentials.** Vision looks for the Anthropic API key in two places, in this order: the macOS Keychain, then `ANTHROPIC_API_KEY` in a git-ignored `.env` file in the project, which is the name the Anthropic SDK itself expects. `vision auth` moves a key into the Keychain if you prefer that. The key never goes into the repo, a log, a prompt or the window, and nobody but you handles it.
 
 **Later slices.** Residents that work inside your repos will use the Claude Agent SDK on the same credits. Codex and Gemini stay available as subscription-based brains for U and Ultron, and their terms get checked when slice 2 is specced.
 
