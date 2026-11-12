@@ -25,3 +25,6 @@ assets/**/_*
 
 # Synced copies of assets for the web app
 web/public/assets/
+
+# Parallel build worktrees
+.worktrees/
