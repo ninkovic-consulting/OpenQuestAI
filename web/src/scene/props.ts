@@ -1,13 +1,16 @@
 // The host room's furniture and the seated figure. Models are normalised to
-// real sizes; the figure plays a seated idle and cross-fades to answering
-// while the assistant speaks.
+// real sizes and the armchair is fitted to the figure's seated pose (seat.ts).
+// The figure plays the upright start of the seated idle; while the assistant
+// speaks, the answering clip's upper body is blended in, so the hips and legs
+// stay in the seat.
 
 import * as THREE from "three";
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
 import { HOST_LAYOUT } from "./layout";
 import { palette } from "./palette";
+import { fitSeat, measureChair, measurePose } from "./seat";
 
-/** Real heights, in metres. */
+/** Real heights, in metres; the armchair's is refitted to the figure once both load. */
 const HEIGHT = {
   armchair: 1.12,
   "floor-lamp": 1.72,
@@ -21,8 +24,18 @@ type Piece = keyof typeof HEIGHT;
 const CLIP_IDLE = "Chair_Sit_Idle_M";
 const CLIP_TALK = "Sitting_Answering_Questions";
 const FADE_S = 0.6;
-/** Where the seated figure sits relative to the chair's origin (m). */
-const SEAT = new THREE.Vector3(0, 0.02, 0.06);
+/** The idle clip sits upright, hands on knees, until here; then it leans 50° forward, elbows on knees, until 8.5 s. */
+const IDLE_UPRIGHT_S = 1.2;
+const CLIP_FPS = 30;
+/** How much the answering clip's upper body weighs against the idle's (1 would be half and half). */
+const TALK_WEIGHT = 1.5;
+/** Tracks the answering clip leaves to the idle: its hips sit higher and further aside. */
+const SEATED_TRACK = /^(Hips|(Left|Right)(UpLeg|Leg|Foot|ToeBase))\./;
+
+interface Figure {
+  object: THREE.Object3D;
+  idle: THREE.AnimationClip;
+}
 
 export class Props {
   readonly root = new THREE.Group();
@@ -37,8 +50,12 @@ export class Props {
   }
 
   async load(): Promise<void> {
-    const pieces = (Object.keys(HEIGHT) as Piece[]).map((name) => this.piece(name));
-    await Promise.all([...pieces, this.figure()]);
+    const names = Object.keys(HEIGHT) as Piece[];
+    const [pieces, figure] = await Promise.all([Promise.all(names.map((name) => this.piece(name))), this.figure()]);
+    const chair = pieces[names.indexOf("armchair")];
+    if (chair && figure) seat(chair, figure);
+    this.root.add(...pieces);
+    if (figure) this.root.add(figure.object);
   }
 
   /** Stand the furniture in the host room. `fits` is false when the room is too small for the big pieces. */
@@ -53,16 +70,15 @@ export class Props {
   setTalking(talking: boolean): void {
     if (talking === this.talking || !this.idle || !this.talk) return;
     this.talking = talking;
-    const [from, to] = talking ? [this.idle, this.talk] : [this.talk, this.idle];
-    to.reset().play();
-    from.crossFadeTo(to, FADE_S, false);
+    if (talking) this.talk.reset().fadeIn(FADE_S).play();
+    else this.talk.fadeOut(FADE_S);
   }
 
   update(dt: number): void {
     this.mixer?.update(dt);
   }
 
-  private async piece(name: Piece): Promise<void> {
+  private async piece(name: Piece): Promise<THREE.Object3D> {
     const layout = {
       armchair: HOST_LAYOUT.armchair,
       "floor-lamp": { ...HOST_LAYOUT.lamp, turn: 0 },
@@ -83,21 +99,19 @@ export class Props {
     object.position.set(layout.x, object.position.y, layout.z);
     object.rotation.y = layout.turn;
     shade(object);
-    this.root.add(object);
+    return object;
   }
 
-  private async figure(): Promise<void> {
+  private async figure(): Promise<Figure | null> {
     let gltf: GLTF;
     try {
       gltf = await this.loader.loadAsync("assets/models/vision.glb");
     } catch {
       this.onMissing("figure model");
-      return;
+      return null;
     }
     const figure = gltf.scene;
     figure.name = "figure";
-    figure.position.set(HOST_LAYOUT.armchair.x + SEAT.x, SEAT.y, HOST_LAYOUT.armchair.z + SEAT.z);
-    figure.rotation.y = HOST_LAYOUT.armchair.turn;
     shade(figure);
     figure.traverse((o) => {
       if (!(o instanceof THREE.SkinnedMesh)) return;
@@ -111,18 +125,36 @@ export class Props {
         }
       }
     });
-    this.root.add(figure);
-    this.mixer = new THREE.AnimationMixer(figure);
     const clip = (name: string): THREE.AnimationClip | null => THREE.AnimationClip.findByName(gltf.animations, name);
     const idleClip = clip(CLIP_IDLE);
     const talkClip = clip(CLIP_TALK);
     if (!idleClip || !talkClip) {
       this.onMissing("figure animations");
-      return;
+      return null;
     }
-    this.idle = this.mixer.clipAction(idleClip).play();
-    this.talk = this.mixer.clipAction(talkClip);
+    this.mixer = new THREE.AnimationMixer(figure);
+    const upright = THREE.AnimationUtils.subclip(idleClip, CLIP_IDLE, 0, IDLE_UPRIGHT_S * CLIP_FPS, CLIP_FPS);
+    this.idle = this.mixer.clipAction(upright).setLoop(THREE.LoopPingPong, Infinity).play();
+    const upper = talkClip.tracks.filter((t) => !SEATED_TRACK.test(t.name));
+    this.talk = this.mixer.clipAction(new THREE.AnimationClip(CLIP_TALK, talkClip.duration, upper));
+    this.talk.weight = TALK_WEIGHT;
+    return { object: figure, idle: upright };
   }
+}
+
+/** Size the armchair to the seated pose and sit the figure in it, both facing the chair's way. */
+function seat(chair: THREE.Object3D, figure: Figure): void {
+  const at = chair.position.clone();
+  const turn = chair.rotation.y;
+  chair.position.set(0, 0, 0);
+  chair.rotation.y = 0;
+  normalise(chair, 1);
+  const fit = fitSeat(measureChair(chair), measurePose(figure.object, figure.idle));
+  chair.scale.multiply(new THREE.Vector3(fit.height, fit.height, fit.depth));
+  chair.position.set(at.x, chair.position.y * fit.height, at.z);
+  chair.rotation.y = turn;
+  figure.object.position.copy(fit.offset).applyAxisAngle(THREE.Object3D.DEFAULT_UP, turn).add(chair.position).setY(fit.offset.y);
+  figure.object.rotation.y = turn;
 }
 
 /** A warm bulb inside the lamp's shade, so the lamp reads lit. `height` is in model units. */
@@ -138,7 +170,7 @@ function bulb(height: number): THREE.Mesh {
 /** Scale to a real height and stand the model on the floor. */
 function normalise(object: THREE.Object3D, height: number): void {
   const size = new THREE.Box3().setFromObject(object).getSize(new THREE.Vector3());
-  object.scale.setScalar(height / size.y);
+  object.scale.multiplyScalar(height / size.y);
   const box = new THREE.Box3().setFromObject(object);
   object.position.y = -box.min.y;
 }
