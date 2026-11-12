@@ -28,7 +28,7 @@ Vision's own mind runs on the Anthropic API, paid from the promotional credits g
 | Speech | Local models: Whisper in, Kokoro out |
 | House | Modular grid. Default rooms plus up to 20 more, placed where you choose |
 | Agents | Predefined in config, each with its own persona and model |
-| Open source | Planned. The repo ships neutral defaults; your cast, projects and memory live in `~/.vision/` |
+| Open source | Planned, under the name OpenQuestAI. The repo ships neutral defaults; your cast, projects and memory live in `~/.vision/` |
 
 ### The whole system, in six slices
 
@@ -349,7 +349,7 @@ pyproject.toml
 4. **Subscription brains later.** Using Codex and Gemini through their subscription logins in slice 2 raises the same terms question this slice avoids for Claude. It gets checked then, before any code depends on it.
 5. **Microphone under launchd.** macOS ties microphone permission to the program that asks. A background agent may need a one-time manual grant.
 6. **Look.** A modelled house will start plainer than the painted concept on board 04. Lighting, textures and post-processing carry most of the look; furniture fills in room by room.
-7. **Going public.** Three things must be settled before the repo is published. The cast: the repo ships original names (Vision as the assistant, then Brass, Wren, Tink, Tock and Rook), with no characters from any film or series. The project name: `OpenVision` was ruled out because it is already a known AI project and is taken on PyPI. The proposed public name is OpenQuestAI, which was free on PyPI, npm and GitHub on 2026-11-12; the assistant stays Vision and the command stays `vision`. The generated models and textures: each service's terms for the plan in use decide whether they can be redistributed, and that has to be checked before they are committed to a public repo.
+7. **Going public.** Three things must be settled before the repo is published. The cast: the repo ships original names (Vision as the assistant, then Brass, Wren, Tink, Tock and Rook), with no characters from any film or series. The project name: `OpenVision` was ruled out because it is already a known AI project and is taken on PyPI. The public name is OpenQuestAI, chosen on 2026-11-12, when it was free on PyPI, npm and GitHub; the assistant stays Vision and the command stays `vision`. The generated models and textures: each service's terms for the plan in use decide whether they can be redistributed, and that has to be checked before they are committed to a public repo.
 
 ## 12. How it gets built
 
