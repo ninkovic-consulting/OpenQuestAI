@@ -18,7 +18,22 @@ ui = ["pywebview>=6.2.1"]
 # Owned by the brains/gate agent: the Anthropic SDK and the local-model client go here.
 brains = []
 # Owned by the voice agent: audio I/O, VAD, STT and TTS packages go here.
-voice = []
+voice = [
+    "sounddevice>=0.5.6",
+    "soundfile>=0.14.0",
+    "numpy>=2.5.4",
+    "scipy>=1.18.1",
+    "huggingface-hub>=1.0",
+    # Whisper, Kokoro and Silero VAD, all on MLX (no torch).
+    "mlx-audio>=0.6.5,<0.7",
+    # Kokoro's English G2P; its `en` extra is listed by hand to leave out
+    # spacy-curated-transformers, which would pull in torch.
+    "misaki==0.9.4",
+    "spacy>=3.8.18,<3.9",
+    "num2words>=0.5.14",
+    "phonemizer-fork>=3.3.2",
+    "espeakng-loader>=0.2.4",
+]
 
 [project.scripts]
 vision = "vision.core.cli:main"
