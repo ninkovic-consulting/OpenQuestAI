@@ -25,7 +25,8 @@ Vision's own mind runs on the Anthropic API, paid from the promotional credits g
 | Claude access | Anthropic API on the monthly promotional credits, not the Max login |
 | Talk model | `claude-haiku-5-5`, for speed and cost |
 | Heavy model | `claude-opus-5-5`, when asked to think something through |
-| Speech | Local models: Whisper in, Kokoro out |
+| Speech | Local models through MLX: Whisper in, Kokoro out, about 2 GB |
+| Local fallback | A 2.1 GB model run in-process through MLX; no Ollama |
 | House | Modular grid. Default rooms plus up to 20 more, placed where you choose |
 | Agents | Predefined in config, each with its own persona and model |
 | Open source | Planned, under the name OpenQuestAI. The repo ships neutral defaults; your cast, projects and memory live in `~/.vision/` |
@@ -90,7 +91,7 @@ Each unit has one job and a small interface. Paths are relative to the repo root
 | `config.py` | Loads `~/.vision/config.toml` over built-in defaults. |
 | `server.py` | FastAPI app: static web files, `/api/*`, `/ws`. |
 | `session.py` | One conversation turn end to end: input, brain, sentences, voice, log. |
-| `cli.py` | `vision run`, `vision ui`, `vision auth`, `vision install`, `vision uninstall`, `vision status`. |
+| `cli.py` | `vision run`, `vision ui`, `vision auth`, `vision setup`, `vision doctor`, `vision install`, `vision uninstall`, `vision status`. |
 | `launchd.py` | Writes and loads the LaunchAgent plist with `KeepAlive` and `RunAtLoad`. |
 
 Runtime data lives in `~/.vision/`: `config.toml`, `token`, `log.db`, `logs/`, and `house/` (the memory vault). Nothing personal is written into the repo.
@@ -112,7 +113,8 @@ class Brain(Protocol):
   - Talk model `claude-haiku-5-5`, with thinking effort set low so replies start quickly. At list price (0.10 dollars per million input tokens, 0.50 per million output) a spoken turn of roughly 4,000 tokens in and 150 out costs about a twentieth of a cent. That figure is an estimate from those assumptions, and the live check measures the real one.
   - Heavy model `claude-opus-5-5`, used when you ask Vision to think something through.
   - Both are one line each in `config.toml`.
-- `local.py`. A model on this Mac through Ollama, default `qwen3.8:27b-mlx`, no tools. It speaks the OpenAI-compatible chat format, so pointing it at OpenRouter or LM Studio is a config change and needs no new code.
+- `mlx_local.py`. The default fallback: a small model that runs inside the daemon through MLX, with no separate app or server. Default `mlx-community/Qwen3-4B-Instruct-2507-4bit`, 2.1 GB on disk. It loads the first time it is needed, frees its memory after ten idle minutes, streams text, and has no tools. Measured on the M1 Max: 1.7 seconds to load, then about 0.15 seconds to first text and about 100 tokens a second. Only safetensors weights are fetched and remote code is never trusted. If the model is missing, Vision says it is downloading it, or when offline tells you to run `vision setup`.
+- `local.py`. The other option, `[brain] local_backend = "openai"`: any server that speaks the OpenAI-compatible chat format, such as LM Studio or OpenRouter. A config change, no new code.
 - `fake.py`. Scripted brain for tests.
 - `router.py`. Sends each turn to Claude. On a rate limit, auth failure, exhausted credits, timeout or no network it retries once, then switches to the local model, publishes `brain.fallback`, and tries Claude again after a cool-down.
 - `budget.py`. Adds up what each reply cost from the token counts the API returns and a price table in `config.toml`. The monthly cap defaults to 150 dollars. Vision gives a notice at 80 percent. At the cap, talk moves to the local model until the month turns or you raise the cap.
@@ -327,7 +329,7 @@ One JSON envelope in both directions: `{"type": "...", "ts": 1731400000.0, "data
 
 ## 9. Stack
 
-Python 3.12 with `uv`; FastAPI and uvicorn; the `anthropic` SDK; `keyring` for the Keychain; `sounddevice`; Silero VAD; Whisper on MLX; Kokoro; SQLite with FTS5; `pywebview`. Web: Vite, TypeScript, Three.js. Exact package versions are checked against current documentation when each part is built.
+Python 3.12 with `uv`; FastAPI and uvicorn; the `anthropic` SDK; `keyring` for the Keychain; `mlx-lm` for the local model; `mlx-audio` for Whisper, Kokoro and Silero VAD; `sounddevice`; SQLite with FTS5; `pywebview`. Web: Vite, TypeScript, Three.js. Exact package versions are checked against current documentation when each part is built.
 
 ## 10. Layout
 
