@@ -87,6 +87,16 @@ def check_tool_ids(value: Any, where: str, catalog: Catalog | None = None) -> tu
     return tuple(dict.fromkeys(value))
 
 
+def with_built_ins(ids: tuple[str, ...], catalog: Catalog | None = None) -> tuple[str, ...]:
+    """`ids`, then every built-in tool not already among them, in catalog order.
+
+    The assistant's own tools run whatever a house file lists, so a file written
+    before a tool existed must not hide it.
+    """
+    catalog = load_catalog() if catalog is None else catalog
+    return tuple(dict.fromkeys([*ids, *(t.id for t in catalog.values() if t.built_in)]))
+
+
 def available(tool: ToolInfo, finder: Finder = find_program) -> bool:
     """Built-in tools always are; a project tool is when its program is on this Mac."""
     return tool.built_in or (tool.program is not None and finder(tool.program) is not None)

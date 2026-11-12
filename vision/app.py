@@ -12,10 +12,13 @@ Start-up order: `$VISION_HOME` is made private (0700); the house's agent
 personas are copied into the vault (never overwriting), so memory reads the
 house's host persona; then memory, the house, the automations, the brain and
 voice start, the budget is published, the Hall's light starts following the
-conversation, and once the session runs, so does the scheduler's runner.
+conversation, and once the session runs, so do the scheduler's runner and
+the phone channel (`vision.remote`), which stops first on the way down.
 
 The automations belong to the daemon, not to `Components`, so a daemon on
-fakes has them too; their tools are offered to the real gate only.
+fakes has them too; their tools are offered to the real gate only. So are the
+read-only awareness tools (`vision.aware`), whose short summary of the house
+the session adds to the user's message whenever it changes.
 """
 
 from __future__ import annotations
@@ -31,7 +34,7 @@ from pathlib import Path
 
 import uvicorn
 
-from vision import brains, gate, house, memory, scheduler, voice
+from vision import aware, brains, gate, house, memory, remote, scheduler, voice
 from vision.core.bus import Bus, Subscription
 from vision.core.config import Config
 from vision.core.events import BudgetUpdate, Notice, NoticeLevel, RoomLight, RoomState, StateChanged
@@ -67,15 +70,19 @@ def build_components(
     bus: Bus,
     *,
     automations: scheduler.Automations | None = None,
+    awareness: aware.Awareness | None = None,
     fake_brain: bool = False,
     voice_factory: VoiceFactory | None = None,
 ) -> tuple[Components, list[Notice]]:
     """Call every package's factory. `voice_factory` replaces `vision.voice.make_voice`;
-    `automations` puts the scheduler's tools behind the gate."""
+    `automations` and `awareness` put the scheduler's and the read-only awareness tools
+    behind the gate."""
     notices: list[Notice] = []
     mem = memory.make_memory(config)
     budget = brains.make_budget(config, bus)
     extra = scheduler.build_tools(automations) if automations is not None else []
+    if awareness is not None:
+        extra += aware.build_tools(awareness)
     tools = gate.make_tool_host(config, bus, mem, extra)
     brain: Brain
     if fake_brain:
@@ -121,11 +128,14 @@ class Daemon:
         self.bus = Bus()
         self.token = ensure_token(config.paths.token)
         self.automations = scheduler.Automations(config, self.bus)
+        self.phone = remote.make_phone(self)
+        self.awareness = aware.Awareness(self)
         if components is None:
             built = build_components(
                 config,
                 self.bus,
                 automations=self.automations,
+                awareness=self.awareness,
                 fake_brain=fake_brain,
                 voice_factory=voice,
             )
@@ -171,13 +181,17 @@ class Daemon:
             self.voice_running = True
         states = self.bus.subscribe({StateChanged.TYPE})
         self._lights_task = asyncio.create_task(self._light_the_hall(states))
-        self.session = Session(self.bus, c.brain, c.voice.speaker, c.memory, c.tools)
+        self.session = Session(
+            self.bus, c.brain, c.voice.speaker, c.memory, c.tools, surroundings=self.awareness.summary
+        )
         self._session_task = asyncio.create_task(self.session.run())
-        runner = scheduler.Runner(self.config, self.automations, self._run_automation, self._busy)
+        runner = scheduler.Runner(self.config, self.automations, self._run_automation, self.busy)
         self._runner_task = asyncio.create_task(runner.run())
+        await self.phone.start()
 
-    def _busy(self) -> bool:
-        """An automation waits while a turn runs, someone speaks, or a gate request waits."""
+    def busy(self) -> bool:
+        """An automation or a phone message waits while a turn runs, someone speaks,
+        or a gate request waits."""
         session = self.session
         return (
             (session is not None and session.busy)
@@ -237,6 +251,7 @@ class Daemon:
                     self.bus.publish(RoomState(room=HALL, state=light))
 
     async def stop(self) -> None:
+        await self.phone.stop()
         for task in (self._runner_task, self._session_task, self._lights_task):
             if task is not None:
                 task.cancel()

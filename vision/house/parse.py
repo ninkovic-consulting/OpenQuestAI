@@ -28,7 +28,7 @@ from vision.house.model import (
     Room,
     RoomKind,
 )
-from vision.house.tools import check_tool_ids
+from vision.house.tools import check_tool_ids, with_built_ins
 
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 TOP_KEYS = {"agents", "rooms"}
@@ -96,6 +96,8 @@ def _agent(agent_id: str, table: dict[str, Any], config: Config) -> Agent:
     if heavy is None and is_host:
         heavy = config.brain.heavy_model
     tools = check_tool_ids(table["tools"], where) if "tools" in table else ()
+    if is_host:
+        tools = with_built_ins(tools)
     assert persona is not None
     return Agent(
         id=agent_id, name=name, persona=persona, model=model, heavy_model=heavy, tools=tools

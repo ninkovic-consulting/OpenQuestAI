@@ -40,6 +40,10 @@ Who publishes what on the bus:
   `notice` when the assistant schedules, changes or removes one. A run is a
   session turn with source `automation`: no `user.utterance`, the usual
   `state.changed`, `vision.delta` and `vision.reply`.
+- Phone channel (`vision.remote`): `user.utterance` with source `phone` for
+  each message it runs as a turn (through `Session.run_phone`), `gate.decision`
+  for a Yes or Not now pressed by the paired owner, and `notice` when it is
+  paired or stops.
 - Server: forwards window events (`input.*`, `gate.decision`) onto the bus.
 
 HTTP routes from other packages: build a FastAPI `APIRouter` and protect it

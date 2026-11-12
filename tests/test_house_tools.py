@@ -33,6 +33,9 @@ BUILT_IN = [
     "resume_automation",
     "run_automation",
     "delete_automation",
+    "house_overview",
+    "room_details",
+    "assistant_status",
 ]
 PROJECT = ["git", "gh", "npm", "maven", "gradle", "python", "docker", "xcode", "unity", "godot"]
 
@@ -164,6 +167,13 @@ def test_default_house_keeps_working(config: Config) -> None:
     assert layout.agents["host"].tools == tuple(BUILT_IN)
     assert layout.agents["maker"].tools == ()
     assert all(r.tools is None for r in layout.rooms)
+
+
+def test_an_older_house_file_still_lists_every_built_in_tool_for_the_host(config: Config) -> None:
+    older = {"agents": {"host": {"tools": ["recall", "remember", "shell"]}}}
+    tools = build(config, older).agents["host"].tools
+    assert tools[:3] == ("recall", "remember", "shell")
+    assert set(tools) == set(BUILT_IN) and len(tools) == len(BUILT_IN)
 
 
 def test_unknown_tool_ids_are_refused_with_the_known_ones(config: Config) -> None:

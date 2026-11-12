@@ -73,6 +73,21 @@ title = "Delete an automation"
 description = "Removes an automation and its results."
 built_in = true
 
+[tools.house_overview]
+title = "Describe the house"
+description = "Reads the rooms, who runs each, and the agents with their roles and models."
+built_in = true
+
+[tools.room_details]
+title = "Describe a room"
+description = "Reads one room: its agent, model, project, tools and, for the Library, its notes."
+built_in = true
+
+[tools.assistant_status]
+title = "Check its own status"
+description = "Reads the assistant's own setup: model, spend, voice, automations, phone, data."
+built_in = true
+
 [tools.git]
 title = "Git"
 description = "Reads history, branches and changes in the project's repository."

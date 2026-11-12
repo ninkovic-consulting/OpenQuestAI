@@ -5,7 +5,8 @@
 - `GET /api/health`, `GET /api/state`, `GET /api/history?limit=50`,
   `GET /api/house` (plus the house package's own routes under `/api/house`,
   the settings package's under `/api`: settings, models, voice, downloads,
-  folders, doctor, reset and backups, and the scheduler's `/api/automations`),
+  folders, doctor, reset and backups, the scheduler's `/api/automations` and
+  the phone channel's `/api/phone`),
   each needing `Authorization: Bearer <token>`. Other packages protect their
   routers with `require_token`.
 - `WS /ws`: the first message must be `hello` with the token, else the
@@ -25,7 +26,6 @@ import html
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket
@@ -34,6 +34,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from vision import __version__
+from vision.core import resources
 from vision.core.events import (
     INBOUND_TYPES,
     OUTBOUND_TYPES,
@@ -50,7 +51,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-WEB_DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
+WEB_DIST = resources.web_dist()
 HELLO_TIMEOUT_S = 10.0
 CLOSE_UNAUTHORIZED = 4401
 CLOSE_FORBIDDEN_ORIGIN = 4403
@@ -155,6 +156,10 @@ def create_app(daemon: Daemon) -> FastAPI:
     from vision.scheduler import build_router as automations_router
 
     app.include_router(automations_router(daemon.automations), prefix="/api", dependencies=auth)
+
+    from vision.remote import build_router as phone_router
+
+    app.include_router(phone_router(daemon.phone), prefix="/api", dependencies=auth)
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:

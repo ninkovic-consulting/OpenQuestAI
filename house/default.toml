@@ -26,6 +26,7 @@ tools = [
     "remember", "recall", "open_app", "open_url", "shell",
     "create_automation", "list_automations", "update_automation", "pause_automation",
     "resume_automation", "run_automation", "delete_automation",
+    "house_overview", "room_details", "assistant_status",
 ]
 
 [agents.steward]

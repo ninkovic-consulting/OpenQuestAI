@@ -89,7 +89,13 @@ class GridHouse:
             "max_extra_rooms": MAX_EXTRA_ROOMS,
             "assistant": {"name": self._config.assistant.name},
             "agents": [
-                {"id": a.id, "name": a.name, "model": a.model, "heavy_model": a.heavy_model}
+                {
+                    "id": a.id,
+                    "name": a.name,
+                    "model": a.model,
+                    "heavy_model": a.heavy_model,
+                    "persona": a.persona,
+                }
                 for a in agents.values()
             ],
             "rooms": [

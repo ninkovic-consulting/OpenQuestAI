@@ -3,12 +3,13 @@
 - `settings`: config.toml removed (defaults). Applied at once; a restart is
   asked for only when something a restart applies changed (the models, say).
 - `house`: house.toml back to the default house; the house reloads at once.
-- `everything`: both, plus the memory vault, `log.db`, `budget.json` and
-  the automations;
+- `everything`: both, plus the memory vault, `log.db`, `budget.json`, the
+  automations and the phone channel's settings and pairing (`phone.json`);
   setup counts as not completed again. Memory is closed while its files move
   and opened again on fresh ones, so nothing writes into a backup; a restart
   is still asked for, because the brain keeps the conversation in memory.
-  With `remove_key` the Keychain key is deleted too (never backed up).
+  With `remove_key` the Keychain key and the phone's bot token are deleted
+  too (never backed up).
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from vision import house
 from vision.core.config import load_config
 from vision.core.events import BudgetUpdate
+from vision.remote.store import FILE_NAME as PHONE_FILE
 from vision.scheduler.store import FILE_NAME as AUTOMATIONS_FILE
 from vision.settings import backups, live
 from vision.settings.outside import Outside
@@ -40,6 +42,7 @@ NAMES: dict[Level, list[str]] = {
         *LOG_ITEMS,
         "budget.json",
         AUTOMATIONS_FILE,
+        PHONE_FILE,
     ],
 }
 MEMORY_ITEMS = frozenset({"house", *LOG_ITEMS})
@@ -47,7 +50,8 @@ MESSAGES: dict[Level, str] = {
     "settings": "Settings are back to their defaults.",
     "house": "The house is back to the default house.",
     "everything": (
-        "Everything is back to a fresh start: settings, house, memory, log, budget and automations."
+        "Everything is back to a fresh start: settings, house, memory, log, budget, automations "
+        "and the phone's pairing."
     ),
 }
 
@@ -66,9 +70,10 @@ class Resetter:
             )
             if remove_key and level == "everything":
                 await asyncio.to_thread(self._outside().delete_key)
+                await self._daemon.phone.forget_token()
             message = MESSAGES[level]
             if remove_key and level == "everything":
-                message += " The API key was removed from the Keychain."
+                message += " The API key and the phone's bot token were removed from the Keychain."
             if restart:
                 message += " Restart the assistant to finish."
             return {"backup": backup.as_dict(), "restart": restart, "message": message}
@@ -121,4 +126,6 @@ class Resetter:
             d.bus.publish(BudgetUpdate(**dataclasses.asdict(d.components.budget.status())))
         if AUTOMATIONS_FILE in names:
             await d.automations.reload()
+        if PHONE_FILE in names:
+            await d.phone.reload()
         return backup, restart

@@ -147,6 +147,9 @@ class GateConfig(_Section):
             "resume_automation": "free",
             "run_automation": "free",
             "delete_automation": "ask",
+            "house_overview": "free",
+            "room_details": "free",
+            "assistant_status": "free",
         }
     )
 

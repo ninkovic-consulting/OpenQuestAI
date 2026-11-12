@@ -1,4 +1,8 @@
-"""`LocalVoice`: the models, the audio ends and the loop, as one `Voice`."""
+"""`LocalVoice`: the models, the audio ends and the loop, as one `Voice`.
+
+While it runs it also lends its models to the phone channel (`transcribe`,
+`synthesize`), on the same worker thread, so no model runs twice at once.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +12,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
+
+import numpy as np
 
 from vision.core.bus import Bus
 from vision.core.events import Notice
@@ -84,6 +90,7 @@ class LocalVoice:
         self._worker = Worker()
         self._speaker = TtsSpeaker(bus, sink, self._worker.run)
         self.loop: VoiceLoop | None = None
+        self._loaded: Models | None = None
         self._tasks: list[asyncio.Task[None]] = []
 
     @property
@@ -101,6 +108,7 @@ class LocalVoice:
             self._worker.close()
             raise
         self._speaker.use(models.synth)
+        self._loaded = models
         if models.degraded is not None:
             self.bus.publish(Notice(level="warn", text=models.degraded))
         self.loop = VoiceLoop(
@@ -117,6 +125,21 @@ class LocalVoice:
             asyncio.create_task(self._listen(self.loop), name="voice-listen"),
         ]
 
+    async def transcribe(self, audio: np.ndarray) -> str:
+        """Text for 16 kHz mono float32 audio, on the model worker. Only while started."""
+        models = self._require()
+        return await self._worker.run(lambda: models.transcriber.transcribe(audio))
+
+    async def synthesize(self, text: str) -> tuple[np.ndarray, int]:
+        """The speaking voice saying `text`, as audio and its rate. Only while started."""
+        synth = self._require().synth
+        return await self._worker.run(lambda: synth.synth(text)), synth.sample_rate
+
+    def _require(self) -> Models:
+        if self._loaded is None:
+            raise VoiceUnavailable("Voice is not running.")
+        return self._loaded
+
     async def _listen(self, loop: VoiceLoop) -> None:
         try:
             await loop.listen()
@@ -131,4 +154,5 @@ class LocalVoice:
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks = []
         await self.source.close()
+        self._loaded = None
         self._worker.close()

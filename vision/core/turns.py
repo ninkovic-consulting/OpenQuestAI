@@ -8,7 +8,10 @@ automations.
 
 The local time goes into the user's message, never into the cached system
 prompt: a typed or spoken turn that mentions a time gets one line with it,
-and an automation's run says what it is and when it runs.
+an automation's run says what it is and when it runs, and a message from the
+paired phone says it came from there. The same goes for the short summary
+of the house: it rides on the user's message, so the cached prefix never
+changes.
 """
 
 from __future__ import annotations
@@ -58,8 +61,14 @@ def mentions_time(text: str) -> bool:
     return _MENTIONS_TIME.search(text) is not None
 
 
-def brain_text(text: str, origin: TurnOrigin, now: datetime) -> str:
-    """What the brain is sent for this turn: the words, with the local time when it helps."""
+def brain_text(text: str, origin: TurnOrigin, now: datetime, surroundings: str = "") -> str:
+    """What the brain is sent for this turn: the words, with the local time when it helps,
+    and `surroundings` (a few lines about the house) when the session has new ones."""
+    said = _with_time(text, origin, now)
+    return f"{said}\n\n[{surroundings}]" if surroundings else said
+
+
+def _with_time(text: str, origin: TurnOrigin, now: datetime) -> str:
     when = now_words(now)
     if origin.source == "automation":
         return (
@@ -68,6 +77,8 @@ def brain_text(text: str, origin: TurnOrigin, now: datetime) -> str:
             "instruction below and answer with the result in a sentence or two.]\n"
             f"{text}"
         )
+    if origin.source == "phone":
+        return f"{text}\n\n[Sent from the user's phone, {when}. The reply is read there as a message.]"
     if mentions_time(text):
         return f"{text}\n\n[Local time now: {when}.]"
     return text

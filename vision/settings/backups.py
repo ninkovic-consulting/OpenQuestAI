@@ -2,7 +2,8 @@
 
 A backup holds copies of some of these items, by name: `config.toml`,
 `house.toml`, `house` (the memory vault), `log.db` with its `-wal` and `-shm`
-files, `budget.json` and `automations.json`. The API key is never one of them. Nothing here
+files, `budget.json`, `automations.json` and `phone.json`. The API key and the
+phone's bot token are never among them. Nothing here
 decides what to reset; `reset.py` does.
 """
 
@@ -19,6 +20,7 @@ from typing import Any
 
 from vision.brains.budget import FILE_NAME as BUDGET_FILE
 from vision.core.config import Config
+from vision.remote.store import FILE_NAME as PHONE_FILE
 from vision.scheduler.store import FILE_NAME as AUTOMATIONS_FILE
 
 MANIFEST = "manifest.json"
@@ -54,6 +56,7 @@ def items(config: Config) -> dict[str, Path]:
         "log.db-shm": log_db.with_name(log_db.name + "-shm"),
         "budget.json": config.paths.home / BUDGET_FILE,
         AUTOMATIONS_FILE: config.paths.home / AUTOMATIONS_FILE,
+        PHONE_FILE: config.paths.home / PHONE_FILE,
     }
 
 

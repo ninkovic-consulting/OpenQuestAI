@@ -76,6 +76,7 @@ def test_plan_shape_and_first_use(config: Config) -> None:
         "name": "Vision",
         "model": "claude-haiku-5-5",
         "heavy_model": "claude-opus-5-5",
+        "persona": "agents/host.md",
     }
     hall = plan["rooms"][0]
     assert set(hall) == ROOM_KEYS
@@ -106,6 +107,9 @@ def test_plan_shape_and_first_use(config: Config) -> None:
                 ("resume_automation", "Resume an automation"),
                 ("run_automation", "Run an automation now"),
                 ("delete_automation", "Delete an automation"),
+                ("house_overview", "Describe the house"),
+                ("room_details", "Describe a room"),
+                ("assistant_status", "Check its own status"),
             ]
         ],
         "state": "idle",

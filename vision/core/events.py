@@ -30,9 +30,9 @@ Direction = Literal["out", "in"]
 
 State = Literal["idle", "listening", "transcribing", "thinking", "speaking"]
 BrainName = Literal["claude", "local", "fake"]
-UtteranceSource = Literal["voice", "text"]
-TurnSource = Literal["voice", "text", "automation"]
-"""Where a turn came from: said, typed, or an automation that came due."""
+UtteranceSource = Literal["voice", "text", "phone"]
+TurnSource = Literal["voice", "text", "automation", "phone"]
+"""Where a turn came from: said, typed, an automation that came due, or the paired phone."""
 AutomationChange = Literal["created", "updated", "deleted", "reloaded"]
 RoomLight = Literal["dark", "idle", "active"]
 GateOutcome = Literal["allow", "deny", "timeout"]

@@ -301,6 +301,7 @@ class FakeHouse:
                     "name": self.assistant,
                     "model": "claude-haiku-5-5",
                     "heavy_model": "claude-opus-5-5",
+                    "persona": "agents/host.md",
                 }
             ],
             "rooms": [

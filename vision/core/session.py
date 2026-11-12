@@ -33,6 +33,15 @@ An automation's run is a turn too (`run_automation`), with source
 automation is running and when, and when the automation is only shown, the
 reply is not spoken. The scheduler starts one only while the session is idle;
 input from the user interrupts it like any other turn.
+
+The brain is told where it is: a few lines about the house and its agents
+(`surroundings`), added to the user's message, never to the cached system
+prompt, on the first turn, whenever they change, and every few turns.
+
+A message from the paired phone is a turn too (`run_phone`), with source
+`phone`: its words are published as `user.utterance` with source `phone`,
+and the reply is spoken only when asked. Like an automation it starts only
+while the session is idle, so turns never overlap.
 """
 
 from __future__ import annotations
@@ -81,6 +90,9 @@ log = logging.getLogger(__name__)
 SayFn = Callable[[str], None]
 
 FAILED_LINE = "Sorry, I can't reach any of my models right now."
+SURROUNDINGS_EVERY = 8
+"""Repeat an unchanged house summary after this many turns: the brain keeps at least
+half its history when it trims, so one is always in view."""
 
 _HEAVY = re.compile(
     r"\b(think (it|this|that|things|something) (through|over)"
@@ -129,9 +141,19 @@ class Session:
     """Runs turns one at a time. Start `run()` as a task; cancel it to stop."""
 
     def __init__(
-        self, bus: Bus, brain: Brain, speaker: Speaker, memory: Memory, tools: ToolHost
+        self,
+        bus: Bus,
+        brain: Brain,
+        speaker: Speaker,
+        memory: Memory,
+        tools: ToolHost,
+        *,
+        surroundings: Callable[[], str] | None = None,
     ) -> None:
         self.bus = bus
+        self._surroundings = surroundings
+        self._said_surroundings: str | None = None
+        self._turns_since_surroundings = 0
         self.brain = brain
         self.speaker = speaker
         self.memory = memory
@@ -191,10 +213,26 @@ class Session:
         Returns the logged turn and its origin, whose `needed_approval` says a
         tool asked first and nobody answered.
         """
+        origin = TurnOrigin("automation", automation_id, name)
+        return await self._run_alone(_Turn(text, origin, speak=speak)), origin
+
+    async def run_phone(self, text: str, *, speak: bool) -> TurnRecord:
+        """Run a message from the paired phone as a turn and wait for it to end.
+
+        Like `run_automation`, only while the session is idle (it raises
+        `RuntimeError` otherwise, before anything is published). The words go
+        into the caption as `user.utterance` with source `phone`; the reply is
+        spoken on the Mac only when `speak` is true.
+        """
         if self.busy:
             raise RuntimeError("a turn is already running")
-        origin = TurnOrigin("automation", automation_id, name)
-        turn = _Turn(text, origin, speak=speak)
+        self.bus.publish(UserUtterance(text=text, source="phone"))
+        return await self._run_alone(_Turn(text, TurnOrigin("phone"), speak=speak))
+
+    async def _run_alone(self, turn: _Turn) -> TurnRecord:
+        """Start `turn` now (the session must be idle) and wait for its record."""
+        if self.busy:
+            raise RuntimeError("a turn is already running")
         task = asyncio.create_task(self._run_turn(turn))
         self._task = task
         await asyncio.gather(task, return_exceptions=True)
@@ -202,7 +240,7 @@ class Session:
             turn.status = "interrupted"
             await self._log(turn)
         assert turn.record is not None
-        return turn.record, origin
+        return turn.record
 
     async def interrupt(self) -> None:
         """Stop the turn in progress, if any, and wait for it to close."""
@@ -264,7 +302,7 @@ class Session:
 
     async def _stream(self, turn: _Turn, say: SayFn) -> None:
         splitter = SentenceSplitter()
-        text = brain_text(turn.text, turn.origin, datetime.now(local_zone()))
+        text = brain_text(turn.text, turn.origin, datetime.now(local_zone()), self._fresh_surroundings())
         try:
             async for event in self.brain.send(text, heavy=wants_heavy(turn.text)):
                 turn.brain = self.brain.name
@@ -290,7 +328,23 @@ class Session:
         for sentence in splitter.flush():
             say(sentence)
 
+    def _fresh_surroundings(self) -> str:
+        """The house summary when it changed, or every few turns so trimmed history keeps one."""
+        if self._surroundings is None:
+            return ""
+        try:
+            now = self._surroundings()
+        except Exception:
+            log.exception("could not describe the surroundings")
+            return ""
+        self._turns_since_surroundings += 1
+        if now == self._said_surroundings and self._turns_since_surroundings < SURROUNDINGS_EVERY:
+            return ""
+        self._said_surroundings, self._turns_since_surroundings = now, 0
+        return now
+
     def _fail(self, turn: _Turn, error: str) -> None:
+        self._said_surroundings = None  # the failed turn's summary never reached the history
         turn.status = "failed"
         turn.error = error
         self.bus.publish(Notice(level="error", text=f"No brain could answer ({error})."))
