@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: `vision app build` fills in the placeholders (vision/macapp/bundle.py). -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>${name}</string>
+	<key>CFBundleExecutable</key>
+	<string>${executable}</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>${bundle_id}</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>${name}</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>${version}</string>
+	<key>CFBundleVersion</key>
+	<string>${version}</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>${min_macos}</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSSupportsSuddenTermination</key>
+	<false/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>${name} listens for its name and for what you say to it. Speech is turned into text on this Mac.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>${name} runs from its project folder and works in the project folders you attach to its rooms.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>${name} works in the project folders you attach to its rooms.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>${name} works in the project folders you attach to its rooms.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>127.0.0.1</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
+	<key>VisionProjectPath</key>
+	<string>${project}</string>
+	<key>VisionHome</key>
+	<string>${home}</string>
+	<key>VisionPort</key>
+	<integer>${port}</integer>
+</dict>
+</plist>

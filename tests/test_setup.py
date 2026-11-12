@@ -16,6 +16,7 @@ import pytest
 from vision.core import cli
 from vision.core.config import Config, load_config
 from vision.setup import checks, doctor, run_checks
+from vision.macapp import LoginState
 from vision.setup.system import KeyVerdict
 from vision.setup.wizard import TOOLS_NOTE, run_setup
 from vision.voice.settings import VoiceSettings
@@ -29,6 +30,7 @@ ORDER = [
     "microphone",
     "github",
     "window",
+    "app",
     "login",
     "house",
     "tailscale",
@@ -50,6 +52,10 @@ class FakeSystem:
     installed: bool = True
     loaded: bool = True
     built: bool = True
+    has_swiftc: bool = True
+    app_is_built: bool = True
+    app_is_installed: bool = False
+    login_item: LoginState | None = "off"
     # what the setup did
     calls: list[str] = field(default_factory=list)
     stored: list[str] = field(default_factory=list)
@@ -93,6 +99,18 @@ class FakeSystem:
     def window_built(self) -> bool:
         return self.built
 
+    def swiftc(self) -> Path | None:
+        return Path("/fake/xcode/swiftc") if self.has_swiftc else None
+
+    def app_built(self, config: Config) -> bool:
+        return self.app_is_built
+
+    def app_installed(self, config: Config) -> bool:
+        return self.app_is_installed
+
+    def app_login_item(self, config: Config) -> LoginState | None:
+        return self.login_item if self.app_is_installed else None
+
     def store_key(self, key: str) -> None:
         self.stored.append(key)
         self.key_source = "keychain"
@@ -122,6 +140,21 @@ class FakeSystem:
         self.installed = self.loaded = True
         return Path("/fake/LaunchAgents/agent.plist")
 
+    def build_app(self, config: Config) -> Path:
+        self.calls.append("build_app")
+        self.app_is_built = True
+        return Path("/fake/dist/Vision.app")
+
+    def install_app(self, config: Config) -> Path:
+        self.calls.append("install_app")
+        self.app_is_installed = True
+        return Path("/fake/Applications/Vision.app")
+
+    def set_app_login_item(self, config: Config, on: bool) -> LoginState:
+        self.calls.append(f"app_login {'on' if on else 'off'}")
+        self.login_item = "enabled" if on else "off"
+        return "enabled" if on else "off"
+
 
 def speech_repos(config: Config) -> tuple[str, ...]:
     return VoiceSettings.from_config(config).model_repos()
@@ -130,7 +163,7 @@ def speech_repos(config: Config) -> tuple[str, ...]:
 def everything(config: Config) -> FakeSystem:
     """A Mac where everything is in place."""
     cache = {LOCAL_REPO: 2_300_000_000, **{r: 500_000_000 for r in speech_repos(config)}}
-    return FakeSystem(cache=cache)
+    return FakeSystem(cache=cache, app_is_installed=True)
 
 
 def by_id(found: list[checks.Check]) -> dict[str, checks.Check]:
@@ -245,6 +278,35 @@ def test_start_at_login(config: Config) -> None:
     assert checks.start_at_login(config, FakeSystem(installed=False)).detail == "not installed"
 
 
+def test_start_at_login_through_the_app(config: Config) -> None:
+    def app(state: LoginState | None) -> FakeSystem:
+        return FakeSystem(installed=False, loaded=False, app_is_installed=True, login_item=state)
+
+    on = checks.start_at_login(config, app("enabled"))
+    assert on.status == "ok" and "opens at login" in on.detail
+    waiting = checks.start_at_login(config, app("requires-approval"))
+    assert waiting.status == "optional" and "Login Items" in waiting.detail
+    off = checks.start_at_login(config, app("off"))
+    assert off.status == "optional" and "menu bar item" in off.fix
+    assert "could not say" in checks.start_at_login(config, app(None)).detail
+    # A loaded daemon LaunchAgent is enough, app or not.
+    agent = FakeSystem(app_is_installed=True, login_item="off")
+    assert checks.start_at_login(config, agent).detail == "installed and loaded"
+
+
+def test_mac_app(config: Config) -> None:
+    assert checks.app(config, FakeSystem(app_is_installed=True)).detail == (
+        "installed in ~/Applications/Vision.app"
+    )
+    built = checks.app(config, FakeSystem())
+    assert built.status == "optional" and built.fix == "`vision app install`"
+    unbuilt = checks.app(config, FakeSystem(app_is_built=False))
+    assert unbuilt.detail == "not built" and "vision app build" in unbuilt.fix
+    no_compiler = checks.app(config, FakeSystem(app_is_built=False, has_swiftc=False))
+    assert "Swift compiler is missing" in no_compiler.detail
+    assert "xcode-select --install" in no_compiler.fix
+
+
 def test_house(config: Config) -> None:
     check = checks.house(config, FakeSystem())
     assert check.detail == "assistant Vision, 0 of 10 rooms with a project, monthly cap $150"
@@ -347,7 +409,8 @@ def test_setup_walks_through_and_fixes(config: Config, tmp_path: Path) -> None:
             "n",  # speech models
             "n",  # microphone
             "y",  # build the window
-            "n",  # start at login
+            "y",  # install the app
+            "n",  # open the app at login
             "Ada",  # name
             "lots",  # cap, refused
             "40",  # cap
@@ -366,7 +429,7 @@ def test_setup_walks_through_and_fixes(config: Config, tmp_path: Path) -> None:
 
     assert code == 0
     assert system.stored == ["sk-test-not-real"]
-    assert system.calls == ["verify_key", "download_local_model", "build_window"]
+    assert system.calls == ["verify_key", "download_local_model", "build_window", "install_app"]
     assert "sk-test-not-real" not in io.text
     assert "The API accepted the key." in io.text
     assert "Download: 2.3 GB" in io.text
@@ -396,12 +459,35 @@ def test_setup_twice_changes_nothing(config: Config) -> None:
 
 
 def test_setup_skips_without_the_optional_parts(config: Config) -> None:
-    system = FakeSystem(modules=set(), built=False, programs={"uv"}, installed=False)
+    system = FakeSystem(
+        modules=set(), built=False, programs={"uv"}, installed=False,
+        has_swiftc=False, app_is_built=False,
+    )
     io = Script(answers=["n"] * 3)
     run_setup(config, system, io)
     assert system.calls == []
     assert "needs `uv sync --extra local`" in io.text
     assert "Not built. Install Node.js" in io.text
+    assert "Not built. Install Xcode" in io.text
+
+
+def test_setup_builds_the_app_and_opens_it_at_login(config: Config) -> None:
+    system = FakeSystem(installed=False, loaded=False, app_is_built=False)
+    # key, check, local model, speech, mic; then build, install, login
+    io = Script(answers=["n"] * 5 + ["", "", "y"])
+    run_setup(config, system, io)
+    assert system.calls == ["build_app", "install_app", "app_login on"]
+    assert "The app opens at login, hidden, and starts the assistant." in io.text
+    assert "~/Library/LaunchAgents" not in io.text
+
+
+def test_setup_says_when_the_app_awaits_approval(config: Config) -> None:
+    system = FakeSystem(
+        installed=False, loaded=False, app_is_installed=True, login_item="requires-approval"
+    )
+    run_setup(config, system, io := Script(answers=[]))
+    assert system.calls == []
+    assert "Approve it in System Settings" in io.text
 
 
 def test_setup_can_be_stopped(config: Config) -> None:

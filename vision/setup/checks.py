@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
+from vision import macapp
 from vision.core.config import Config
 from vision.house import HouseError, store
 from vision.house.model import HOST
@@ -78,6 +79,7 @@ SPEECH = About("speech_models", "Speech models", "talking by voice", False)
 MIC = About("microphone", "Microphone", "talking by voice", False)
 GITHUB = About("github", "GitHub CLI", "GitHub work in project rooms", False)
 WINDOW = About("window", "The window", "seeing the house (`vision ui`)", False)
+APP = About("app", "The Mac app", "opening the house from its own icon, without Terminal", False)
 LOGIN = About("login", "Start at login", "keeping Vision running after you log in", False)
 HOUSE = About("house", "The house", "rooms, agents and their projects", True)
 TAILSCALE = About("tailscale", "Tailscale", "reaching the house from a phone, later", False)
@@ -180,7 +182,46 @@ def window(config: Config, system: System) -> Check:
     )
 
 
+def app(config: Config, system: System) -> Check:
+    name = macapp.app_name(config)
+    if system.app_installed(config):
+        return APP.result(True, f"installed in ~/Applications/{name}.app")
+    if system.app_built(config):
+        return APP.result(
+            False, f"built (dist/{name}.app), not installed", "`vision app install`"
+        )
+    if system.swiftc() is None:
+        return APP.result(
+            False,
+            "not built, and the Swift compiler is missing",
+            "install Xcode or the Command Line Tools (`xcode-select --install`), "
+            "then `vision app build`",
+        )
+    return APP.result(
+        False, "not built", "`vision app build`, then `vision app install` (or `vision setup`)"
+    )
+
+
+APP_LOGIN = {
+    "enabled": "the app opens at login, hidden, and starts the assistant",
+    "requires-approval": "the app asked to open at login; approve it in System Settings, "
+    "General, Login Items",
+    "off": "the app is installed but does not open at login",
+}
+
+
 def start_at_login(config: Config, system: System) -> Check:
+    if not (system.agent_installed() and system.agent_loaded()) and system.app_installed(config):
+        state = system.app_login_item(config)
+        if state is None:
+            return LOGIN.result(
+                False, "the app is installed, but it could not say", "reinstall: `vision app install`"
+            )
+        return LOGIN.result(
+            state == "enabled",
+            APP_LOGIN[state],
+            "turn on Start at login in the app's menu bar item (or `vision setup`)",
+        )
     installed = system.agent_installed()
     loaded = installed and system.agent_loaded()
     if loaded:
@@ -223,6 +264,7 @@ ORDER: tuple[Callable[[Config, System], Check], ...] = (
     microphone,
     github,
     window,
+    app,
     start_at_login,
     house,
     tailscale,

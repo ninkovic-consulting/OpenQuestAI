@@ -91,7 +91,7 @@ Each unit has one job and a small interface. Paths are relative to the repo root
 | `config.py` | Loads `~/.vision/config.toml` over built-in defaults. |
 | `server.py` | FastAPI app: static web files, `/api/*`, `/ws`. |
 | `session.py` | One conversation turn end to end: input, brain, sentences, voice, log. |
-| `cli.py` | `vision run`, `vision ui`, `vision auth`, `vision setup`, `vision doctor [--json] [--online]`, `vision install`, `vision uninstall`, `vision status`. `setup` and `doctor` are section 4.9. |
+| `cli.py` | `vision run`, `vision ui`, `vision app build\|install\|open`, `vision auth`, `vision setup`, `vision doctor [--json] [--online]`, `vision install`, `vision uninstall`, `vision status`. `setup` and `doctor` are section 4.9, the app is section 4.10. |
 | `launchd.py` | Writes and loads the LaunchAgent plist with `KeepAlive` and `RunAtLoad`. |
 | `programs.py` | Finds a program in `PATH` and then in the usual Homebrew, nvm, user and app-bundle folders, because the daemon runs under launchd with a short `PATH`. |
 
@@ -178,7 +178,7 @@ Vite, TypeScript, Three.js. Built to static files that the daemon serves.
 - `hud/`. The overlay from board 04: wordmark and state, residents list, room labels, the caption with your words and Vision's, the gate card, and a text field opened with `/`.
 - `net/socket.ts`. The WebSocket client and a small store the HUD and scene both read.
 
-`vision ui` opens this in a frameless fullscreen `pywebview` window. It reads `~/.vision/token` and hands it to the page through the window's script bridge, so the token never appears in a URL. `vision ui --browser` opens the same app in a normal browser for development and passes the token in the URL fragment, which is not sent to any server.
+The Mac app (section 4.10) is the normal way to show this. For development, `vision ui` opens it in a frameless fullscreen `pywebview` window. It reads `~/.vision/token` and hands it to the page through the window's script bridge, so the token never appears in a URL. `vision ui --browser` opens the same app in a normal browser for development and passes the token in the URL fragment, which is not sent to any server.
 
 ### 4.7 Assets: `assets/`
 
@@ -285,7 +285,8 @@ Each requirement is a check with an id, a short title, what it is needed for, wh
 | Microphone | no | Never probed by the doctor, since that can raise a macOS permission prompt; reported as not checked, with the check command. |
 | GitHub CLI | no | `gh` installed, and `gh auth status` exits 0. Only the exit code is read; no token is read or printed. |
 | The window | no | `web/dist` built, and if not, whether Node is there to build it. |
-| Start at login | no | The LaunchAgent installed and loaded (`launchctl print`). |
+| The Mac app | no | Built in `dist/` and installed in `~/Applications`, and if not built, whether `swiftc` is there (`xcrun --find swiftc`). |
+| Start at login | no | The daemon's LaunchAgent installed and loaded (`launchctl print`); or, when the app is installed, the app's own login item, read with `<app> --login-item status`. |
 | The house | yes | The house files are valid: the assistant's name, how many rooms have a project, the monthly cap. |
 | Tailscale | no | Installed, for reaching the house from a phone in slice 5. |
 
@@ -293,7 +294,34 @@ Programs are found through `vision/core/programs.py`, so the checks work under l
 
 **`vision doctor`** prints the checklist in two groups, needed and optional, with the purpose and fix for anything not in place. `--json` prints `{ok, checks}` instead. It exits 0 when everything needed is in place and 1 otherwise, and changes nothing.
 
-**`vision setup`** walks the same list in a plain terminal with `input` and `getpass`, and fixes what it can after a yes at each step: store the API key in the Keychain and offer to verify it; download the local model and the speech models, stating the size first; run the three-second microphone check; build the window when Node is present; start at login; set the assistant's name and the monthly cap in `config.toml`; attach project folders to rooms, proposing tools for each. Every step can be skipped, a step already done says so, running it twice changes nothing, and it ends by printing the doctor's checklist.
+**`vision setup`** walks the same list in a plain terminal with `input` and `getpass`, and fixes what it can after a yes at each step: store the API key in the Keychain and offer to verify it; download the local model and the speech models, stating the size first; run the three-second microphone check; build the window when Node is present; build the app when `swiftc` is present and install it into `~/Applications`; start at login, through the app's login item when the app is installed and through the daemon's LaunchAgent otherwise; set the assistant's name and the monthly cap in `config.toml`; attach project folders to rooms, proposing tools for each. Every step can be skipped, a step already done says so, running it twice changes nothing, and it ends by printing the doctor's checklist.
+
+### 4.10 The Mac app: `macos/` and `vision/macapp/`
+
+A small native shell in Swift, compiled with `swiftc` by `macos/build.sh` (no Xcode project) into `dist/<name>.app`, bundle id `org.openquestai.vision`, macOS 14 or later. Python stays the mind; the shell is only the window, the menu bar item and the process that owns the daemon. It is macOS only; Windows and Linux get their own shells in a later slice, keeping the same contract with the page.
+
+| File | Job |
+|---|---|
+| `macos/Info.plist` | Template. `vision app build` fills in the name, the version, the project path, the port and the home, so the app knows where its daemon lives. |
+| `macos/build.sh` | Compiles `macos/Sources`, assembles the bundle with `assets/icon/Vision.icns` when present, and signs it ad hoc with the designated requirement `identifier "org.openquestai.vision"`, so permissions survive a rebuild. |
+| `macos/Sources/` | `Supervisor` (find or start the daemon, watch it), `DaemonProcess` (the child), `MainWindow` and `PageView` (the window and the WKWebView), `Bridge` (the page's API), `StatusMenu`, `LoginItem`, `SelfTest`. |
+| `vision/macapp/` | `vision app build`, `install` (into `~/Applications`) and `open`, and asking the app about its login item. |
+
+**On launch** the app asks `GET /api/health` on its port. If nothing answers, it starts `<project>/.venv/bin/python -m vision run --port <port>` as its child, with `VISION_HOME` set and output in `logs/app-daemon.log`, and shows a plain loading view (ground `#1C0E0B`, text `#EDE4D0`, accent `#E2A62B`) until health answers with this home's token. Then it shows the page in a borderless window covering the screen with the pointer, with the Dock and menu bar hidden while it is in front. This is not macOS's full-screen Space, so Escape, Space and typed keys all reach the page. Out of full screen (Ctrl+Cmd+F) the window is 1440 by 900, or 85 percent of a smaller screen, and no smaller than 1100 by 700. Only `http://127.0.0.1:<port>` loads in the window (an ATS exception for that address only); other links open in the default browser. Launched as a login item, it starts hidden: the daemon runs and the window waits.
+
+**The page's API.** A user script defines `window.pywebview.api`, the same object `vision ui` provides, so the page needs no change. Every method returns a promise: `token()` (the token, read from `$VISION_HOME/token`; never in a URL), `chooseFolder()` (an absolute path or null), `micStatus()` and `requestMic()` (`"granted"`, `"denied"`, `"restricted"` or `"undetermined"`), `openSystemSettings(pane)` (`"microphone"`, `"login-items"` or `"files-and-folders"`; true when opened), `loginItemEnabled()` and `setLoginItem(enabled)` (a boolean), `restartDaemon()` (true once the daemon the app owns answers again, false if the app does not own it) and `appInfo()` (`{name, version, bundleId, ownsDaemon}`). Only the main frame on the daemon's origin is answered.
+
+**While it runs**, it polls `/api/state` every two seconds for the menu bar item, which offers Open, a state line (idle, listening, thinking, speaking or not running), Start at login and Quit. If the daemon stops answering or its child exits, the window says so and offers to restart it.
+
+**On close** (Cmd+W), the window and the page are torn down; the app, the menu bar item and the daemon keep running. Clicking the Dock icon or Open brings the window back.
+
+**On quit** (Cmd+Q), the app stops the daemon only if it started it: SIGTERM, then SIGKILL after five seconds. A daemon started by `vision run` or the LaunchAgent is left alone.
+
+**Permissions.** macOS attributes a child process's privacy access to the app that started it (the responsible process), so the microphone and folder prompts name the app, using its `NSMicrophoneUsageDescription` and folder usage strings. The bundle carries the audio-input entitlement.
+
+**Start at login** uses `SMAppService.mainApp`. If the system refuses to register the ad hoc signed app, the app writes a per-user LaunchAgent, `org.openquestai.vision.login`, that runs `open -g -j -a <app> --args --login`. The menu toggle, the page's `setLoginItem` and `<app> --login-item on|off|status` (used by setup and doctor) all go through the same code.
+
+**Self-test.** `<app> --self-test <result.json>` uses a throwaway home with voice off, the fake brain and a free port, opens a normal window, waits until the page reports that it is connected and that every bridge method exists (none is called), writes the result, stops the daemon and quits, in about four seconds.
 
 ## 5. Protocol
 
@@ -372,8 +400,9 @@ Python 3.12 with `uv`; FastAPI and uvicorn; the `anthropic` SDK; `keyring` for t
 ## 10. Layout
 
 ```
-vision/            core/ brains/ voice/ memory/ gate/ house/ setup/
+vision/            core/ brains/ voice/ memory/ gate/ house/ setup/ macapp/
 web/               src/scene/ src/hud/ src/net/
+macos/             Sources/ (the Swift shell), Info.plist template, build.sh
 assets/            models/  textures/  design/
 house/             default.toml, tools.toml, agent personas, library template (neutral, no personal data)
 tests/

@@ -7,7 +7,8 @@
     vision auth                            store the Anthropic API key in the Keychain
     vision doctor [--json] [--online]      check what is set up; changes nothing
     vision setup                           set up step by step, asking before each change
-    vision ui [--browser]                  open the window (or a browser tab)
+    vision ui [--browser]                  (developer) open the window without the app
+    vision app build|install|open          build the Mac app, copy it to ~/Applications, open it
     vision install [--dry-run]             install the LaunchAgent
     vision uninstall                       remove the LaunchAgent
 """
@@ -145,6 +146,22 @@ def cmd_ui(config: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_app(config: Config, args: argparse.Namespace) -> int:
+    from vision import macapp
+
+    try:
+        if args.action == "build":
+            print(f"Built {macapp.build(config)}")
+        elif args.action == "install":
+            print(f"Installed {macapp.install(config)}")
+        else:
+            macapp.open_app(macapp.app_to_open(config))
+    except (macapp.AppBuildError, FileNotFoundError) as exc:
+        print(exc)
+        return 1
+    return 0
+
+
 def cmd_install(config: Config, args: argparse.Namespace) -> int:
     if args.dry_run:
         sys.stdout.write(launchd.plist_bytes(config, port=args.port).decode())
@@ -192,10 +209,14 @@ def build_parser() -> argparse.ArgumentParser:
     setup = sub.add_parser("setup", help="set up step by step, asking before each change")
     setup.set_defaults(func=cmd_setup)
 
-    ui = sub.add_parser("ui", help="open the window")
+    ui = sub.add_parser("ui", help="(developer) open the window without the Mac app")
     ui.add_argument("--browser", action="store_true", help="open in the default browser instead")
     ui.add_argument("--port", type=int)
     ui.set_defaults(func=cmd_ui)
+
+    app = sub.add_parser("app", help="build, install or open the Mac app")
+    app.add_argument("action", choices=["build", "install", "open"])
+    app.set_defaults(func=cmd_app)
 
     install = sub.add_parser("install", help="install and load the LaunchAgent")
     install.add_argument("--dry-run", action="store_true", help="print the plist and do nothing")

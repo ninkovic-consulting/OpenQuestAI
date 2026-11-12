@@ -17,6 +17,7 @@ Everything else is optional:
 | The local model (about 2.3 GB) | Answers when Claude is offline or the monthly cap is reached. |
 | The speech models (about 2 GB) and a microphone | Talking by voice. Without them, typing works the same way. |
 | Node.js | Building the window. |
+| Xcode or the Command Line Tools | Building the Mac app (`swiftc`). |
 | The GitHub CLI (`gh`), signed in | GitHub work in project rooms, once the other agents wake up. |
 | Tailscale | Reaching the house from a phone, in a later version. |
 
@@ -24,16 +25,31 @@ Everything else is optional:
 
 ```sh
 uv sync --all-extras
-uv run vision setup     # walks through everything, asking before each change
-uv run vision run       # starts the assistant in this terminal
-uv run vision ui        # opens the window, in another terminal
+uv run vision setup       # walks through everything, asking before each change
+uv run vision app build   # builds dist/Vision.app (needs Xcode or the Command Line Tools)
+uv run vision app install # copies it into ~/Applications
+uv run vision app open    # opens it
 ```
 
-`vision setup` asks for the API key (input hidden) and stores it in the macOS Keychain, offers to download the models (saying how big they are first), to run a three-second microphone check, to build the window, to start the assistant at login, and to attach your project folders to rooms. Every step can be skipped, and running it again is safe.
+`vision setup` asks for the API key (input hidden) and stores it in the macOS Keychain, offers to download the models (saying how big they are first), to run a three-second microphone check, to build the window, to build and install the app, to start the assistant at login, and to attach your project folders to rooms. Every step can be skipped, and running it again is safe.
+
+## The app
+
+The app is the normal way to run Vision. It is a small Swift shell around the daemon and the window, built with `swiftc` (no Xcode project) from `macos/`, signed ad hoc on this Mac, and named after the assistant (`[assistant] name`, "Vision" by default). The packaged app is macOS only for now; Windows and Linux are planned.
+
+- **Opening it** shows the house full screen on the screen with the pointer. If no assistant is answering on its port, the app starts one as its own child and shows a plain loading screen until it answers. If the assistant stops, the window says so and offers to restart it.
+- **Closing the window** (Cmd+W) leaves the app and the assistant running; the armchair in the menu bar shows the assistant's state and opens the window again. **Ctrl+Cmd+F** switches between full screen and a normal window.
+- **Quitting** (Cmd+Q, or Quit in the menu bar item) stops the assistant only if the app started it.
+- **Start at login** is a checkmark in the menu bar item. The app then opens hidden at login, with the assistant running and the window closed.
+- **Permissions** are asked for under the app's name: the microphone the first time the assistant listens, and folder access (Documents, Desktop) when it works in a project there.
+
+`vision app build` writes the project folder, the port and the home into the app, so rebuild after changing any of them or the assistant's name. It uses `assets/icon/Vision.icns` when present.
+
+For development, `vision run` starts the assistant in a terminal and `vision ui` opens the window with pywebview, without building anything.
 
 `vision doctor` shows what is in place and what is missing, with the fix for each, and changes nothing. `vision doctor --json` gives the same as JSON, and `vision doctor --online` also checks the API key with one unbilled call. It exits 0 when everything needed is in place.
 
-Other commands: `vision status` asks the running assistant how it is, `vision auth` stores a new API key, `vision install` and `vision uninstall` add and remove the LaunchAgent that starts it at login, and `vision ui --browser` opens the window in a browser tab. With the virtual environment activated (`source .venv/bin/activate`) you can drop the `uv run` prefix.
+Other commands: `vision status` asks the running assistant how it is, `vision auth` stores a new API key, `vision install` and `vision uninstall` add and remove a LaunchAgent that starts the bare daemon at login (for running without the app), and `vision ui --browser` opens the window in a browser tab. With the virtual environment activated (`source .venv/bin/activate`) you can drop the `uv run` prefix.
 
 ## Where settings and data live
 
@@ -45,7 +61,7 @@ Everything personal lives in `~/.vision/`, never in the repo:
 | `house.toml` | Your house: agent names, rooms, projects and tools. Created from `house/default.toml` on first run. |
 | `house/` | The memory, as plain Markdown you can read and edit: the persona, notes, and a library about you and your projects. |
 | `log.db` | Every conversation turn and every tool call with the gate's decision. |
-| `logs/` | The daemon's logs when it runs at login. |
+| `logs/` | The daemon's logs: `app-daemon.log` when the app starts it, `daemon.*.log` under the LaunchAgent. |
 | `token` | The secret the window uses to talk to the daemon (readable only by you). |
 
 The API key is in the macOS Keychain, or in a git-ignored `.env` file at the repo root as `ANTHROPIC_API_KEY`. It never goes into a log, a prompt or the window.

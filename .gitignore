@@ -28,3 +28,6 @@ web/public/assets/
 
 # Parallel build worktrees
 .worktrees/
+
+# The built Mac app
+dist/

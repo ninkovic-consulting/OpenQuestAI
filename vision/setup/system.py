@@ -1,8 +1,8 @@
 """Everything the checks and the setup touch outside this process, behind one interface.
 
 The checks only read. The setup's changes (storing the key, downloads, the
-microphone check, building the window, the LaunchAgent) are separate methods
-so a test can fake all of it.
+microphone check, building the window and the app, the login items) are
+separate methods so a test can fake all of it.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 from typing import Literal, Protocol
 
+from vision import macapp
 from vision.core import launchd, secrets
 from vision.core.config import Config
 from vision.core.programs import find_program
@@ -40,6 +41,10 @@ class System(Protocol):
     def agent_installed(self) -> bool: ...
     def agent_loaded(self) -> bool: ...
     def window_built(self) -> bool: ...
+    def swiftc(self) -> Path | None: ...
+    def app_built(self, config: Config) -> bool: ...
+    def app_installed(self, config: Config) -> bool: ...
+    def app_login_item(self, config: Config) -> macapp.LoginState | None: ...
 
     # ------------------------------------------------------------ changes, setup only
     def store_key(self, key: str) -> None: ...
@@ -49,6 +54,9 @@ class System(Protocol):
     def mic_check(self) -> None: ...
     def build_window(self) -> bool: ...
     def install_agent(self, config: Config) -> Path: ...
+    def build_app(self, config: Config) -> Path: ...
+    def install_app(self, config: Config) -> Path: ...
+    def set_app_login_item(self, config: Config, on: bool) -> macapp.LoginState: ...
 
 
 class MacSystem:
@@ -132,6 +140,25 @@ class MacSystem:
     def window_built(self) -> bool:
         return (WEB_DIR / "dist" / "index.html").is_file()
 
+    def swiftc(self) -> Path | None:
+        return macapp.find_swiftc()
+
+    def app_built(self, config: Config) -> bool:
+        return macapp.built_app(config).is_dir()
+
+    def app_installed(self, config: Config) -> bool:
+        return macapp.installed_app(config).is_dir()
+
+    def app_login_item(self, config: Config) -> macapp.LoginState | None:
+        """The installed app's login item; None when it is not installed or cannot say."""
+        app = macapp.installed_app(config)
+        if not app.is_dir():
+            return None
+        try:
+            return macapp.login_item(config, app, "status")
+        except (OSError, RuntimeError, subprocess.TimeoutExpired):
+            return None
+
     def store_key(self, key: str) -> None:
         secrets.store_api_key(key)
 
@@ -185,3 +212,12 @@ class MacSystem:
 
     def install_agent(self, config: Config) -> Path:
         return launchd.install(config)
+
+    def build_app(self, config: Config) -> Path:
+        return macapp.build(config)
+
+    def install_app(self, config: Config) -> Path:
+        return macapp.install(config)
+
+    def set_app_login_item(self, config: Config, on: bool) -> macapp.LoginState:
+        return macapp.login_item(config, macapp.installed_app(config), "on" if on else "off")

@@ -81,6 +81,7 @@ class Setup:
             ("Speech models", self.speech_models),
             ("Microphone", self.microphone),
             ("The window", self.window),
+            ("The Mac app", self.mac_app),
             ("Start at login", self.start_at_login),
             ("Name and monthly cap", self.name_and_cap),
             ("Rooms and projects", self.rooms),
@@ -180,18 +181,57 @@ class Setup:
             if built is not None:
                 self.io.say("Built." if built else "The build failed; its output is above.")
 
-    def start_at_login(self) -> None:
-        found = checks.start_at_login(self.config, self.system)
+    def mac_app(self) -> None:
+        found = checks.app(self.config, self.system)
         if found.status == "ok":
-            self.io.say(f"Done: {self.config.assistant.name} starts at login.")
+            self.io.say(f"Done: {found.detail}.")
             return
         name = self.config.assistant.name
+        if not self.system.app_built(self.config):
+            if self.system.swiftc() is None:
+                self.io.say(f"Not built. {found.fix[0].upper()}{found.fix[1:]}.")
+                return
+            self.io.say(f"The app opens {name} from its own icon, starts the assistant and "
+                        "puts it in the menu bar. Building it takes about a minute.")
+            if not self.confirm("Build the app now?", default=True):
+                return
+            if self.attempt("Building", lambda: self.system.build_app(self.config)) is None:
+                return
+        if self.confirm(f"Install {name} into ~/Applications?", default=True):
+            path = self.attempt("Installing", lambda: self.system.install_app(self.config))
+            if path is not None:
+                self.io.say(f"Installed {path}. Open it with `vision app open` or from Finder.")
+
+    def start_at_login(self) -> None:
+        found = checks.start_at_login(self.config, self.system)
+        name = self.config.assistant.name
+        if found.status == "ok":
+            self.io.say(f"Done: {name} starts at login.")
+            return
+        if self.system.app_installed(self.config):
+            self.app_at_login()
+            return
         self.io.say(f"A LaunchAgent in ~/Library/LaunchAgents starts {name} when you log in "
                     "and restarts it if it stops. `vision uninstall` removes it.")
         if self.confirm(f"Start {name} at login?"):
             path = self.attempt("Installing", lambda: self.system.install_agent(self.config))
             if path is not None:
                 self.io.say(f"Installed {path}.")
+
+    def app_at_login(self) -> None:
+        name = self.config.assistant.name
+        if self.system.app_login_item(self.config) == "requires-approval":
+            self.io.say("The app has asked to open at login. Approve it in System Settings, "
+                        "General, Login Items.")
+            return
+        self.io.say(f"The {name} app can open at login, hidden: the assistant runs and the "
+                    "window stays closed until you open it. Turn it off in its menu bar item.")
+        if self.confirm(f"Open {name} at login?"):
+            state = self.attempt(
+                "Asking the app", lambda: self.system.set_app_login_item(self.config, True)
+            )
+            if state is not None:
+                self.io.say(checks.APP_LOGIN[state][0].upper() + checks.APP_LOGIN[state][1:] + ".")
 
     def name_and_cap(self) -> None:
         current = self.config.assistant.name
@@ -214,9 +254,12 @@ class Setup:
             update_config(path, "assistant", {"name": name})
         if cap != cap_now:
             update_config(path, "budget", {"monthly_cap_usd": cap})
+        had_app = self.system.app_built(self.config)
         if name != current or cap != cap_now:
             self.config = load_config(self.config.paths.home)
             self.io.say(f"Saved in {path}. A running daemon picks it up when restarted.")
+            if name != current and had_app:
+                self.io.say("Run `vision app build` and `vision app install` to rename the app.")
         else:
             self.io.say("Unchanged.")
 
