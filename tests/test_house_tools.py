@@ -174,12 +174,7 @@ def test_room_tools_win_over_the_agent(config: Config) -> None:
     assert [t["id"] for t in rooms["den"]["tools"]] == ["npm", "gh"]
     assert [t["id"] for t in rooms["workshop"]["tools"]] == ["git"]
     assert [t["id"] for t in rooms["hall"]["tools"]] == BUILT_IN
-    assert rooms["library"]["tools"][0] == {
-        "id": "remember",
-        "title": "Remember",
-        "available": True,
-        "built_in": True,
-    }
+    assert rooms["library"]["tools"] == []
 
 
 async def test_add_and_edit_room_tools(config: Config) -> None:

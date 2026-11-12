@@ -4,7 +4,7 @@
 
 import { cellKey, cellOwners } from "../scene/grid";
 import type { Daemon } from "./daemon";
-import { hostRoom } from "./plan";
+import { hostAgentId, hostRefusal, hostRoom } from "./plan";
 import { HOST_TOOLS, samplePlan } from "./sample-plan";
 import type { Store } from "./store";
 import type {
@@ -130,6 +130,7 @@ export class MockDaemon implements Daemon {
       return Promise.resolve({ ok: false, message: "That slot is not free." });
     const agent = this.plan.agents.find((a) => a.id === room.agent);
     if (!agent) return Promise.resolve({ ok: false, message: `Unknown agent: ${room.agent}` });
+    if (agent.id === hostAgentId(this.plan)) return Promise.resolve({ ok: false, message: hostRefusal(this.plan) });
     this.addRoom({
       id: room.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
       name: room.name,

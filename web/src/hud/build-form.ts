@@ -6,7 +6,7 @@ import type { Daemon } from "../net/daemon";
 import type { Store } from "../net/store";
 import type { Cell } from "../net/types";
 import { el } from "./dom";
-import { fromProposal, newRoom, toggle, type ToolPicks } from "./room-form";
+import { agentChoices, fromProposal, newRoom, toggle, type ToolPicks } from "./room-form";
 
 const PROPOSE_DELAY_MS = 350;
 
@@ -39,6 +39,7 @@ export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon
   tools.append(toolsLegend, toolList, toolNote);
   const model = el("input");
   model.placeholder = "The agent's own model";
+  const noAgents = el("p", "tool-note", "Every agent in this house is busy as the host, so there is nobody to run a new room.");
   const refusal = el("div", "refusal");
   refusal.setAttribute("role", "alert");
   const actions = el("div", "actions");
@@ -47,7 +48,7 @@ export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon
   const cancel = el("button", "caps", "Cancel");
   cancel.type = "button";
   actions.append(submit, cancel);
-  form.append(title, where, field("Name", name), field("Agent", agent), field("Project folder", project), tools, field("Model (optional)", model), refusal, actions);
+  form.append(title, where, field("Name", name), field("Agent", agent), noAgents, field("Project folder", project), tools, field("Model (optional)", model), refusal, actions);
   parent.append(form);
 
   let cell: Cell | null = null;
@@ -126,7 +127,7 @@ export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon
   cancel.addEventListener("click", close);
   form.addEventListener("submit", (ev) => {
     ev.preventDefault();
-    if (!cell) return;
+    if (!cell || !agent.value) return;
     const room = newRoom({ name: name.value, agent: agent.value, at: cell, project: project.value, model: model.value }, picks);
     submit.disabled = true;
     refusal.textContent = "";
@@ -152,13 +153,17 @@ export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon
       if (!plan) return;
       cell = at;
       where.textContent = `Slot ${at[0]}, ${at[1]}`;
+      const choices = agentChoices(plan);
       agent.replaceChildren(
-        ...plan.agents.map((a) => {
+        ...choices.agents.map((a) => {
           const option = el("option", "", a.name);
           option.value = a.id;
           return option;
         }),
       );
+      agent.value = choices.selected ?? "";
+      noAgents.hidden = choices.selected !== null;
+      submit.disabled = choices.selected === null;
       name.value = "";
       project.value = "";
       model.value = "";

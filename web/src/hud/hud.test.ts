@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { asPlan, asToolRefs } from "../net/plan";
+import { asPlan, asToolRefs, hostRefusal } from "../net/plan";
 import { HOST_TOOLS, samplePlan } from "../net/sample-plan";
 import type { ToolRef } from "../net/types";
 import { replySize } from "./caption";
 import { formatSpend } from "./money";
 import { roomCardModel } from "./room-card";
-import { fromProposal, newRoom, type RoomFields, toggle } from "./room-form";
+import { agentChoices, fromProposal, newRoom, type RoomFields, toggle } from "./room-form";
 
 const tool = (id: string, available: boolean): ToolRef => ({ id, title: id.toUpperCase(), available, built_in: false });
 const proposal = [tool("git", true), tool("npm", true), tool("docker", false)];
@@ -108,5 +108,34 @@ describe("caption and spend", () => {
     expect(formatSpend(0.0099)).toBe("<$0.01");
     expect(formatSpend(0.01)).toBe("$0.01");
     expect(formatSpend(18.424)).toBe("$18.42");
+  });
+});
+
+describe("the add-room form's agents", () => {
+  it("leaves out the host and selects the first agent that is allowed", () => {
+    const choices = agentChoices(samplePlan());
+    expect(choices.agents.map((a) => a.id)).toEqual(["steward", "envoy", "maker", "checker", "scout"]);
+    expect(choices.selected).toBe("steward");
+  });
+
+  it("decides the host from the Hall, not from the id", () => {
+    const plan = samplePlan();
+    const hall = plan.rooms.find((r) => r.id === "hall");
+    if (hall) hall.agent = "scout";
+    const choices = agentChoices(plan);
+    expect(choices.agents.map((a) => a.id)).toEqual(["host", "steward", "envoy", "maker", "checker"]);
+    expect(choices.selected).toBe("host");
+  });
+
+  it("has nothing to select when the host is the only agent", () => {
+    const plan = samplePlan();
+    plan.agents = plan.agents.filter((a) => a.id === "host");
+    expect(agentChoices(plan)).toEqual({ agents: [], selected: null });
+  });
+
+  it("words the refusal with the host's display name and the agents that can be chosen", () => {
+    expect(hostRefusal(samplePlan())).toBe(
+      "Vision orchestrates from the Hall and cannot run another room. Choose one of: Brass, Wren, Tink, Tock, Rook.",
+    );
   });
 });

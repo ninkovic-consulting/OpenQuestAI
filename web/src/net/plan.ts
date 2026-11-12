@@ -1,4 +1,4 @@
-import type { Cell, Plan, Room, ToolRef } from "./types";
+import type { Agent, Cell, Plan, Room, ToolRef } from "./types";
 
 function isCell(v: unknown): v is Cell {
   return Array.isArray(v) && v.length === 2 && v.every((n) => Number.isInteger(n));
@@ -61,6 +61,19 @@ export function hostAgentId(plan: Plan): string | undefined {
   if (hall !== undefined) return hall;
   if (plan.agents.some((a) => a.id === "host")) return "host";
   return (plan.agents.find((a) => a.name === plan.assistant.name) ?? plan.agents[0])?.id;
+}
+
+/** The agents a new room may be given: everyone but the host, who runs the Hall and nothing else. */
+export function roomAgents(plan: Plan): Agent[] {
+  const host = hostAgentId(plan);
+  return plan.agents.filter((a) => a.id !== host);
+}
+
+/** The refusal for giving the host another room; the daemon words it the same way. */
+export function hostRefusal(plan: Plan): string {
+  const host = plan.agents.find((a) => a.id === hostAgentId(plan))?.name ?? plan.assistant.name;
+  const others = roomAgents(plan).map((a) => a.name).join(", ");
+  return `${host} orchestrates from the Hall and cannot run another room. Choose one of: ${others}.`;
 }
 
 /** The room the assistant sits in: the room with id `hall`, else the assistant's first room. */

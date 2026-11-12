@@ -51,7 +51,7 @@ export function samplePlan(): Plan {
     ],
     rooms: [
       room("hall", "Hall", [1, 1], [2, 2], "host", HAIKU, "red-carpet", "teal-panel", "idle"),
-      room("library", "Library", [0, 0], [1, 1], "host", HAIKU, "wood-floor", "wallpaper"),
+      room("library", "Library", [0, 0], [1, 1], "steward", HAIKU, "wood-floor", "wallpaper"),
       room("control-room", "Control Room", [1, 0], [2, 1], "steward", HAIKU, "stone-tile", "teal-panel"),
       room("comms-room", "Comms Room", [3, 0], [1, 1], "envoy", HAIKU, "pale-stone", "wallpaper"),
       room("kitchen", "Kitchen", [0, 1], [1, 2], "maker", OPUS, "stone-tile", "pale-stone"),

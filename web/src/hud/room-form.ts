@@ -1,7 +1,8 @@
 // The add-room form's logic, apart from the DOM: which proposed tools are
 // switched on, and the body that is posted.
 
-import type { Cell, NewRoom, ToolRef } from "../net/types";
+import { roomAgents } from "../net/plan";
+import type { Agent, Cell, NewRoom, Plan, ToolRef } from "../net/types";
 
 /** The tools proposed for one project folder and which of them are on. */
 export interface ToolPicks {
@@ -46,4 +47,16 @@ export function newRoom(fields: RoomFields, picks: ToolPicks | null): NewRoom {
     room.tools = picks.tools.filter((t) => picks.on.has(t.id)).map((t) => t.id);
   }
   return room;
+}
+
+/** What the form's agent list offers: the agents a room may have, and the one chosen at first. */
+export interface AgentChoices {
+  agents: Agent[];
+  selected: string | null;
+}
+
+/** Everyone but the host; the first of them is selected. With nobody left the form cannot be submitted. */
+export function agentChoices(plan: Plan): AgentChoices {
+  const agents = roomAgents(plan);
+  return { agents, selected: agents[0]?.id ?? null };
 }

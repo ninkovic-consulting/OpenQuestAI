@@ -175,6 +175,7 @@ def _room(table: dict[str, Any], kind: RoomKind, agents: dict[str, Agent]) -> Ro
     if agent not in agents:
         known = ", ".join(agents)
         raise HouseError(f"{where} names agent {agent!r}, which is not one of: {known}.")
+    _check_host_rule(room_id, where, agent, agents)
     shape = table.get("shape", "rect")
     if shape not in ("rect", "round") or (kind == "extra" and shape != "rect"):
         raise HouseError(f'{where}: shape must be "rect"; only the Attic is round.')
@@ -200,6 +201,21 @@ def _room(table: dict[str, Any], kind: RoomKind, agents: dict[str, Agent]) -> Ro
         wall=wall,
         tools=check_tool_ids(table["tools"], where) if "tools" in table else None,
     )
+
+
+def _check_host_rule(room_id: str, where: str, agent: str, agents: dict[str, Agent]) -> None:
+    """The host runs the Hall and nothing else."""
+    host = agents[HOST].name
+    if room_id == HALL and agent != HOST:
+        raise HouseError(
+            f"{host} orchestrates from the Hall, so the Hall cannot be given to another agent."
+        )
+    if room_id != HALL and agent == HOST:
+        others = ", ".join(a.name for a in agents.values() if a.id != HOST)
+        raise HouseError(
+            f"{host} orchestrates from the Hall and cannot run another room. "
+            f"Choose one of: {others}."
+        )
 
 
 def _room_tables(value: Any, source: str) -> list[dict[str, Any]]:

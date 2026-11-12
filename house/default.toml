@@ -64,7 +64,7 @@ wall = "teal-panel"
 id = "library"
 name = "Library"
 at = [0, 0]
-agent = "host"
+agent = "steward"
 floor = "wood-floor"
 wall = "wallpaper"
 

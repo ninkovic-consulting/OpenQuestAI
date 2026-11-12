@@ -159,7 +159,7 @@ async def test_changes_are_validated(house: GridHouse) -> None:
     with pytest.raises(HouseError, match="already taken"):
         await house.add_room({"name": "Hall two", "agent": "host", "id": "hall"})
     with pytest.raises(HouseError, match="Unknown setting 'shape'"):
-        await house.add_room({"name": "Den", "agent": "host", "shape": "round"})
+        await house.add_room({"name": "Den", "agent": "maker", "shape": "round"})
     assert house.revision == 0
 
 
@@ -217,7 +217,7 @@ async def test_hand_edit_is_picked_up(house: GridHouse, config: Config) -> None:
     house.plan()
     sub = watch(house)
     doc = store.read_toml(config.paths.house_file)
-    doc["rooms"].append({"name": "Den", "agent": "host", "at": [4, 1]})
+    doc["rooms"].append({"name": "Den", "agent": "maker", "at": [4, 1]})
     await asyncio.sleep(0.01)  # a distinct modification time
     write_user(config, doc)
     event = await next_event(sub)
@@ -228,13 +228,13 @@ async def test_hand_edit_is_picked_up(house: GridHouse, config: Config) -> None:
 async def test_bad_hand_edit_keeps_last_good_plan(house: GridHouse, config: Config) -> None:
     before = house.plan()
     sub = watch(house)
-    config.paths.house_file.write_text("[[rooms]]\nname = 'Far'\nagent = 'host'\nat = [9, 9]\n")
+    config.paths.house_file.write_text("[[rooms]]\nname = 'Far'\nagent = 'maker'\nat = [9, 9]\n")
     event = await next_event(sub)
     assert isinstance(event, Notice) and event.level == "warn"
     assert "share a wall" in event.text and "stays as it was" in event.text
     assert house.plan() == before
     with pytest.raises(HouseError, match="cannot be changed until it is fixed"):
-        await house.add_room({"name": "Den", "agent": "host"})
+        await house.add_room({"name": "Den", "agent": "maker"})
     config.paths.house_file.write_text("this is = = not toml")
     event = await next_event(sub)
     assert isinstance(event, Notice) and "not valid TOML" in event.text
@@ -272,3 +272,76 @@ def test_agent_models(config: Config) -> None:
     assert agent_models(config, "maker").model == "claude-opus-5-5"
     with pytest.raises(KeyError):
         agent_models(config, "nobody")
+
+
+HOST_REFUSAL = (
+    "Vision orchestrates from the Hall and cannot run another room. "
+    "Choose one of: Brass, Wren, Tink, Tock, Rook."
+)
+HALL_REFUSAL = "Vision orchestrates from the Hall, so the Hall cannot be given to another agent."
+
+
+async def test_host_cannot_run_a_new_room(house: GridHouse) -> None:
+    with pytest.raises(HouseError) as exc:
+        await house.add_room({"name": "Den", "agent": "host"})
+    assert str(exc.value) == HOST_REFUSAL
+    assert house.revision == 0
+
+
+async def test_host_cannot_take_over_a_room(house: GridHouse) -> None:
+    with pytest.raises(HouseError) as exc:
+        await house.update_room("library", {"agent": "host"})
+    assert str(exc.value) == HOST_REFUSAL
+    assert house.revision == 0
+
+
+async def test_hall_cannot_be_given_to_another_agent(house: GridHouse) -> None:
+    with pytest.raises(HouseError) as exc:
+        await house.update_room("hall", {"agent": "maker"})
+    assert str(exc.value) == HALL_REFUSAL
+    assert house.revision == 0
+    room = await house.update_room("hall", {"agent": "host", "name": "Great Hall"})
+    assert room["agent"] == "host"
+
+
+async def test_host_refusal_names_the_assistant_by_its_display_name(config: Config) -> None:
+    config.assistant.name = "Ada"
+    house = GridHouse(config, Bus(), poll_s=0.02)
+    try:
+        with pytest.raises(HouseError, match="^Ada orchestrates from the Hall"):
+            await house.add_room({"name": "Den", "agent": "host"})
+    finally:
+        await house.close()
+
+
+async def test_file_giving_host_another_room_is_rejected_on_load(config: Config) -> None:
+    config.paths.house_file.parent.mkdir(parents=True, exist_ok=True)
+    write_user(config, {"rooms": [{"id": "library", "agent": "host"}]})
+    bus = Bus()
+    sub = bus.subscribe(["notice"])
+    house = GridHouse(config, bus, poll_s=0.02)
+    try:
+        rooms = {r["id"]: r["agent"] for r in house.plan()["rooms"]}
+        assert rooms["library"] == "steward"
+        event = await next_event(sub)
+        assert isinstance(event, Notice) and event.level == "warn"
+        assert HOST_REFUSAL in event.text and "Using the default house" in event.text
+    finally:
+        await house.close()
+
+
+async def test_hand_edit_giving_host_another_room_keeps_last_good_plan(
+    house: GridHouse, config: Config
+) -> None:
+    before = house.plan()
+    sub = watch(house)
+    write_user(config, {"rooms": [{"name": "Den", "agent": "host", "at": [4, 1]}]})
+    event = await next_event(sub)
+    assert isinstance(event, Notice) and HOST_REFUSAL in event.text
+    assert "stays as it was" in event.text
+    assert house.plan() == before
+
+
+def test_default_house_gives_the_host_only_the_hall(config: Config) -> None:
+    rooms = GridHouse(config, Bus()).plan()["rooms"]
+    assert [r["id"] for r in rooms if r["agent"] == "host"] == ["hall"]
