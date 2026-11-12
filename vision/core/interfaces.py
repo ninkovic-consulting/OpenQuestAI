@@ -420,6 +420,14 @@ class Budget(Protocol):
         """True when this month's spend has reached the cap."""
         ...
 
+    def set_cap(self, cap_usd: float) -> None:
+        """Change the monthly cap at once (the settings screen). Does not publish `budget`."""
+        ...
+
+    def reload(self) -> None:
+        """Forget the running total and read it from disk again on next use."""
+        ...
+
 
 
 # ---------------------------------------------------------------- house

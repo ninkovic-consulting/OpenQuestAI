@@ -3,6 +3,7 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { boxCorners, fitView, type NdcWindow } from "./fit";
 
 const FOV = 30;
 /** Home view direction: from the south and a little west, well above the roofline. */
@@ -10,6 +11,10 @@ const HOME_AZIMUTH = THREE.MathUtils.degToRad(-40);
 const HOME_ELEVATION = THREE.MathUtils.degToRad(50);
 const ROOM_ELEVATION = THREE.MathUtils.degToRad(46);
 const FLIGHT_S = 1.4;
+/** Closest zoom, in metres, unless the fitted home view is itself closer. */
+const MIN_DISTANCE = 5;
+/** How far beyond the fitted home view the camera may pull back. */
+const MAX_PULLBACK = 1.4;
 
 interface Flight {
   fromPos: THREE.Vector3;
@@ -45,19 +50,23 @@ export class CameraRig {
     this.camera.updateProjectionMatrix();
   }
 
-  /** Fit the home view to the house: jump there, or glide there if the camera is home. */
-  frame(center: THREE.Vector3, radius: number, jump: boolean): void {
-    this.homeTarget.copy(center);
-    const fit = radius / Math.sin(THREE.MathUtils.degToRad(FOV / 2));
-    this.homeDistance = fit * Math.max(0.85, 1.25 / Math.min(1.6, this.camera.aspect));
-    this.controls.minDistance = 5;
-    this.controls.maxDistance = this.homeDistance * 1.5;
+  /**
+   * Fit the home view so the house's box fills `window` of the screen: jump
+   * there, or glide there if the camera is home.
+   */
+  frame(house: THREE.Box3, window: NdcWindow, jump: boolean): void {
+    const dir = offset(HOME_AZIMUTH, HOME_ELEVATION, 1);
+    const fit = fitView(boxCorners(house), dir, THREE.MathUtils.degToRad(FOV), this.camera.aspect, window);
+    this.homeTarget.copy(fit.target);
+    this.homeDistance = fit.distance;
+    this.controls.minDistance = Math.min(MIN_DISTANCE, fit.distance);
+    this.controls.maxDistance = fit.distance * MAX_PULLBACK;
     if (jump) {
       this.camera.position.copy(this.homePosition());
-      this.controls.target.copy(center);
+      this.controls.target.copy(fit.target);
       this.controls.update();
     } else if (this.room === null) {
-      this.fly(this.homePosition(), center);
+      this.fly(this.homePosition(), fit.target);
     }
   }
 

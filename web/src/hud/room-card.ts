@@ -38,7 +38,8 @@ export interface RoomCard {
   show(roomId: string | null): void;
 }
 
-export function mountRoomCard(parent: HTMLElement, store: Store): RoomCard {
+/** `onEdit` opens Settings, Rooms at the room shown. */
+export function mountRoomCard(parent: HTMLElement, store: Store, onEdit: (roomId: string) => void): RoomCard {
   const card = el("section", "room-card");
   card.setAttribute("aria-live", "polite");
   card.hidden = true;
@@ -66,7 +67,13 @@ export function mountRoomCard(parent: HTMLElement, store: Store): RoomCard {
       }),
     );
     if (model.tools.length === 0) tools.append(el("li", "is-empty", "No tools"));
-    card.replaceChildren(el("div", "caps kicker", "Room"), el("h2", "", model.name), facts, el("div", "caps kicker", "Tools"), tools, el("p", "note", model.note));
+    const edit = el("button", "settings-toggle caps edit-room", "Edit room");
+    edit.type = "button";
+    const id = shown;
+    edit.addEventListener("click", () => {
+      if (id) onEdit(id);
+    });
+    card.replaceChildren(el("div", "caps kicker", "Room"), el("h2", "", model.name), facts, el("div", "caps kicker", "Tools"), tools, el("p", "note", model.note), edit);
   };
 
   store.subscribe((s, prev) => {

@@ -262,6 +262,12 @@ class FakeBudget:
     def exhausted(self) -> bool:
         return self.spent_usd >= self.cap_usd
 
+    def set_cap(self, cap_usd: float) -> None:
+        self.cap_usd = cap_usd
+
+    def reload(self) -> None:
+        self.spent_usd = 0.0
+
 
 class FakeHouse:
     """The Hall alone, in the plan shape of spec section 4.8, with no editing routes."""

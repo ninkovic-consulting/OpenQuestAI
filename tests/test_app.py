@@ -86,7 +86,7 @@ def test_fake_budget_prices(config: Config) -> None:
     budget = FakeBudget.from_config(config)
     cost = budget.record("claude-haiku-5-5", 4000, 150)
     assert abs(cost - (4000 * 0.10 + 150 * 0.50) / 1e6) < 1e-12
-    ceiling = (1000 * 5 + 1000 * 25) / 1e6
+    ceiling = (1000 * 10 + 1000 * 50) / 1e6  # the table's highest rates (Fable 5.1)
     assert budget.record("unpriced-model", 1000, 1000) == pytest.approx(ceiling)
     assert not budget.exhausted()
     budget.cap_usd = 0.0001

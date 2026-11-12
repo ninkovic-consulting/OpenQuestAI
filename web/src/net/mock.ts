@@ -4,6 +4,7 @@
 
 import { cellKey, cellOwners } from "../scene/grid";
 import type { Daemon } from "./daemon";
+import { MockSettings } from "./mock-settings";
 import { hostAgentId, hostRefusal, hostRoom } from "./plan";
 import { HOST_TOOLS, samplePlan } from "./sample-plan";
 import type { Store } from "./store";
@@ -49,6 +50,17 @@ export class MockDaemon implements Daemon {
   private plan: Plan = samplePlan();
   private speaking: { timers: number[]; text: string; turn: string } | null = null;
   private turn = 0;
+  readonly settings = new MockSettings({
+    plan: () => this.plan,
+    changed: () => this.publish(),
+    reset: () => {
+      const revision = this.plan.revision;
+      this.plan = samplePlan();
+      this.plan.revision = revision;
+      this.publish();
+    },
+    tools: (ids, agent) => (ids ? ids.flatMap((id) => MOCK_CATALOG.filter((t) => t.id === id).map((t) => ({ ...t }))) : agentTools(agent)),
+  });
 
   constructor(private readonly store: Store) {}
 
@@ -256,9 +268,15 @@ export class MockDaemon implements Daemon {
       const taken = owners.has(cellKey(c[0], c[1])) || plan.free_slots.some(([fx, fy]) => fx === c[0] && fy === c[1]);
       if (!taken) plan.free_slots.push(c);
     }
-    plan.revision += 1;
-    this.emit("house.changed", { revision: plan.revision });
-    this.at(120, () => this.store.dispatch({ kind: "plan", plan: structuredClone(plan) }));
+    this.publish();
+  }
+
+  /** Announce a change to the plan the way the daemon does: `house.changed`, then the new plan. */
+  private publish(): void {
+    this.plan.revision += 1;
+    this.emit("house.changed", { revision: this.plan.revision });
+    const plan = structuredClone(this.plan);
+    this.at(120, () => this.store.dispatch({ kind: "plan", plan }));
   }
 }
 

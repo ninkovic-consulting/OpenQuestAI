@@ -13,6 +13,10 @@ export const DIM = {
   plinthOverhang: 0.55,
   ground: -0.5,
   towerCut: 0.95,
+  /** Battlement blocks on the tower's rim. */
+  merlon: 0.42,
+  /** Capping on top of every wall. */
+  cap: 0.05,
 } as const;
 
 /** Where the host room's furniture stands, relative to the room centre (x east, z south). */

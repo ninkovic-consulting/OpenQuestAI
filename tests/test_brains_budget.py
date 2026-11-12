@@ -53,8 +53,8 @@ def test_unknown_model_counts_at_the_highest_rate_with_one_notice(config: Config
     budget.status()
     drain(sub)
     cost = budget.record("claude-new-model", 1000, 100, cache_read_tokens=100, cache_write_tokens=100)
-    # Ceiling of the default table: input and output from Opus 4.8, cache from Opus 4.8.
-    assert cost == pytest.approx((1000 * 5 + 100 * 25 + 100 * 0.5 + 100 * 6.25) / 1e6)
+    # Ceiling of the default table: input, output and cache writes from Fable 5.1, reads from Fable 5.
+    assert cost == pytest.approx((1000 * 10 + 100 * 50 + 100 * 1.0 + 100 * 12.5) / 1e6)
     budget.record("claude-new-model", 1000, 100)
     notices = [e for e in drain(sub) if isinstance(e, Notice)]
     assert len(notices) == 1 and "claude-new-model" in notices[0].text

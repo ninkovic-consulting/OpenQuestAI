@@ -6,14 +6,19 @@ import type { Store, ViewState } from "../net/store";
 import type { Cell, Plan } from "../net/types";
 import { BuildMode } from "./build";
 import { CameraRig } from "./camera";
-import { planBounds } from "./grid";
+import { boxCorners, screenBand, type NdcWindow } from "./fit";
+import { planBounds, towers } from "./grid";
 import { Grounds, type Bounds } from "./grounds";
 import { HouseView } from "./house";
+import { DIM } from "./layout";
 import { Lighting } from "./lighting";
 import { Materials } from "./materials";
 import { palette } from "./palette";
 import { Post, Streaks } from "./post";
-import { Props } from "./props";
+import { Props, PROPS_TOP } from "./props";
+
+/** Screen kept clear around the fitted house, in CSS pixels (the bottom at least a share of the height): the key hints above, the caption below. */
+const CLEAR = { top: 56, side: 24, bottom: 112, bottomShare: 0.12 };
 
 export interface RoomAnchor {
   id: string;
@@ -36,6 +41,9 @@ export class Stage {
   private readonly raycaster = new THREE.Raycaster();
   private readonly clock = new THREE.Timer();
   private plan: Plan | null = null;
+  /** The house's bounding box, for framing and the miniature blur. */
+  private houseBox = new THREE.Box3();
+  private houseCorners: THREE.Vector3[] = [];
   private width = 1;
   private height = 1;
   private down = new THREE.Vector2();
@@ -118,7 +126,20 @@ export class Stage {
       this.props.place(hostView.center, hostView.extent.x >= 7 && hostView.extent.y >= 7);
       this.streaks.place(hostView.center, hostView.extent, hostView.wallTop);
     }
-    this.rig.frame(center, radius, first);
+    this.houseBox = houseBox(plan, bounds);
+    this.houseCorners = boxCorners(this.houseBox);
+    this.rig.frame(this.houseBox, this.clearWindow(), first);
+  }
+
+  /** The part of the scene the house is fitted into, in normalised device coordinates. */
+  private clearWindow(): NdcWindow {
+    const x = Math.min(0.5, (2 * CLEAR.side) / this.width);
+    return {
+      left: -1 + x,
+      right: 1 - x,
+      top: 1 - Math.min(0.5, (2 * CLEAR.top) / this.height),
+      bottom: -1 + Math.min(0.5, (2 * Math.max(CLEAR.bottom, CLEAR.bottomShare * this.height)) / this.height),
+    };
   }
 
   private resize(): void {
@@ -127,10 +148,7 @@ export class Stage {
     this.renderer.setSize(this.width, this.height, false);
     this.post.setSize(this.width, this.height);
     this.rig.setAspect(this.width / this.height);
-    if (this.plan) {
-      const { center, radius } = footprint(this.plan);
-      this.rig.frame(center, radius, this.rig.room === null);
-    }
+    if (this.plan) this.rig.frame(this.houseBox, this.clearWindow(), this.rig.room === null);
   }
 
   private ndc(ev: MouseEvent): THREE.Vector2 {
@@ -175,7 +193,7 @@ export class Stage {
     this.lighting.update(dt, s.roomLights, hostId, s.voiceLevel);
     this.streaks.update(time, dt, s.assistant === "speaking" ? s.voiceLevel : 0, this.rig.camera);
     this.build.update(time);
-    this.post.render(dt);
+    this.post.render(dt, screenBand(this.houseCorners, this.rig.camera));
     this.onFrame(this.anchors());
   }
 
@@ -194,6 +212,17 @@ export class Stage {
     }
     return out;
   }
+}
+
+/** The house from its plinth to its highest point: the tower's battlements, a wall cap or the tallest furniture. */
+function houseBox(plan: Plan, bounds: Bounds): THREE.Box3 {
+  const walls = plan.wall_height_m * DIM.exteriorCut + DIM.cap;
+  const tower = towers(plan).length > 0 ? plan.wall_height_m * DIM.towerCut + DIM.merlon : 0;
+  const o = DIM.plinthOverhang + DIM.stone;
+  return new THREE.Box3(
+    new THREE.Vector3(bounds.x0 - o, DIM.ground, bounds.z0 - o),
+    new THREE.Vector3(bounds.x1 + o, Math.max(walls, tower, PROPS_TOP), bounds.z1 + o),
+  );
 }
 
 /** The house's footprint in metres, its centre and the radius that encloses it. */

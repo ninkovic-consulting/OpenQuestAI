@@ -11,9 +11,18 @@ export interface ToolPicks {
   on: ReadonlySet<string>;
 }
 
-/** A fresh proposal: every tool whose program is on this Mac starts on, the rest off. */
-export function fromProposal(project: string, tools: readonly ToolRef[]): ToolPicks {
-  return { project, tools, on: new Set(tools.filter((t) => t.available).map((t) => t.id)) };
+/**
+ * A fresh proposal: every tool whose program is on this Mac starts on, the
+ * rest off. With `on` (a room's current tools) exactly those proposed start on.
+ */
+export function fromProposal(project: string, tools: readonly ToolRef[], on?: readonly string[]): ToolPicks {
+  const start = on ? tools.filter((t) => on.includes(t.id)) : tools.filter((t) => t.available);
+  return { project, tools, on: new Set(start.map((t) => t.id)) };
+}
+
+/** The switched-on tools in proposal order, as a room stores them. */
+export function pickedIds(picks: ToolPicks): string[] {
+  return picks.tools.filter((t) => picks.on.has(t.id)).map((t) => t.id);
 }
 
 export function toggle(picks: ToolPicks, id: string): ToolPicks {
@@ -44,7 +53,7 @@ export function newRoom(fields: RoomFields, picks: ToolPicks | null): NewRoom {
   if (project) room.project = project;
   if (model) room.model = model;
   if (project && picks && picks.project === project && picks.tools.length > 0) {
-    room.tools = picks.tools.filter((t) => picks.on.has(t.id)).map((t) => t.id);
+    room.tools = pickedIds(picks);
   }
   return room;
 }

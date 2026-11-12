@@ -19,6 +19,7 @@ from vision.house import grid, store
 from vision.house.model import (
     CELL_M,
     HALL,
+    HOST,
     MAX_EXTRA_ROOMS,
     WALL_HEIGHT_M,
     HouseError,
@@ -34,6 +35,7 @@ POLL_S = 1.0
 ADD_KEYS = {"id", "name", "at", "size", "agent", "model", "project", "floor", "wall", "tools"}
 EDIT_KEYS = {"name", "agent", "model", "project", "floor", "wall", "at", "size", "tools"}
 CLEARABLE = {"model", "project", "tools"}
+AGENT_EDIT_KEYS = {"name", "model"}
 
 Mutation = Callable[[dict[str, Any], Layout], str | None]
 """Edits the user's document in place; returns the id of the room to report, if any."""
@@ -206,7 +208,55 @@ class GridHouse:
 
         await self._change(mutate)
 
+    async def update_agents(self, changes: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+        """Rename agents or change their models in `[agents.<id>]` of the user's file.
+
+        One write for every agent. The host's name and model are refused: they
+        follow `[assistant] name` and `[brain] talk_model`. Returns the plan's agents.
+        """
+
+        def mutate(doc: dict[str, Any], layout: Layout) -> str | None:
+            for agent_id, fields in changes.items():
+                if agent_id not in layout.agents:
+                    raise HouseError(f"There is no agent with the id {agent_id!r}.")
+                if agent_id == HOST and AGENT_EDIT_KEYS & fields.keys():
+                    raise HouseError(
+                        "The host's name and model follow the assistant's name and the talk "
+                        "model; change those instead."
+                    )
+                _check_keys(fields, AGENT_EDIT_KEYS)
+                doc.setdefault("agents", {}).setdefault(agent_id, {}).update(fields)
+            return HALL
+
+        await self._commit(mutate)
+        return self.plan()["agents"]
+
+    async def refresh(self) -> None:
+        """Rebuild the plan from the loaded files and publish `house.changed`.
+
+        For changes the house reads from config, such as `[assistant] name`.
+        """
+        async with self._lock:
+            self._load()
+            # `_user` is always the last document that built: a broken file never replaces it.
+            self._apply(self._user, build_layout(self._default, self._user, self._config))
+
+    async def reload(self) -> None:
+        """Read the user's file again now, creating it from the default when it is missing."""
+        async with self._lock:
+            self._layout, self._broken, self._user = None, None, {}
+            layout = await asyncio.to_thread(self._load)
+            self._apply(self._user, layout)
+
     async def _change(self, mutate: Mutation) -> dict[str, Any]:
+        target = await self._commit(mutate)
+        return next(r for r in self.plan()["rooms"] if r["id"] == target)
+
+    async def _commit(self, mutate: Mutation) -> str:
+        """Apply `mutate` to a copy of the user's document, validate, write and publish.
+
+        Returns the id of the room to report: the one `mutate` named, else the newest.
+        """
         async with self._lock:
             layout = self._load()
             self._watch_lazily()
@@ -222,8 +272,7 @@ class GridHouse:
             _pin(doc, new)
             self._stamp = await asyncio.to_thread(store.write_toml, self._path, doc)
             self._apply(doc, new)
-            target = room_id or new.rooms[-1].id
-            return next(r for r in self.plan()["rooms"] if r["id"] == target)
+            return room_id or new.rooms[-1].id
 
     def _apply(self, doc: dict[str, Any], layout: Layout) -> None:
         self._user = doc

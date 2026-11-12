@@ -82,6 +82,20 @@ class MonthlyBudget:
         self._sync_month()
         return self._spent >= self._cap
 
+    def set_cap(self, cap_usd: float) -> None:
+        """Change the monthly cap now. Warns or caps at once if the spend already passed it."""
+        self._sync_month()
+        self._cap = cap_usd
+        self._warned = self._warned and self._spent >= cap_usd * self._warn_fraction
+        self._capped = self._capped and self._spent >= cap_usd
+        self._check_thresholds()
+        self._save()
+
+    def reload(self) -> None:
+        """Read `budget.json` again on next use (after it was reset or restored)."""
+        self._loaded = False
+        self._month, self._spent, self._warned, self._capped = "", 0.0, False, False
+
     # ------------------------------------------------------------ internals
 
     def _unknown(self, model: str) -> Price:

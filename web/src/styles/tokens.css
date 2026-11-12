@@ -16,7 +16,11 @@
   --caps: "Josefin Sans", "Futura", sans-serif;
   --sans: "Inter", system-ui, sans-serif;
 
-  --panel-width: 380px;
+  /* The panel gives the scene room on small windows. */
+  --panel-width: clamp(260px, 28vw, 380px);
+  --panel-pad-x: clamp(20px, 2.8vw, 40px);
+  --panel-pad-y: clamp(24px, 6vh, 44px);
+  --scene-pad: clamp(24px, 3.4vw, 48px);
   --tracking-wordmark: 0.42em;
   --tracking-label: 0.24em;
 }

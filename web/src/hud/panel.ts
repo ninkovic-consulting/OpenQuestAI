@@ -1,4 +1,4 @@
-// The left panel: wordmark, state, residents, budget and the build toggle.
+// The left panel: wordmark, state, residents, budget, and the build and settings toggles.
 // The gate card mounts into its foot.
 
 import { hostAgentId } from "../net/plan";
@@ -14,6 +14,7 @@ export interface Panel {
   /** Where the gate card goes. */
   foot: HTMLElement;
   buildToggle: HTMLButtonElement;
+  settingsToggle: HTMLButtonElement;
 }
 
 export function mountPanel(parent: HTMLElement, store: Store): Panel {
@@ -36,8 +37,13 @@ export function mountPanel(parent: HTMLElement, store: Store): Panel {
   budget.append(budgetRow, bar);
   const buildToggle = el("button", "build-toggle caps", "Build");
   buildToggle.type = "button";
+  const settingsToggle = el("button", "settings-toggle caps", "Settings");
+  settingsToggle.type = "button";
+  settingsToggle.title = "Settings (⌘ ,)";
+  const actions = el("div", "panel-actions");
+  actions.append(buildToggle, settingsToggle);
   const foot = el("div", "gate-slot");
-  root.append(wordmark, state, residents, budget, buildToggle, el("div", "spacer"), foot);
+  root.append(wordmark, state, residents, budget, actions, el("div", "spacer"), foot);
   parent.append(root);
 
   let residentsKey = "";
@@ -67,7 +73,7 @@ export function mountPanel(parent: HTMLElement, store: Store): Panel {
   };
   render(store.get());
   store.subscribe(render);
-  return { root, foot, buildToggle };
+  return { root, foot, buildToggle, settingsToggle };
 }
 
 function residentRows(s: ViewState): HTMLElement[] {

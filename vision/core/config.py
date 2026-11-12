@@ -65,33 +65,37 @@ class Price(_Section):
     cache_write_per_mtok: float = 0.0
 
 
+def _price(input_usd: float, output_usd: float, cache_read_usd: float | None = None) -> Price:
+    """A list price. Cache writes are 1.25x input (5-minute TTL); cache reads are 0.1x
+    input unless the model's published read rate differs."""
+    return Price(
+        input_per_mtok=input_usd,
+        output_per_mtok=output_usd,
+        cache_read_per_mtok=round(input_usd * 0.1 if cache_read_usd is None else cache_read_usd, 4),
+        cache_write_per_mtok=round(input_usd * 1.25, 4),
+    )
+
+
 def _default_prices() -> dict[str, Price]:
-    # List prices checked 2026-11-12. Cache write is 1.25x input (5-minute TTL).
+    # First-party list prices, cached 2026-11-03 and checked 2026-11-12. Claude Haiku 5.5
+    # costs 0.50 / 2.50 above 100K prompt tokens; the table holds the rate below that.
     return {
-        "claude-haiku-5-5": Price(
-            input_per_mtok=0.10,
-            output_per_mtok=0.50,
-            cache_read_per_mtok=0.01,
-            cache_write_per_mtok=0.125,
-        ),
-        "claude-sonnet-5-5": Price(
-            input_per_mtok=2.00,
-            output_per_mtok=10.00,
-            cache_read_per_mtok=0.10,
-            cache_write_per_mtok=2.50,
-        ),
-        "claude-opus-4-8": Price(
-            input_per_mtok=5.00,
-            output_per_mtok=25.00,
-            cache_read_per_mtok=0.50,
-            cache_write_per_mtok=6.25,
-        ),
-        "claude-opus-5-5": Price(
-            input_per_mtok=4.00,
-            output_per_mtok=20.00,
-            cache_read_per_mtok=0.20,
-            cache_write_per_mtok=5.00,
-        ),
+        "claude-fable-5-2": _price(8.00, 40.00, 0.20),
+        "claude-mythos-5-2": _price(8.00, 40.00, 0.20),
+        "claude-fable-5-1": _price(10.00, 50.00, 0.25),
+        "claude-mythos-5-1": _price(10.00, 50.00, 0.25),
+        "claude-fable-5": _price(10.00, 50.00, 1.00),
+        "claude-mythos-5": _price(10.00, 50.00, 1.00),
+        "claude-opus-5-5": _price(4.00, 20.00, 0.20),
+        "claude-opus-5": _price(5.00, 25.00),
+        "claude-opus-4-8": _price(5.00, 25.00),
+        "claude-opus-4-7": _price(5.00, 25.00),
+        "claude-opus-4-6": _price(5.00, 25.00),
+        "claude-sonnet-5-5": _price(2.00, 10.00, 0.10),
+        "claude-sonnet-5": _price(2.00, 10.00),
+        "claude-sonnet-4-6": _price(3.00, 15.00),
+        "claude-haiku-5-5": _price(0.10, 0.50),
+        "claude-haiku-4-5": _price(1.00, 5.00),
     }
 
 

@@ -4,6 +4,8 @@
 import { Api } from "./api";
 import type { Daemon } from "./daemon";
 import { asPlan } from "./plan";
+import type { SettingsApi } from "./settings-api";
+import { HttpSettings } from "./settings-http";
 import type { Store } from "./store";
 import { asOutbound, envelope, type InboundEvent, type NewRoom, type PostResult, type ProposeResult, type StateSnapshot } from "./types";
 
@@ -14,6 +16,7 @@ const CLOSE_FORBIDDEN_ORIGIN = 4403;
 
 export class SocketDaemon implements Daemon {
   private readonly api: Api;
+  readonly settings: SettingsApi;
   private ws: WebSocket | null = null;
   private backoff = BACKOFF_MIN_MS;
   private loadedOnce = false;
@@ -26,6 +29,7 @@ export class SocketDaemon implements Daemon {
     private readonly token: string,
   ) {
     this.api = new Api(token);
+    this.settings = new HttpSettings(this.api);
   }
 
   start(): void {

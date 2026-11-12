@@ -6,6 +6,7 @@ import "@fontsource/inter/latin-400.css";
 import "@fontsource/inter/latin-500.css";
 import "./styles/tokens.css";
 import "./styles/hud.css";
+import "./styles/settings.css";
 
 import { mountBuildForm } from "./hud/build-form";
 import { mountCaption } from "./hud/caption";
@@ -14,7 +15,10 @@ import { mountGate } from "./hud/gate";
 import { mountInput } from "./hud/input";
 import { mountLabels } from "./hud/labels";
 import { mountPanel } from "./hud/panel";
+import { modelSource } from "./hud/pickers/model-picker";
 import { mountRoomCard } from "./hud/room-card";
+import { mountSettings, type SettingsView } from "./hud/settings/view";
+import { mountWizard } from "./hud/settings/wizard/wizard";
 import { mountToasts } from "./hud/toasts";
 import type { Daemon } from "./net/daemon";
 import { MockDaemon } from "./net/mock";
@@ -50,7 +54,8 @@ async function main(): Promise<void> {
   const stage = new Stage(stageRoot, store, notify);
   stage.onFrame = mountLabels(stageRoot, store);
   mountCaption(stageRoot, store);
-  const roomCard = mountRoomCard(stageRoot, store);
+  let settings: SettingsView | null = null;
+  const roomCard = mountRoomCard(stageRoot, store, (id) => settings?.open("rooms", id));
   stage.onRoom = (id) => roomCard.show(id);
   stage.start();
 
@@ -67,15 +72,39 @@ async function main(): Promise<void> {
     panel.buildToggle.classList.toggle("is-on", on);
     panel.buildToggle.textContent = on ? "Done" : "Build";
   };
-  const form = mountBuildForm(stageRoot, store, daemon, () => setBuilding(false));
+  const models = modelSource(daemon.settings);
+  const propose = (folder: string): ReturnType<typeof daemon.proposeTools> => daemon.proposeTools(folder);
+  const form = mountBuildForm(stageRoot, store, daemon, models, () => setBuilding(false));
   panel.buildToggle.addEventListener("click", () => {
     form.close();
     setBuilding(!building);
   });
   stage.onSlot = (cell) => form.open(cell);
 
+  const wizard = mountWizard(stageRoot, { api: daemon.settings, store, models, propose });
+  const view = mountSettings(stageRoot, { api: daemon.settings, store, models, propose, openWizard: () => wizard.open(),
+    onShown: (open) => panel.settingsToggle.classList.toggle("is-on", open),
+  });
+  settings = view;
+  const openSettings = (): void => {
+    form.close();
+    setBuilding(false);
+    wizard.close();
+    view.open();
+  };
+  panel.settingsToggle.addEventListener("click", () => (view.isOpen() ? view.close() : openSettings()));
+  window.addEventListener("keydown", (ev) => {
+    if (ev.key === "," && (ev.metaKey || ev.ctrlKey)) {
+      ev.preventDefault();
+      if (view.isOpen()) view.close();
+      else openSettings();
+    }
+  });
+
   mountGate(panel.foot, store, daemon);
   mountInput(stageRoot, store, daemon, [
+    () => view.close(),
+    () => wizard.close(),
     () => form.close(),
     () => {
       if (!building) return false;
@@ -85,6 +114,9 @@ async function main(): Promise<void> {
     () => stage.home(),
   ]);
   daemon.start();
+  void daemon.settings.settings().then((r) => {
+    if (r.ok && r.value.setup.first_run) wizard.open();
+  });
 }
 
 void main();

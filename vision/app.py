@@ -17,6 +17,7 @@ budget is published, and the Hall's light starts following the conversation.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import logging
 import os
@@ -114,6 +115,12 @@ class Daemon:
             self.components, self._notices = built
         else:
             self.components, self._notices = components(self.bus), []
+        self._voice_factory = voice
+        self._voice_lock = asyncio.Lock()
+        self.voice_running = False
+        """True while the microphone loop runs."""
+        self.voice_error: str | None = None
+        """Why voice last failed to start, or None."""
         self.snapshot = Snapshot(self.bus)
         self.session: Session | None = None
         self._session_task: asyncio.Task[None] | None = None
@@ -140,10 +147,43 @@ class Daemon:
             log.exception("voice failed to start")
             self.notice("warn", f"Voice is off ({type(exc).__name__}: {exc}). Text still works.")
             c.voice = FakeVoice()
+            self.voice_error = str(exc)
+        else:
+            self.voice_running = True
         states = self.bus.subscribe({StateChanged.TYPE})
         self._lights_task = asyncio.create_task(self._light_the_hall(states))
         self.session = Session(self.bus, c.brain, c.voice.speaker, c.memory, c.tools)
         self._session_task = asyncio.create_task(self.session.run())
+
+    async def set_voice(self, enabled: bool) -> None:
+        """Turn the microphone loop on or off now, without a restart.
+
+        Stops the current voice, then (when `enabled`) builds a new one from the
+        current config and starts it. On failure the daemon keeps a silent voice
+        and `voice_error` says why. The session speaks through the new speaker.
+        """
+        async with self._voice_lock:
+            c = self.components
+            try:
+                await c.voice.stop()
+            except Exception:
+                log.exception("stopping voice failed")
+            self.voice_running, self.voice_error = False, None
+            new: Voice = FakeVoice()
+            if enabled:
+                candidate = (self._voice_factory or voice.make_voice)(self.config, self.bus)
+                try:
+                    await candidate.start()
+                except Exception as exc:
+                    log.warning("voice failed to start: %s", exc)
+                    self.voice_error = str(exc) or type(exc).__name__
+                    with contextlib.suppress(Exception):
+                        await candidate.stop()
+                else:
+                    new, self.voice_running = candidate, True
+            c.voice = new
+            if self.session is not None:
+                self.session.speaker = new.speaker
 
     async def _light_the_hall(self, states: Subscription) -> None:
         """Keep the Hall `active` while thinking or speaking and `idle` otherwise."""

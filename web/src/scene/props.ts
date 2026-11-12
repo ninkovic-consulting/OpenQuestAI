@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
 import { HOST_LAYOUT } from "./layout";
 import { palette } from "./palette";
+import { sanitizeModel } from "./sanitize";
 import { fitSeat, measureChair, measurePose } from "./seat";
 
 /** Real heights, in metres; the armchair's is refitted to the figure once both load. */
@@ -20,6 +21,9 @@ const HEIGHT = {
 } as const;
 
 type Piece = keyof typeof HEIGHT;
+
+/** The tallest piece's height: the furniture can rise above the cut-down walls. */
+export const PROPS_TOP = Math.max(...Object.values(HEIGHT));
 
 const CLIP_IDLE = "Chair_Sit_Idle_M";
 const CLIP_TALK = "Sitting_Answering_Questions";
@@ -89,6 +93,7 @@ export class Props {
     let object: THREE.Object3D;
     try {
       object = (await this.loader.loadAsync(`assets/models/${name}.glb`)).scene;
+      sanitizeModel(object);
       normalise(object, HEIGHT[name]);
     } catch {
       this.onMissing(`${name} model`);
@@ -112,6 +117,7 @@ export class Props {
     }
     const figure = gltf.scene;
     figure.name = "figure";
+    sanitizeModel(figure);
     shade(figure);
     figure.traverse((o) => {
       if (!(o instanceof THREE.SkinnedMesh)) return;

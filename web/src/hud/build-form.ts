@@ -1,14 +1,17 @@
 // The short form that asks for a new room on a clicked free slot and posts it.
-// Once a project folder is entered, the tools proposed for it appear as
-// toggles. A refusal from the server is shown exactly as it came.
+// The project folder and the model come from the shared pickers; once a folder
+// is chosen, the tools proposed for it appear as toggles. A refusal from the
+// server is shown exactly as it came.
 
 import type { Daemon } from "../net/daemon";
+import { nativeHelpers } from "../net/native";
 import type { Store } from "../net/store";
 import type { Cell } from "../net/types";
 import { el } from "./dom";
-import { agentChoices, fromProposal, newRoom, toggle, type ToolPicks } from "./room-form";
-
-const PROPOSE_DELAY_MS = 350;
+import { mountFolderPicker, type FolderPicker } from "./pickers/folder-picker";
+import { mountModelPicker, OWN_MODEL, type ModelSource } from "./pickers/model-picker";
+import { mountToolToggles } from "./pickers/tool-toggles";
+import { agentChoices, newRoom } from "./room-form";
 
 export interface BuildForm {
   open(cell: Cell): void;
@@ -16,29 +19,28 @@ export interface BuildForm {
   close(): boolean;
 }
 
-export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon, onAdded: () => void): BuildForm {
+/** The note under the tools: what they do in this slice. */
+export const toolsNote = (assistant: string): string =>
+  `Stored with the room. Project tools start working when the other agents wake up; for now only ${assistant}'s built-in tools run.`;
+
+export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon, models: ModelSource, onAdded: () => void): BuildForm {
   const form = el("form", "build-form");
   form.setAttribute("aria-label", "New room");
   const title = el("h2", "", "New room");
   const where = el("div", "where caps");
-  const field = (label: string, input: HTMLInputElement | HTMLSelectElement): HTMLLabelElement => {
+  const field = (label: string, control: HTMLElement): HTMLLabelElement => {
     const node = el("label", "caps", label);
-    node.append(input);
+    node.append(control);
     return node;
   };
   const name = el("input");
   name.required = true;
   name.maxLength = 40;
   const agent = el("select");
-  const project = el("input");
-  project.placeholder = "~/Projects/…";
-  const tools = el("fieldset", "tools");
-  const toolsLegend = el("legend", "caps", "Tools for this project");
-  const toolList = el("div", "tool-list");
-  const toolNote = el("p", "tool-note");
-  tools.append(toolsLegend, toolList, toolNote);
-  const model = el("input");
-  model.placeholder = "The agent's own model";
+  const assistant = (): string => store.get().plan?.assistant.name ?? "the assistant";
+  const tools = mountToolToggles((folder) => daemon.proposeTools(folder), () => toolsNote(assistant()));
+  const model = mountModelPicker({ source: models, value: "", own: { label: OWN_MODEL, note: "The room uses its agent's model; nothing is sent." } });
+  const projectSlot = el("div", "folder-slot");
   const noAgents = el("p", "tool-note", "Every agent in this house is busy as the host, so there is nobody to run a new room.");
   const refusal = el("div", "refusal");
   refusal.setAttribute("role", "alert");
@@ -48,69 +50,13 @@ export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon
   const cancel = el("button", "caps", "Cancel");
   cancel.type = "button";
   actions.append(submit, cancel);
-  form.append(title, where, field("Name", name), field("Agent", agent), noAgents, field("Project folder", project), tools, field("Model (optional)", model), refusal, actions);
+  const projectLabel = el("div", "label caps", "Project folder");
+  projectLabel.append(projectSlot);
+  form.append(title, where, field("Name", name), field("Agent", agent), noAgents, projectLabel, tools.root, field("Model (optional)", model.root), refusal, actions);
   parent.append(form);
 
   let cell: Cell | null = null;
-  let picks: ToolPicks | null = null;
-  let asked = 0;
-  let timer = 0;
-
-  const assistant = (): string => store.get().plan?.assistant.name ?? "the assistant";
-
-  const renderTools = (message?: string): void => {
-    const folder = project.value.trim();
-    tools.hidden = folder === "";
-    if (message !== undefined || !picks) {
-      toolList.replaceChildren();
-      toolNote.textContent = message ?? "";
-      return;
-    }
-    if (picks.tools.length === 0) {
-      toolList.replaceChildren();
-      toolNote.textContent = "No project tools recognised here; the room uses its agent's tools.";
-      return;
-    }
-    const current = picks;
-    toolList.replaceChildren(
-      ...current.tools.map((tool) => {
-        const on = current.on.has(tool.id);
-        const button = el("button", `tool-toggle${tool.available ? "" : " is-unavailable"}`);
-        button.type = "button";
-        button.setAttribute("aria-pressed", String(on));
-        button.append(el("span", on ? "dot" : "dot hollow"), el("span", "", tool.title));
-        if (!tool.available) button.append(el("span", "tag", "not installed"));
-        button.addEventListener("click", () => {
-          if (picks) picks = toggle(picks, tool.id);
-          renderTools();
-        });
-        return button;
-      }),
-    );
-    toolNote.textContent = `Stored with the room. Project tools start working when the other agents wake up; for now only ${assistant()}'s built-in tools run.`;
-  };
-
-  const propose = async (): Promise<void> => {
-    window.clearTimeout(timer);
-    const folder = project.value.trim();
-    const mine = ++asked;
-    if (!folder) {
-      picks = null;
-      renderTools();
-      return;
-    }
-    if (picks?.project === folder) return;
-    picks = null;
-    renderTools("Looking at the folder…");
-    const result = await daemon.proposeTools(folder);
-    if (mine !== asked) return; // a newer folder was typed meanwhile
-    if (result.ok) {
-      picks = fromProposal(folder, result.tools);
-      renderTools();
-    } else {
-      renderTools(result.message);
-    }
-  };
+  let project: FolderPicker | null = null;
 
   const close = (): boolean => {
     if (!form.classList.contains("is-open")) return false;
@@ -119,16 +65,11 @@ export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon
     return true;
   };
 
-  project.addEventListener("input", () => {
-    window.clearTimeout(timer);
-    timer = window.setTimeout(() => void propose(), PROPOSE_DELAY_MS);
-  });
-  project.addEventListener("change", () => void propose());
   cancel.addEventListener("click", close);
   form.addEventListener("submit", (ev) => {
     ev.preventDefault();
     if (!cell || !agent.value) return;
-    const room = newRoom({ name: name.value, agent: agent.value, at: cell, project: project.value, model: model.value }, picks);
+    const room = newRoom({ name: name.value, agent: agent.value, at: cell, project: project?.value() ?? "", model: model.value() }, tools.picks());
     submit.disabled = true;
     refusal.textContent = "";
     void daemon.postRoom(room).then((result) => {
@@ -165,12 +106,17 @@ export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon
       noAgents.hidden = choices.selected !== null;
       submit.disabled = choices.selected === null;
       name.value = "";
-      project.value = "";
-      model.value = "";
+      model.set("");
+      project = mountFolderPicker({
+        api: daemon.settings,
+        native: nativeHelpers(),
+        value: "",
+        label: "Project folder",
+        onChange: (folder) => tools.setProject(folder),
+      });
+      projectSlot.replaceChildren(project.root);
+      tools.setProject("");
       refusal.textContent = "";
-      picks = null;
-      asked += 1;
-      renderTools();
       form.classList.add("is-open");
       name.focus();
     },

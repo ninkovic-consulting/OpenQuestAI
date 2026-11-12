@@ -248,7 +248,7 @@ class Builder {
     }
     const capMat = run.exterior ? this.mats.capStone : this.mats.capWood;
     const add = this.adder(capOwner);
-    for (const p of pieces) add(capMat, slab(run.axis, line, [p.a, p.b], [lo - 0.025, hi + 0.025], [p.top, p.top + 0.05]));
+    for (const p of pieces) add(capMat, slab(run.axis, line, [p.a, p.b], [lo - 0.025, hi + 0.025], [p.top, p.top + DIM.cap]));
     for (const d of run.doors) {
       const mid = d * c;
       add(this.mats.capWood, slab(run.axis, line, [mid - DIM.door / 2, mid + DIM.door / 2], [lo, hi], [-0.02, 0.012]));
@@ -329,7 +329,7 @@ class Builder {
         const owner = rect ? (id as string) : elder;
         this.adder(owner)(rect ? this.mats.surface(this.roomOf(owner).wall) : this.mats.surface("pale-stone"), geo);
         const cap = rect ? this.mats.capWood : this.mats.capStone;
-        this.adder(owner)(cap, box(x - q.sx * 0.025, top, z - q.sz * 0.025, x + q.sx * (size + 0.025), top + 0.05, z + q.sz * (size + 0.025)));
+        this.adder(owner)(cap, box(x - q.sx * 0.025, top, z - q.sz * 0.025, x + q.sx * (size + 0.025), top + DIM.cap, z + q.sz * (size + 0.025)));
       });
     }
   }
@@ -447,10 +447,10 @@ class Builder {
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * Math.PI * 2;
       if (doorAngles.some((d) => Math.abs(Math.atan2(Math.sin(a - d), Math.cos(a - d))) < gap)) continue;
-      const m = new THREE.BoxGeometry(0.42, 0.42, DIM.stone + 0.04);
+      const m = new THREE.BoxGeometry(DIM.merlon, DIM.merlon, DIM.stone + 0.04);
       m.translate(0, 0, r + DIM.stone / 2);
       m.rotateY(a);
-      m.translate(cx, top + 0.21, cz);
+      m.translate(cx, top + DIM.merlon / 2, cz);
       add(this.mats.capStone, m);
     }
     // Arrow slits glowing red on the outside.

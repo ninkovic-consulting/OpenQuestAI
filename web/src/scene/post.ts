@@ -1,6 +1,6 @@
-// Post-processing and the signal streaks. One render pass, a tilt-shift for
-// the miniature look, then bloom, tone mapping, vignette and film grain in a
-// single merged effect pass. The streaks are thin lines of light rising above
+// Post-processing and the signal streaks. One render pass, a guard that zeroes
+// non-finite colour, a tilt-shift for the miniature look, then bloom, tone
+// mapping, vignette and film grain in a single merged effect pass. The streaks are thin lines of light rising above
 // the host room whose brightness and speed follow the voice level.
 
 import {
@@ -16,7 +16,17 @@ import {
   VignetteEffect,
 } from "postprocessing";
 import * as THREE from "three";
+import { FiniteEffect } from "./finite";
+import type { ScreenBand } from "./fit";
 import { palette } from "./palette";
+
+/** The stage height at which the tilt-shift blur has its designed strength. */
+const BLUR_HEIGHT = 900;
+/** At home, the middle of the house is sharp, its roofline and front corner soften, the grounds blur. */
+const SHARP_SHARE = 0.55;
+const FEATHER_SHARE = 0.5;
+/** Inside a room, or when the house is partly behind the camera, nearly the whole screen is sharp. */
+const ROOM_BAND: ScreenBand = { center: 0, half: 1.6 };
 
 export class Post {
   readonly composer: EffectComposer;
@@ -27,7 +37,8 @@ export class Post {
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) {
     this.composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType, multisampling: 4 });
     this.composer.addPass(new RenderPass(scene, camera));
-    this.tilt = new TiltShiftEffect({ focusArea: 0.5, feather: 0.32, offset: 0.04 });
+    this.composer.addPass(new EffectPass(camera, new FiniteEffect()));
+    this.tilt = new TiltShiftEffect({ focusArea: 0.5, feather: 0.32 });
     this.composer.addPass(new EffectPass(camera, this.tilt));
     const bloom = new BloomEffect({ luminanceThreshold: 0.9, luminanceSmoothing: 0.2, intensity: 1.05, radius: 0.72, mipmapBlur: true });
     const tone = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });
@@ -39,6 +50,8 @@ export class Post {
 
   setSize(width: number, height: number): void {
     this.composer.setSize(width, height);
+    // The blur reaches a fixed number of pixels; scale it with the view so it keeps its size relative to the house.
+    this.tilt.blurPass.scale = THREE.MathUtils.clamp(height / BLUR_HEIGHT, 0.4, 2);
   }
 
   /** Full miniature blur at home; mostly sharp inside a room. */
@@ -46,10 +59,15 @@ export class Post {
     this.miniatureTarget = on ? 1 : 0.25;
   }
 
-  render(dt: number): void {
+  /** `house` is where the house sits vertically on screen, or null when that is unknown. */
+  render(dt: number, house: ScreenBand | null): void {
     this.miniature += (this.miniatureTarget - this.miniature) * Math.min(1, dt * 2.5);
-    this.tilt.focusArea = 0.5 + (1 - this.miniature) * 0.35;
-    this.tilt.feather = 0.32 + (1 - this.miniature) * 0.2;
+    const band = house ?? ROOM_BAND;
+    const m = this.miniature;
+    const half = THREE.MathUtils.lerp(ROOM_BAND.half, THREE.MathUtils.clamp(band.half, 0.2, ROOM_BAND.half), m);
+    this.tilt.offset = band.center * m;
+    this.tilt.feather = half * FEATHER_SHARE;
+    this.tilt.focusArea = half * (SHARP_SHARE + FEATHER_SHARE);
     this.composer.render(dt);
   }
 }

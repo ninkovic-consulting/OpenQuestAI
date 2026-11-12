@@ -2,15 +2,7 @@
 // comes through the pywebview script bridge; in a browser it comes in the URL
 // fragment, which never leaves the browser. The fragment is removed at once.
 
-interface PywebviewBridge {
-  api: { token(): Promise<string> };
-}
-
-declare global {
-  interface Window {
-    pywebview?: PywebviewBridge;
-  }
-}
+import { bridge } from "./native";
 
 const BRIDGE_WAIT_MS = 4000;
 
@@ -22,24 +14,9 @@ function fromFragment(): string | null {
   return token;
 }
 
-function bridge(): Promise<PywebviewBridge | null> {
-  if (window.pywebview) return Promise.resolve(window.pywebview);
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), BRIDGE_WAIT_MS);
-    window.addEventListener(
-      "pywebviewready",
-      () => {
-        clearTimeout(timer);
-        resolve(window.pywebview ?? null);
-      },
-      { once: true },
-    );
-  });
-}
-
 export async function readToken(): Promise<string | null> {
   const fragment = fromFragment();
   if (fragment !== null) return fragment;
-  const api = await bridge();
-  return api ? api.api.token() : null;
+  const api = await bridge(BRIDGE_WAIT_MS);
+  return api?.token ? api.token() : null;
 }

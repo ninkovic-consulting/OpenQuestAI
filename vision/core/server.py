@@ -3,7 +3,9 @@
 - Static files from `web/dist` at `/`, or a placeholder page until the web
   app is built.
 - `GET /api/health`, `GET /api/state`, `GET /api/history?limit=50`,
-  `GET /api/house` (plus the house package's own routes under `/api/house`),
+  `GET /api/house` (plus the house package's own routes under `/api/house`,
+  and the settings package's under `/api`: settings, models, voice, downloads,
+  folders, doctor, reset and backups),
   each needing `Authorization: Bearer <token>`. Other packages protect their
   routers with `require_token`.
 - `WS /ws`: the first message must be `hello` with the token, else the
@@ -142,6 +144,13 @@ def create_app(daemon: Daemon) -> FastAPI:
 
     if daemon.components.house.router is not None:
         app.include_router(daemon.components.house.router, prefix="/api/house", dependencies=auth)
+
+    # Imported here: the settings routes import `require_token` from this module.
+    from vision.settings import SettingsService
+    from vision.settings import build_router as settings_router
+
+    app.state.settings = SettingsService(daemon)
+    app.include_router(settings_router(app.state.settings), prefix="/api", dependencies=auth)
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:
