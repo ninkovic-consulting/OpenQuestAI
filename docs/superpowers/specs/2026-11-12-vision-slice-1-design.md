@@ -8,7 +8,7 @@ Design board: Paper file "Vision PRO AI", page "Plan", boards 01 to 05
 
 Vision is a personal assistant that runs all the time on one Mac, for one person. A Python daemon is the mind. A fullscreen 3D mansion, seen from above with the roof off, is the face. Vision sits in the Hall and talks with you by voice or text. Later slices move other residents into the other rooms, each with its own memory and personality, and give them hands.
 
-It uses the subscriptions already paid for (Claude Max, ChatGPT, Gemini) through each vendor's own command-line tool. It holds no API keys.
+Vision's own mind runs on the Anthropic API, paid from the promotional credits granted each month. It does not use the Claude Max login at all, which removes the question of whether scripted use fits the subscription terms and keeps Vision off the Max usage limits. Speech recognition and speech run locally and cost nothing. A local model stands behind Claude as the fallback. ChatGPT and Gemini subscriptions stay available for specific residents in later slices.
 
 ### Decisions already made
 
@@ -22,6 +22,10 @@ It uses the subscriptions already paid for (Claude Max, ChatGPT, Gemini) through
 | Look | Board 04: cutaway mansion at dusk, warm rooms, oxblood panel, mustard chair |
 | Rendering | Fully modelled 3D house, not a painting |
 | Assets | Meshy for models, Higgsfield for textures |
+| Claude access | Anthropic API on the monthly promotional credits, not the Max login |
+| Talk model | `claude-haiku-5-5`, for speed and cost |
+| Heavy model | `claude-opus-5-5`, when asked to think something through |
+| Speech | Local models: Whisper in, Kokoro out |
 
 ### The whole system, in six slices
 
@@ -46,6 +50,7 @@ Each later slice gets its own spec. Nothing in this spec builds for them beyond 
 6. Vision remembers a fact across a daemon restart ("my DCF release is on Friday").
 7. Asking Vision to run a shell command produces a card that needs your yes. Yes runs it, no does not, and both are in the audit log.
 8. With the network off, Vision still answers through the local model and says it is running locally.
+9. The house shows this month's API spend against the cap. When the cap is reached, talk moves to the local model by itself.
 
 ### Out of scope
 
@@ -56,10 +61,10 @@ Other residents, delegation, Codex and Gemini, the Workshop, any Mac control bey
 ```
             faces                         core (Python daemon)                brains
   ┌──────────────────────┐   WebSocket   ┌───────────────────────┐        ┌─────────────┐
-  │ Mindspace window     │◄─────────────►│ server  ── event bus  │───────►│ Claude Max  │
+  │ Mindspace window     │◄─────────────►│ server  ── event bus  │───────►│ Claude API  │
   │ (Three.js + HUD)     │               │ Vision session        │        │ (primary)   │
-  └──────────────────────┘               │ router ─ gate ─ memory│───────►│ Ollama      │
-  ┌──────────────────────┐   in process  │ voice loop            │        │ (fallback)  │
+  └──────────────────────┘               │ router ─ gate ─ memory│───────►│ Local model │
+  ┌──────────────────────┐   in process  │ voice loop ─ budget   │        │ (fallback)  │
   │ microphone, speakers │◄─────────────►│                       │        └─────────────┘
   └──────────────────────┘               └───────────────────────┘
 ```
@@ -81,7 +86,7 @@ Each unit has one job and a small interface. Paths are relative to the repo root
 | `config.py` | Loads `~/.vision/config.toml` over built-in defaults. |
 | `server.py` | FastAPI app: static web files, `/api/*`, `/ws`. |
 | `session.py` | One conversation turn end to end: input, brain, sentences, voice, log. |
-| `cli.py` | `vision run`, `vision ui`, `vision install`, `vision uninstall`, `vision status`. |
+| `cli.py` | `vision run`, `vision ui`, `vision auth`, `vision install`, `vision uninstall`, `vision status`. |
 | `launchd.py` | Writes and loads the LaunchAgent plist with `KeepAlive` and `RunAtLoad`. |
 
 Runtime data lives in `~/.vision/`: `config.toml`, `token`, `log.db`, `logs/`, and `house/` (the memory vault). Nothing personal is written into the repo.
@@ -99,14 +104,18 @@ class Brain(Protocol):
     async def close(self) -> None: ...
 ```
 
-- `claude.py`. One long-lived Claude session on the Max subscription. It loads none of the user's global Claude Code settings, plugins or skills, because those add tens of thousands of tokens and seconds of start-up to every session. The system prompt is Vision's persona plus the memory core. Claude's built-in tools are switched off; the only tools are the ones in 4.5. Default model `sonnet`, configurable.
-- `ollama.py`. Local fallback through Ollama's HTTP API, default model `qwen3.8:27b-mlx`, no tools.
+- `claude.py`. Calls the Anthropic API directly through the official `anthropic` Python SDK, streaming. This is the path the monthly promotional credits cover (they apply to "API" and "Agent SDK"), and it is the fastest route because nothing sits between Vision and the model. The system prompt is Vision's persona plus the memory core, cached so repeat turns cost less. The only tools are the five in 4.5, and each call passes through the gate before it runs.
+  - Talk model `claude-haiku-5-5`, with thinking effort set low so replies start quickly. At list price (0.10 dollars per million input tokens, 0.50 per million output) a spoken turn of roughly 4,000 tokens in and 150 out costs about a twentieth of a cent. That figure is an estimate from those assumptions, and the live check measures the real one.
+  - Heavy model `claude-opus-5-5`, used when you ask Vision to think something through.
+  - Both are one line each in `config.toml`.
+- `local.py`. A model on this Mac through Ollama, default `qwen3.8:27b-mlx`, no tools. It speaks the OpenAI-compatible chat format, so pointing it at OpenRouter or LM Studio is a config change and needs no new code.
 - `fake.py`. Scripted brain for tests.
-- `router.py`. Sends each turn to Claude. On a rate limit, auth failure, timeout or no network it retries once, then switches to Ollama, publishes `brain.fallback`, and tries Claude again after a cool-down.
+- `router.py`. Sends each turn to Claude. On a rate limit, auth failure, exhausted credits, timeout or no network it retries once, then switches to the local model, publishes `brain.fallback`, and tries Claude again after a cool-down.
+- `budget.py`. Adds up what each reply cost from the token counts the API returns and a price table in `config.toml`. The monthly cap defaults to 150 dollars. Vision gives a notice at 80 percent. At the cap, talk moves to the local model until the month turns or you raise the cap.
 
-**Transport, decided by a spike before anything else is built.** The Python Agent SDK (`ClaudeSDKClient`) is preferred because it has interrupt and a permission callback. Whether it picks up the subscription login is not documented. If the spike shows `apiKeySource: "none"` in the init message, use it. If not, drive the CLI directly with `--input-format stream-json --output-format stream-json`, which is confirmed to work on the subscription. Both sit behind the same `Brain` interface.
+**Credentials.** `vision auth` asks you to paste an Anthropic Console API key once and stores it in the macOS Keychain. It is never written to a file, a log or the repo, and nobody but you handles it.
 
-Vision never reads, copies or stores a login token, and never sets an API key. The vendor tool does its own login.
+**Later slices.** Residents that work inside your repos will use the Claude Agent SDK on the same credits. Codex and Gemini stay available as subscription-based brains for U and Ultron, and their terms get checked when slice 2 is specced.
 
 ### 4.3 Voice: `vision/voice/`
 
@@ -185,7 +194,8 @@ One JSON envelope in both directions: `{"type": "...", "ts": 1731400000.0, "data
 
 | Type | Data |
 |---|---|
-| `state.changed` | `state`: idle, listening, transcribing, thinking, speaking; `brain`: claude or ollama |
+| `state.changed` | `state`: idle, listening, transcribing, thinking, speaking; `brain`: claude or local |
+| `budget` | `month`, `spent_usd`, `cap_usd` |
 | `user.utterance` | `text`, `source`: voice or text |
 | `vision.delta` | `text` (a streamed fragment) |
 | `vision.reply` | `text` (the finished reply), `turn_id` |
@@ -222,8 +232,10 @@ One JSON envelope in both directions: `{"type": "...", "ts": 1731400000.0, "data
 
 | Failure | Behaviour |
 |---|---|
-| Claude rate limit, auth failure, timeout, offline | One retry, then Ollama. Vision says it is running locally. |
-| Ollama also unavailable | Spoken and shown error. The turn is logged as failed. |
+| Claude rate limit, auth failure, timeout, offline | One retry, then the local model. Vision says it is running locally. |
+| Credits exhausted or monthly cap reached | Talk moves to the local model and stays there. A notice says why and how to raise the cap. |
+| No API key stored yet | Vision runs on the local model and a notice asks you to run `vision auth`. |
+| Local model also unavailable | Spoken and shown error. The turn is logged as failed. |
 | Speech recognition or voice fails to load | Text keeps working. A notice says voice is off and why. |
 | Microphone permission missing | A notice with the exact setting to change. |
 | Window loses the socket | Reconnects with back-off and reloads state from `/api/state`. |
@@ -237,12 +249,12 @@ One JSON envelope in both directions: `{"type": "...", "ts": 1731400000.0, "data
 - **Protocol.** A test client connects to a daemon running the fake brain, sends `input.text`, and checks the event sequence and the log row. It also checks that a wrong token and a foreign `Origin` are refused.
 - **Voice.** WAV in, WAV out, with the fake brain: the right utterance is detected, the reply is spoken, "stop" interrupts.
 - **Web (vitest).** Store reducers and the plan loader.
-- **Live checks, done by the orchestrator.** Each "done when" item in section 2 is exercised for real: the daemon under launchd, the window in a browser with screenshots, a real Claude turn on the subscription with the measured time to first audio, a restart-and-recall, a gate yes and no, and an offline turn.
+- **Live checks, done by the orchestrator.** Each "done when" item in section 2 is exercised for real: the daemon under launchd, the window in a browser with screenshots, a real Claude turn on the API credits with the measured time to first audio and its measured cost, a restart-and-recall, a gate yes and no, an offline turn, and a cap set low enough to trip.
 - **Yours.** One pass at the real microphone, because nobody else can speak into it.
 
 ## 9. Stack
 
-Python 3.12 with `uv`; FastAPI and uvicorn; `claude-agent-sdk` or the `claude` CLI; `sounddevice`; Silero VAD; Whisper on MLX; Kokoro; SQLite with FTS5; `pywebview`. Web: Vite, TypeScript, Three.js. Exact package versions are checked against current documentation when each part is built.
+Python 3.12 with `uv`; FastAPI and uvicorn; the `anthropic` SDK; `keyring` for the Keychain; `sounddevice`; Silero VAD; Whisper on MLX; Kokoro; SQLite with FTS5; `pywebview`. Web: Vite, TypeScript, Three.js. Exact package versions are checked against current documentation when each part is built.
 
 ## 10. Layout
 
@@ -258,10 +270,10 @@ pyproject.toml
 
 ## 11. Risks, stated plainly
 
-1. **Subscription terms.** Anthropic's Claude Code documentation supports headless use on a subscription login. Their consumer terms have a clause against scripted access that those docs appear to override, and no page reconciles the two. Staying single-user, on this machine, with the unmodified vendor tool is the conservative reading. If certainty matters, Anthropic support can confirm.
-2. **Limits.** Voice turns draw on the same five-hour and weekly Max limits as Claude Code. A lean prompt and the local fallback reduce the pressure but do not remove it.
-3. **Latency.** Measured cold start for a Claude session was several seconds; warm turns are faster but not instant. Three seconds to first audio is a target that the live check will measure.
-4. **Agent SDK login.** Unconfirmed, which is why the spike comes first and a confirmed alternative exists.
+1. **Credits expire.** Each monthly grant runs out a month after it is issued and does not roll over. The grant issued on 2026-11-10 is good until 2026-12-13. Vision treats the credits as a monthly allowance and never assumes a balance carries forward.
+2. **Runaway spend.** A loop that keeps calling the model could burn credits. The monthly cap, a per-reply output limit and the audit log bound this. With auto-reload off on the Console, the worst case is that the API stops answering and Vision falls back to the local model.
+3. **Latency.** Calling the API directly removes the multi-second start-up that the Claude Code route showed in testing, but time to first audio is still unmeasured. Three seconds is a target that the live check will measure.
+4. **Subscription brains later.** Using Codex and Gemini through their subscription logins in slice 2 raises the same terms question this slice avoids for Claude. It gets checked then, before any code depends on it.
 5. **Microphone under launchd.** macOS ties microphone permission to the program that asks. A background agent may need a one-time manual grant.
 6. **Look.** A modelled house will start plainer than the painted concept on board 04. Lighting, textures and post-processing carry most of the look; furniture fills in room by room.
 
