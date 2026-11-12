@@ -272,7 +272,7 @@ pyproject.toml
 
 1. **Credits expire.** Each monthly grant runs out a month after it is issued and does not roll over. The grant issued on 2026-11-10 is good until 2026-12-13. Vision treats the credits as a monthly allowance and never assumes a balance carries forward.
 2. **Runaway spend.** A loop that keeps calling the model could burn credits. The monthly cap, a per-reply output limit and the audit log bound this. With auto-reload off on the Console, the worst case is that the API stops answering and Vision falls back to the local model.
-3. **Latency.** Calling the API directly removes the multi-second start-up that the Claude Code route showed in testing, but time to first audio is still unmeasured. Three seconds is a target that the live check will measure.
+3. **Latency.** Calling the API directly removes the multi-second start-up that the Claude Code route showed in testing, but time to first audio is still unmeasured. One test call on 2026-11-12 with the talk model returned its first words in 0.9 seconds on a very small prompt; the real prompt is larger, and speech recognition and speech add to it. Three seconds is a target that the live check will measure.
 4. **Subscription brains later.** Using Codex and Gemini through their subscription logins in slice 2 raises the same terms question this slice avoids for Claude. It gets checked then, before any code depends on it.
 5. **Microphone under launchd.** macOS ties microphone permission to the program that asks. A background agent may need a one-time manual grant.
 6. **Look.** A modelled house will start plainer than the painted concept on board 04. Lighting, textures and post-processing carry most of the look; furniture fills in room by room.
