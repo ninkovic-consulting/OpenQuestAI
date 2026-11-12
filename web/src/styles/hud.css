@@ -1,0 +1,597 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--scene);
+  color: var(--text);
+  font: 400 15px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: var(--panel-width) 1fr;
+  height: 100%;
+}
+
+.caps {
+  font-family: var(--caps);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------- left panel */
+
+.panel {
+  background: var(--ground);
+  display: flex;
+  flex-direction: column;
+  padding: 44px 40px 40px;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--hairline);
+  z-index: 2;
+}
+
+.wordmark {
+  margin: 0;
+  font-family: var(--caps);
+  font-weight: 300;
+  font-size: 30px;
+  letter-spacing: var(--tracking-wordmark);
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+
+.state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  color: var(--mustard);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.state.is-idle {
+  color: var(--muted-light);
+}
+
+.state.is-offline {
+  color: var(--alert);
+}
+
+.state .brain {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.dot.hollow {
+  background: transparent;
+  border: 1px solid currentColor;
+}
+
+.state .dot {
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+.state.is-idle .dot {
+  animation: none;
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.residents {
+  list-style: none;
+  margin: 40px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.resident {
+  display: grid;
+  grid-template-columns: 20px 112px 1fr;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.resident .dot {
+  color: var(--muted);
+}
+
+.resident.is-awake .dot,
+.resident.is-active .dot {
+  color: var(--mustard);
+}
+
+.resident.is-tower .dot {
+  color: var(--alert);
+}
+
+.resident .name {
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  overflow-wrap: anywhere;
+}
+
+.resident.is-asleep .name {
+  color: var(--muted);
+}
+
+.resident .where {
+  color: var(--muted-light);
+  font-size: 14px;
+}
+
+.budget {
+  margin-top: 30px;
+}
+
+.budget-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  color: var(--muted);
+}
+
+.budget-row .amount {
+  font-family: var(--sans);
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 14px;
+  color: var(--muted-light);
+}
+
+.budget-bar {
+  margin-top: 10px;
+  height: 2px;
+  background: var(--hairline);
+}
+
+.budget-bar span {
+  display: block;
+  height: 100%;
+  background: var(--mustard);
+  transition: width 0.6s ease;
+}
+
+.budget.is-high .budget-bar span {
+  background: var(--alert);
+}
+
+.build-toggle {
+  margin-top: 26px;
+  align-self: flex-start;
+  background: none;
+  border: 1px solid var(--hairline-strong);
+  color: var(--muted-light);
+  padding: 10px 18px 9px;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+
+.build-toggle:hover,
+.build-toggle.is-on {
+  border-color: var(--mustard);
+  color: var(--mustard);
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* ---------------------------------------------------------------- gate card */
+
+.gate {
+  background: var(--carpet);
+  padding: 22px 20px 20px;
+  animation: rise 0.35s ease-out;
+}
+
+.gate-head {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted-light);
+}
+
+.gate-summary {
+  margin: 14px 0 0;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 22px;
+  line-height: 1.3;
+}
+
+.gate-detail {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  background: rgba(20, 9, 7, 0.35);
+  font: 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted-light);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 96px;
+  overflow: auto;
+}
+
+.gate-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.gate-actions button {
+  padding: 11px 22px 10px;
+  cursor: pointer;
+  border: 1px solid var(--text);
+  background: none;
+}
+
+.gate-actions .yes {
+  background: var(--text);
+  color: var(--ground);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+/* ---------------------------------------------------------------- stage */
+
+.stage {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.chip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 11px 5px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--muted-light);
+  background: rgba(28, 14, 11, 0.5);
+  border: 1px solid rgba(90, 64, 56, 0.6);
+  transition:
+    background 0.4s,
+    border-color 0.4s,
+    color 0.4s,
+    opacity 0.3s;
+  will-change: transform;
+}
+
+.chip .dot {
+  display: none;
+  width: 6px;
+  height: 6px;
+}
+
+.chip.is-active {
+  background: var(--ground);
+  border-color: var(--mustard);
+  color: var(--text);
+}
+
+.chip.is-active .dot {
+  display: block;
+  color: var(--mustard);
+}
+
+.chip.is-tower {
+  border-color: var(--alert);
+  background: rgba(28, 14, 11, 0.85);
+  color: var(--text);
+}
+
+.chip.is-tower .dot {
+  display: block;
+  color: var(--alert);
+}
+
+.chip.is-dark {
+  opacity: 0.55;
+}
+
+.caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: minmax(200px, 0.75fr) 2fr;
+  gap: 40px;
+  padding: 90px 48px 38px;
+  background: linear-gradient(to top, rgba(20, 9, 7, 0.94) 30%, rgba(20, 9, 7, 0));
+  pointer-events: none;
+  transition: opacity 0.5s;
+}
+
+.caption.is-empty {
+  opacity: 0;
+}
+
+.caption .who {
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.caption .reply-col .who {
+  color: var(--mustard);
+}
+
+.caption .user {
+  font-size: 16px;
+  color: var(--muted-light);
+  line-height: 1.5;
+}
+
+.caption .reply {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 30px;
+  line-height: 1.22;
+  color: var(--text);
+  max-height: calc(1.22em * 3);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.composer {
+  position: absolute;
+  left: 48px;
+  right: 48px;
+  bottom: 170px;
+  display: none;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  background: var(--ground);
+  border: 1px solid var(--mustard);
+  z-index: 3;
+}
+
+.composer.is-open {
+  display: flex;
+  animation: rise 0.2s ease-out;
+}
+
+.composer input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-size: 17px;
+}
+
+.composer input::placeholder {
+  color: var(--muted);
+}
+
+.composer .hint {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.hint-bar {
+  position: absolute;
+  top: 22px;
+  left: 28px;
+  display: flex;
+  gap: 22px;
+  color: var(--muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.hint-bar kbd {
+  font: inherit;
+  color: var(--muted-light);
+  border: 1px solid var(--hairline-strong);
+  padding: 2px 6px 1px;
+  margin-right: 8px;
+}
+
+/* ---------------------------------------------------------------- toasts */
+
+.toasts {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 340px;
+  z-index: 4;
+}
+
+.toast {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  background: var(--ground);
+  border: 1px solid var(--hairline-strong);
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--muted-light);
+  animation: rise 0.3s ease-out;
+  cursor: pointer;
+}
+
+.toast .dot {
+  color: var(--muted);
+  transform: translateY(-1px);
+}
+
+.toast.warn {
+  border-color: var(--mustard);
+}
+
+.toast.warn .dot {
+  color: var(--mustard);
+}
+
+.toast.error {
+  border-color: var(--alert);
+  color: var(--text);
+}
+
+.toast.error .dot {
+  color: var(--alert);
+}
+
+/* ---------------------------------------------------------------- build form */
+
+.build-banner {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 16px 7px;
+  border: 1px solid var(--mustard);
+  background: var(--ground);
+  color: var(--mustard);
+  display: none;
+}
+
+.build-banner.is-on {
+  display: block;
+}
+
+.build-form {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 380px;
+  background: var(--ground);
+  border: 1px solid var(--hairline-strong);
+  padding: 26px 26px 24px;
+  display: none;
+  z-index: 5;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+}
+
+.build-form.is-open {
+  display: block;
+  animation: rise 0.25s ease-out;
+}
+
+.build-form h2 {
+  margin: 0 0 4px;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 24px;
+}
+
+.build-form .where {
+  color: var(--muted);
+}
+
+.build-form label {
+  display: block;
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.build-form input,
+.build-form select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 9px 10px;
+  background: var(--scene);
+  border: 1px solid var(--hairline-strong);
+  font-size: 15px;
+  letter-spacing: 0;
+  text-transform: none;
+  font-family: var(--sans);
+  outline: none;
+}
+
+.build-form input:focus,
+.build-form select:focus {
+  border-color: var(--mustard);
+}
+
+.build-form .refusal {
+  margin-top: 14px;
+  color: var(--alert);
+  font-size: 14px;
+  min-height: 1em;
+}
+
+.build-form .actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.build-form .actions button {
+  padding: 10px 18px 9px;
+  border: 1px solid var(--hairline-strong);
+  background: none;
+  cursor: pointer;
+}
+
+.build-form .actions .primary {
+  background: var(--mustard);
+  border-color: var(--mustard);
+  color: var(--ground);
+}
+
+.build-form .actions button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}

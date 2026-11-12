@@ -1,0 +1,22 @@
+:root {
+  --ground: #1c0e0b;
+  --scene: #140907;
+  --text: #ede4d0;
+  --muted: #a8957c;
+  --muted-light: #d6c6a8;
+  --mustard: #e2a62b;
+  --teal: #2b6c78;
+  --carpet: #9b2318;
+  --alert: #e0503a;
+  --hairline: #3f2a24;
+  --hairline-strong: #5a4038;
+  --lamp: #f6c866;
+
+  --serif: "Fraunces", Georgia, serif;
+  --caps: "Josefin Sans", "Futura", sans-serif;
+  --sans: "Inter", system-ui, sans-serif;
+
+  --panel-width: 380px;
+  --tracking-wordmark: 0.42em;
+  --tracking-label: 0.24em;
+}
