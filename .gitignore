@@ -19,3 +19,9 @@ web/dist/
 # Runtime data never belongs in the repo
 *.db
 *.log
+
+# Review sheets, not shipped
+assets/**/_*
+
+# Synced copies of assets for the web app
+web/public/assets/

@@ -1,0 +1,42 @@
+[project]
+name = "vision"
+version = "0.1.0"
+description = "Vision: a personal always-on assistant daemon for one Mac."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.162.5",
+    "uvicorn[standard]>=0.54.0",
+    "pydantic>=2.14.3",
+    "keyring>=25.7.0",
+    "httpx>=0.28.1",
+    "websockets>=17.4",
+]
+
+[project.optional-dependencies]
+# The native fullscreen window for `vision ui`.
+ui = ["pywebview>=6.2.1"]
+# Owned by the brains/gate agent: the Anthropic SDK and the local-model client go here.
+brains = []
+# Owned by the voice agent: audio I/O, VAD, STT and TTS packages go here.
+voice = []
+
+[project.scripts]
+vision = "vision.core.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1",
+]
+
+[build-system]
+requires = ["hatchling>=1.33.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["vision"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
