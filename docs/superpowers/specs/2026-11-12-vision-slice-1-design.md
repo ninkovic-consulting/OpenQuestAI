@@ -16,7 +16,7 @@ Vision's own mind runs on the Anthropic API, paid from the promotional credits g
 |---|---|
 | First slice | Core daemon, the 3D house, text and voice with Vision |
 | Language | English |
-| Cast | Vision, J.A.R.V.I.S., F.R.I.D.A.Y., E.D.I.T.H., D.U.M.-E. and U, Ultron in the Attic |
+| Cast | Six original agents: Vision (host), Brass (steward), Wren (envoy), Tink (maker), Tock (checker), Rook (scout, in the tower). All renameable |
 | Autonomy | Ask before risky actions |
 | Approach | Python core, WebGL house in a native fullscreen window |
 | Look | Board 04: cutaway mansion at dusk, warm rooms, oxblood panel, mustard chair |
@@ -119,7 +119,7 @@ class Brain(Protocol):
 
 **Credentials.** Vision looks for the Anthropic API key in two places, in this order: the macOS Keychain, then `ANTHROPIC_API_KEY` in a git-ignored `.env` file in the project, which is the name the Anthropic SDK itself expects. `vision auth` moves a key into the Keychain if you prefer that. The key never goes into the repo, a log, a prompt or the window, and nobody but you handles it.
 
-**Later slices.** Residents that work inside your repos will use the Claude Agent SDK on the same credits. Codex and Gemini stay available as subscription-based brains for U and Ultron, and their terms get checked when slice 2 is specced.
+**Later slices.** Residents that work inside your repos will use the Claude Agent SDK on the same credits. Codex and Gemini stay available as subscription-based brains for Tock and Rook, and their terms get checked when slice 2 is specced.
 
 ### 4.3 Voice: `vision/voice/`
 
@@ -185,7 +185,7 @@ Vite, TypeScript, Three.js. Built to static files that the daemon serves.
 
 **Hall furniture, from Meshy.** Mustard wingback armchair, floor lamp, staircase, side table, framed painting, cabinet. Game-prop settings (smart topology with a texture), about 15 credits each.
 
-**Vision.** One original stylised figure in a pale pinstripe suit, rigged, with four animations from Meshy's library: seated idle, seated talking, sit to stand, walk to sit. It is not a likeness of any actor or of the Marvel character's face.
+**Vision.** One original stylised figure in a pale pinstripe suit, rigged, with four animations from Meshy's library: seated idle, seated talking, sit to stand, walk to sit. It is an original design and not a likeness of any actor or of any existing character.
 
 **Cost.** About 120 Meshy credits planned out of the 1,200 available. The exact list, model choice and cost are shown for a yes before anything is generated, and again if retries would pass 200. Higgsfield cost is shown the same way.
 
@@ -195,7 +195,7 @@ Rooms other than the Hall are lit shells in this slice. They get furniture when 
 
 The house is a set of room modules on a square grid. This package owns the house file, validates it, works out doors and free slots, and serves the plan the window draws from.
 
-**Two files.** `house/default.toml` in the repo holds the neutral default: six agents (Host, Steward, Envoy, Maker, Checker, Scout) and the default rooms. `~/.vision/house.toml` is yours and overrides it: your agent names, your projects, your extra rooms. On first run it is created from the default.
+**Two files.** `house/default.toml` in the repo holds the default: six agents with the ids `host`, `steward`, `envoy`, `maker`, `checker` and `scout`, shown as Vision, Brass, Wren, Tink, Tock and Rook, and the default rooms. `~/.vision/house.toml` is yours and overrides it: your agent names, your projects, your extra rooms. On first run it is created from the default.
 
 ```toml
 [agents.host]
@@ -205,7 +205,7 @@ model = "claude-haiku-5-5"
 heavy_model = "claude-opus-5-5"
 
 [agents.maker]
-name = "D.U.M.-E."
+name = "Tink"
 persona = "agents/maker.md"
 model = "claude-opus-5-5"
 
