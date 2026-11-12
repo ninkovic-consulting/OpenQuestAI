@@ -1,0 +1,17 @@
+.DS_Store
+.claude/settings.local.json
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Web
+node_modules/
+web/dist/
+
+# Runtime data never belongs in the repo
+*.db
+*.log
