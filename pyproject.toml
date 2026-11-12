@@ -10,6 +10,7 @@ dependencies = [
     "keyring>=25.7.0",
     "httpx>=0.28.1",
     "websockets>=17.4",
+    "tomli-w>=1.2.0",
 ]
 
 [project.optional-dependencies]
