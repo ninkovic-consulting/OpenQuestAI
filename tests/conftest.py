@@ -1,10 +1,17 @@
 """Shared fixtures. Every test runs with a temp `VISION_HOME`, a temp `.env`
-path and no Keychain, so nothing touches the real home or the repo's `.env`."""
+path and no Keychain, so nothing touches the real home or the repo's `.env`.
+
+No test opens the microphone or loads speech models unless it asks to: the
+daemon's voice factory gives a silent `FakeVoice` unless `VISION_TEST_VOICE=1`.
+Without the `voice` extra, the voice tests are not collected at all.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib.util
+import os
 import socket
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
@@ -23,6 +30,16 @@ from vision.testing.fakes import (
     FakeToolHost,
     FakeVoice,
 )
+
+if importlib.util.find_spec("mlx_audio") is None:
+    collect_ignore_glob = ["test_voice_*.py"]
+
+
+@pytest.fixture(autouse=True)
+def stand_in_voice(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The daemon gets a silent voice unless real voice is asked for."""
+    if os.environ.get("VISION_TEST_VOICE") != "1":
+        monkeypatch.setattr("vision.voice.make_voice", lambda config, bus: FakeVoice())
 
 
 @pytest.fixture(autouse=True)

@@ -52,6 +52,9 @@ class Router:
 
     @property
     def name(self) -> BrainName:
+        """The backend that will answer: already `local` once the monthly cap is reached."""
+        if self._current == "claude" and self._budget.exhausted():
+            return "local"
         return self._current
 
     async def start(self) -> None:

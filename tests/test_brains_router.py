@@ -210,3 +210,9 @@ async def test_heavy_flag_is_passed_through(config: Config, heavy: bool) -> None
     await router.start()
     _ = [e async for e in router.send("think it through", heavy=heavy)]
     assert claude.sent == [("think it through", heavy)]
+
+
+async def test_name_is_local_before_the_turn_once_the_cap_is_reached(config: Config) -> None:
+    router, *_ = build(config, ["unused"], budget=FakeBudget(cap_usd=0.0))
+    await router.start()
+    assert router.name == "local"

@@ -1,6 +1,8 @@
 """The `vision` command.
 
     vision run [--fake-brain] [--port N]   run the daemon in the foreground
+        [--voice-in IN.wav --voice-out OUT.wav [--voice-pace X]]
+                                           (developer) hear a WAV file, speak into one
     vision status                          ask the running daemon how it is
     vision auth                            store the Anthropic API key in the Keychain
     vision setup                           download the local model (for the `mlx` backend)
@@ -17,11 +19,14 @@ import getpass
 import logging
 import sys
 import webbrowser
+from pathlib import Path
 
 import httpx
 
 from vision.core import launchd, secrets
+from vision.core.bus import Bus
 from vision.core.config import Config, load_config
+from vision.core.interfaces import Voice
 from vision.core.token import read_token
 
 
@@ -33,7 +38,17 @@ def cmd_run(config: Config, args: argparse.Namespace) -> int:
     from vision.app import Daemon  # heavy imports only when running the daemon
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    daemon = Daemon(config, fake_brain=args.fake_brain, port=args.port)
+    if (args.voice_in is None) != (args.voice_out is None):
+        print("--voice-in and --voice-out go together.")
+        return 2
+    voice = None
+    if args.voice_in is not None:
+        from vision.voice.filemode import make_file_voice
+
+        def voice(config: Config, bus: Bus) -> Voice:
+            return make_file_voice(config, bus, args.voice_in, args.voice_out, pace=args.voice_pace)
+
+    daemon = Daemon(config, fake_brain=args.fake_brain, port=args.port, voice=voice)
     try:
         asyncio.run(daemon.serve())
     except KeyboardInterrupt:
@@ -157,6 +172,11 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="run the daemon in the foreground")
     run.add_argument("--fake-brain", action="store_true", help="answer with the scripted fake brain")
     run.add_argument("--port", type=int, help="override [server] port")
+    run.add_argument("--voice-in", type=Path, help="(developer) hear this WAV instead of the mic")
+    run.add_argument("--voice-out", type=Path, help="(developer) speak into this WAV file")
+    run.add_argument(
+        "--voice-pace", type=float, default=1.0, help="(developer) 1.0 is real time"
+    )
     run.set_defaults(func=cmd_run)
 
     status = sub.add_parser("status", help="show whether the daemon is up and how it is")

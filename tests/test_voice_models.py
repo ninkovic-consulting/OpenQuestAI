@@ -21,7 +21,7 @@ from vision.core.bus import Bus
 from vision.core.config import Config
 from vision.core.events import InputInterrupt, UserUtterance
 from vision.core.session import Session
-from vision.testing.fakes import FakeBrain, FakeMemory
+from vision.testing.fakes import FakeBrain, FakeMemory, FakeToolHost
 from vision.voice.filemode import make_file_voice, resample
 from vision.voice.settings import VoiceSettings
 from vision.voice.stt import WhisperStt
@@ -108,7 +108,7 @@ async def test_file_mode_with_the_fake_brain(models, config: Config, tmp_path: P
     sub = bus.subscribe({UserUtterance.TYPE, InputInterrupt.TYPE})
     voice = make_file_voice(config, bus, tmp_path / "in.wav", tmp_path / "out.wav")
     reply = " ".join(f"This is sentence number {n} of a long story." for n in range(1, 11))
-    session = Session(bus, FakeBrain([reply], delay=0.005), voice.speaker, FakeMemory())
+    session = Session(bus, FakeBrain([reply], delay=0.005), voice.speaker, FakeMemory(), FakeToolHost())
     running = asyncio.create_task(session.run())
     started = time.perf_counter()
     await voice.start()

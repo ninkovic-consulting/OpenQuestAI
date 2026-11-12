@@ -119,8 +119,9 @@ class VoiceConfig(_Section):
     enabled: bool = True
     sample_rate: int = 16_000
     vad_silence_ms: int = 600
-    wake_phrases: list[str] = Field(default_factory=lambda: ["hey vision", "vision"])
-    stop_phrases: list[str] = Field(default_factory=lambda: ["vision stop", "stop", "cancel"])
+    stop_phrases: list[str] = Field(default_factory=lambda: ["stop", "cancel"])
+    """Said while the assistant speaks, these stop it. The wake phrase and "<name> stop"
+    come from `[assistant] name`."""
     followup_window_s: float = 20.0
 
 

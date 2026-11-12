@@ -44,7 +44,9 @@ async def check(seconds: float) -> None:
         started = time.perf_counter()
         stt = WhisperStt(settings.stt_model)
         await worker.run(stt.load)
-        synth = await worker.run(lambda: load_synth(settings))
+        synth, degraded = await worker.run(lambda: load_synth(settings))
+        if degraded:
+            print(degraded)
         print(f"\nModels ready in {time.perf_counter() - started:.1f} s "
               f"({settings.stt_model}, {type(synth).__name__}).")
 

@@ -16,6 +16,11 @@ count, even mid-reply.
 
 The follow-up window opens each time the session returns to `idle` after a
 turn. A short chime plays each time the session starts thinking.
+
+While a gate request waits for the user's yes or no, whatever the user says
+(once the assistant's audio has stopped) is passed on without a wake phrase,
+so the session can offer it to the gate. The session stays `thinking` or
+`speaking` during that wait, which would otherwise drop the answer.
 """
 
 from __future__ import annotations
@@ -29,7 +34,15 @@ from typing import Any
 import numpy as np
 
 from vision.core.bus import Bus
-from vision.core.events import InputInterrupt, InputPtt, State, StateChanged, UserUtterance
+from vision.core.events import (
+    GateRequest,
+    GateResolved,
+    InputInterrupt,
+    InputPtt,
+    State,
+    StateChanged,
+    UserUtterance,
+)
 from vision.voice.audio_io import AudioSource
 from vision.voice.settings import VoiceSettings
 from vision.voice.stt import Transcriber
@@ -73,7 +86,10 @@ class VoiceLoop:
         self._started_at = 0.0
         self._while_speaking = False
         self._tasks: set[asyncio.Task[None]] = set()
-        self._sub = bus.subscribe({StateChanged.TYPE, InputPtt.TYPE})
+        self._gate_waiting: set[str] = set()
+        self._sub = bus.subscribe(
+            {StateChanged.TYPE, InputPtt.TYPE, GateRequest.TYPE, GateResolved.TYPE}
+        )
 
     # ------------------------------------------------------------ bus events
 
@@ -97,6 +113,10 @@ class VoiceLoop:
                 self.addressing.ptt(down, now)
                 if down and self.session_state != "idle":
                     self.bus.publish(InputInterrupt())
+            case GateRequest(id=request_id):
+                self._gate_waiting.add(request_id)
+            case GateResolved(id=request_id):
+                self._gate_waiting.discard(request_id)
 
     # ------------------------------------------------------------ audio
 
@@ -110,11 +130,13 @@ class VoiceLoop:
             await self.on_segment(event)
 
     def assistant_speaking(self, now: float) -> bool:
-        return (
-            self.session_state == "speaking"
-            or self.speaker.playing
-            or now - self.speaker.last_end < ECHO_TAIL_S
-        )
+        """Audio is playing (or just ended), or a reply is being spoken.
+
+        While a gate request waits, only the audio counts: the session stays
+        `speaking` after a sentence said before the tool call.
+        """
+        audio = self.speaker.playing or now - self.speaker.last_end < ECHO_TAIL_S
+        return audio or (self.session_state == "speaking" and not self._gate_waiting)
 
     async def on_segment(self, event: SpeechStarted | Utterance) -> None:
         if isinstance(event, SpeechStarted):
@@ -144,6 +166,8 @@ class VoiceLoop:
                 return
             text = " ".join(rest)
         accepted = self.addressing.decide(text, started, now)
+        if accepted is None and self._gate_waiting:
+            accepted = text.strip() or None
         if accepted is None:
             self._show("idle")
             return

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from vision.core.config import load_config, vision_home
+from vision.core.config import Config, load_config, vision_home
 
 
 def test_defaults(isolated_env: Path) -> None:
@@ -89,3 +89,8 @@ anything = [1, 2, 3]
 
 def test_explicit_home(tmp_path: Path) -> None:
     assert load_config(tmp_path / "x").paths.token == tmp_path / "x" / "token"
+
+
+def test_voice_defaults_carry_no_assistant_name(config: Config) -> None:
+    assert "wake_phrases" not in config.voice.model_dump()
+    assert config.voice.stop_phrases == ["stop", "cancel"]

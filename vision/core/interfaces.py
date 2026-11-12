@@ -29,7 +29,8 @@ Who publishes what on the bus:
   `House.set_room_state`.
 - Voice: `user.utterance` (source voice), `state.changed` for listening /
   transcribing (and back to idle when an utterance is dropped), `voice.level`,
-  `input.interrupt` when it hears "Vision, stop".
+  `input.interrupt` when it hears "<name>, stop", and `notice` when it runs
+  degraded (for example speaking with macOS `say` because Kokoro failed).
 - Brain (router): `brain.fallback`, `notice`.
 - Budget: `budget` after every `record`, `notice` at the warning threshold and the cap.
 - ToolHost (gate): `gate.request`, `gate.resolved`; it consumes `gate.decision`.
@@ -334,9 +335,11 @@ class Speaker(Protocol):
     async def say(self, sentence: str) -> None:
         """Speak one sentence and return when it has finished playing.
 
-        Returns early (without raising) if `stop()` is called meanwhile. The
-        session calls `say` sequentially, never concurrently. The speaker
-        publishes `voice.level` while audio plays.
+        Returns early (without raising) if `stop()` is called meanwhile. So the
+        next sentence can be prepared while one plays, the session calls `say`
+        for sentence n+1 while the call for sentence n is still running (never
+        more than two at once); the speaker must play them in call order. The
+        speaker publishes `voice.level` while audio plays.
         """
         ...
 

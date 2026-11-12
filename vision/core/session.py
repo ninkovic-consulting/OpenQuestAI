@@ -8,13 +8,20 @@ with `source="voice"` (from the voice loop), `input.interrupt` and
    `state.changed: thinking`;
 2. streams the brain, publishing every fragment as `vision.delta`;
 3. splits the stream into sentences and hands them to the speaker in order,
-   publishing `state.changed: speaking` with the first one;
-4. publishes `vision.reply`, writes the turn to the log, waits for the
-   speaker to finish, and publishes `state.changed: idle`.
+   publishing `state.changed: speaking` with the first one; the next
+   sentence is handed over while the current one plays, so the speaker can
+   prepare it and there is no gap between them;
+4. waits for the speaker to finish, then publishes `vision.reply`, writes
+   the turn to the log, and publishes `state.changed: idle`.
 
 `input.interrupt`, `input.ptt` pressed, or a new input arriving mid-turn
 interrupts the brain, stops the speaker, and closes the turn as
-`interrupted` (it is still replied to and logged with what was said).
+`interrupted`. An interrupted turn is replied to and logged with the
+sentences the speaker had started, which is what the user actually heard;
+this holds when the brain had already finished and only the speech was cut.
+
+If the router falls back while the turn is thinking, `state.changed:
+thinking` is published again so the window shows the brain now answering.
 
 While a gate request is waiting (the turn in progress is blocked on the
 user's yes), typed or spoken input is first offered to `ToolHost.answer`. A
@@ -34,6 +41,7 @@ from dataclasses import dataclass, field
 
 from vision.core.bus import Bus
 from vision.core.events import (
+    BrainFallback,
     InputInterrupt,
     InputPtt,
     InputText,
@@ -85,6 +93,8 @@ class _Turn:
     turn_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     started_at: float = field(default_factory=time.time)
     parts: list[str] = field(default_factory=list)
+    spoken: list[str] = field(default_factory=list)
+    """Sentences the speaker has started, in order."""
     status: TurnStatus = "ok"
     brain: str = ""
     model: str = ""
@@ -111,9 +121,16 @@ class Session:
         self.memory = memory
         self.tools = tools
         self._task: asyncio.Task[None] | None = None
+        self._shown: State = "idle"
         # Subscribe now, so input published before `run()` starts is not lost.
         self._sub = bus.subscribe(
-            {InputText.TYPE, UserUtterance.TYPE, InputInterrupt.TYPE, InputPtt.TYPE}
+            {
+                InputText.TYPE,
+                UserUtterance.TYPE,
+                InputInterrupt.TYPE,
+                InputPtt.TYPE,
+                BrainFallback.TYPE,
+            }
         )
 
     @property
@@ -131,6 +148,8 @@ class Session:
                             await self._accept(text, "voice")
                         case InputInterrupt() | InputPtt(down=True):
                             await self.interrupt()
+                        case BrainFallback() if self.busy and self._shown == "thinking":
+                            self._state("thinking")
             finally:
                 await self.interrupt()
 
@@ -165,6 +184,7 @@ class Session:
     # ------------------------------------------------------------ the turn
 
     def _state(self, state: State) -> None:
+        self._shown = state
         self.bus.publish(StateChanged(state=state, brain=self.brain.name))
 
     async def _run_turn(self, turn: _Turn) -> None:
@@ -175,7 +195,7 @@ class Session:
             nonlocal speaking
             if speaking is None:
                 self._state("speaking")
-                speaking = asyncio.create_task(self._speak(speech))
+                speaking = asyncio.create_task(self._speak(speech, turn))
             speech.put_nowait(sentence)
 
         self._state("thinking")
@@ -184,13 +204,14 @@ class Session:
             if turn.status == "failed":
                 turn.parts = [FAILED_LINE]
                 say(FAILED_LINE)
-            self._reply(turn)
-            await self._log(turn)
             if speaking is not None:
                 speech.put_nowait(None)
                 await speaking
+            self._reply(turn)
+            await self._log(turn)
         except asyncio.CancelledError:
             turn.status = "interrupted"
+            turn.parts = [" ".join(turn.spoken)]
             self._reply(turn)
             await self._log(turn)
             raise
@@ -231,12 +252,29 @@ class Session:
         turn.error = error
         self.bus.publish(Notice(level="error", text=f"No brain could answer ({error})."))
 
-    async def _speak(self, speech: asyncio.Queue[str | None]) -> None:
-        while (sentence := await speech.get()) is not None:
-            try:
-                await self.speaker.say(sentence)
-            except Exception:
-                log.exception("speaker failed; continuing silently")
+    async def _speak(self, speech: asyncio.Queue[str | None], turn: _Turn) -> None:
+        """Say the sentences in order, handing each over while the one before plays."""
+        current: asyncio.Task[None] | None = None
+        upcoming: asyncio.Task[None] | None = None
+        try:
+            while (sentence := await speech.get()) is not None:
+                upcoming = asyncio.create_task(self._say(sentence))
+                if current is not None:
+                    await current
+                turn.spoken.append(sentence)
+                current, upcoming = upcoming, None
+            if current is not None:
+                await current
+        finally:
+            for task in (current, upcoming):
+                if task is not None and not task.done():
+                    task.cancel()
+
+    async def _say(self, sentence: str) -> None:
+        try:
+            await self.speaker.say(sentence)
+        except Exception:
+            log.exception("speaker failed; continuing silently")
 
     def _reply(self, turn: _Turn) -> None:
         if not turn.replied:

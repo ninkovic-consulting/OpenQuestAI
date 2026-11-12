@@ -5,13 +5,15 @@ import pytest
 
 from vision.core.bus import Bus, Subscription
 from vision.core.events import (
+    BrainFallback,
     Event,
     InputInterrupt,
     InputPtt,
     InputText,
+    StateChanged,
     UserUtterance,
 )
-from vision.core.interfaces import BrainError
+from vision.core.interfaces import BrainError, BrainEvent
 from vision.core.session import FAILED_LINE, Session, wants_heavy
 from vision.testing.fakes import FakeBrain, FakeMemory, FakeSpeaker, FakeToolHost
 
@@ -151,3 +153,91 @@ async def test_heavy_flag_passed_to_brain(rig: Rig) -> None:
 )
 def test_wants_heavy(text: str, heavy: bool) -> None:
     assert wants_heavy(text) is heavy
+
+
+async def test_reply_cut_off_while_speaking_is_logged_interrupted_with_what_was_said() -> None:
+    speaker = FakeSpeaker(delay=5)  # the first sentence plays until stopped
+    rig = Rig(FakeBrain(["One two. Three four. Five six."], delay=0), speaker)
+    task = asyncio.create_task(rig.session.run())
+    try:
+        rig.bus.publish(InputText(text="go"))
+        await until(lambda: len(speaker.spoken) >= 2)  # the brain is done; speech is not
+        assert not rig.memory.turns
+        rig.bus.publish(InputInterrupt())
+        await until(lambda: rig.memory.turns)
+        [turn] = rig.memory.turns
+        assert (turn.status, turn.reply) == ("interrupted", "One two.")
+        replies = [e for e in rig.drain() if e.TYPE == "vision.reply"]
+        assert [r.text for r in replies] == ["One two."]  # type: ignore[attr-defined]
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+class OverlapSpeaker(FakeSpeaker):
+    """Records how many `say` calls run at once and the order they finish in."""
+
+    def __init__(self) -> None:
+        super().__init__(delay=0.05)
+        self.running = 0
+        self.most = 0
+        self.finished: list[str] = []
+        self._lock = asyncio.Lock()
+
+    async def say(self, sentence: str) -> None:
+        self.running += 1
+        self.most = max(self.most, self.running)
+        try:
+            await asyncio.sleep(0.01)  # "synthesis", may overlap
+            async with self._lock:  # playback, one at a time and in order
+                await super().say(sentence)
+                self.finished.append(sentence)
+        finally:
+            self.running -= 1
+
+
+async def test_next_sentence_is_handed_over_while_one_plays() -> None:
+    speaker = OverlapSpeaker()
+    rig = Rig(FakeBrain(["A one. B two. C three. D four."], delay=0), speaker)
+    task = asyncio.create_task(rig.session.run())
+    try:
+        rig.bus.publish(InputText(text="go"))
+        await until(lambda: rig.memory.turns)
+        assert speaker.most == 2
+        assert speaker.finished == ["A one.", "B two.", "C three.", "D four."]
+        assert rig.memory.turns[0].status == "ok"
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+class SwitchingBrain(FakeBrain):
+    """Falls back to the local model as its turn starts, as the router does."""
+
+    def __init__(self, bus: Bus) -> None:
+        super().__init__(["Local answer."], delay=0.05, name="claude")
+        self.bus = bus
+
+    async def send(self, text: str, *, heavy: bool = False) -> AsyncIterator[BrainEvent]:
+        self._name = "local"
+        self.bus.publish(BrainFallback(from_="claude", to="local", reason="offline"))
+        await asyncio.sleep(0.1)
+        async for event in super().send(text, heavy=heavy):
+            yield event
+
+
+async def test_thinking_is_announced_again_after_a_fallback() -> None:
+    rig = Rig(FakeBrain(["unused"]))
+    rig.brain = SwitchingBrain(rig.bus)
+    rig.session.brain = rig.brain
+    task = asyncio.create_task(rig.session.run())
+    try:
+        rig.bus.publish(InputText(text="hi"))
+        await until(lambda: rig.memory.turns)
+        states = [
+            (e.state, e.brain) for e in rig.drain() if isinstance(e, StateChanged)
+        ]
+        assert states[:3] == [("thinking", "claude"), ("thinking", "local"), ("speaking", "local")]
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

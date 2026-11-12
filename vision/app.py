@@ -1,12 +1,12 @@
 """The composition root: builds every part, wires them to the bus, runs the server.
 
-Each part comes from its package's factory. When a factory raises
-`NotImplementedError` (the part is not built yet), or when `--fake-brain` is
-passed for the brain, the matching fake from `vision.testing.fakes` is used
-and a `notice` says why. Tests may hand the daemon its parts instead. If voice
-fails to start, the daemon continues text-only with a notice. Startup notices
-are kept by the snapshot, so a window that connects later still sees them via
-`/api/state`.
+Each part comes from its package's factory. With `--fake-brain` the brain is
+the scripted fake from `vision.testing.fakes`, with a `notice` saying so.
+Voice can be swapped for another factory (`vision run --voice-in/--voice-out`
+runs the real pipeline on WAV files), and tests may hand the daemon all its
+parts. If voice fails to start, the daemon continues text-only with a notice.
+Startup notices are kept by the snapshot, so a window that connects later
+still sees them via `/api/state`.
 
 Start-up order: `$VISION_HOME` is made private (0700); the house's agent
 personas are copied into the vault (never overwriting), so memory reads the
@@ -23,7 +23,6 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeVar
 
 import uvicorn
 
@@ -36,23 +35,15 @@ from vision.core.server import create_app
 from vision.core.session import Session
 from vision.core.snapshot import Snapshot
 from vision.core.token import ensure_token
-from vision.testing.fakes import (
-    FakeBrain,
-    FakeBudget,
-    FakeHouse,
-    FakeMemory,
-    FakeToolHost,
-    FakeVoice,
-)
+from vision.testing.fakes import FakeBrain, FakeVoice
 
 log = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 HALL = "hall"
 """The host's room; its light follows the conversation."""
 
 ComponentsFactory = Callable[[Bus], "Components"]
+VoiceFactory = Callable[[Config, Bus], Voice]
 
 
 @dataclass(slots=True)
@@ -66,33 +57,21 @@ class Components:
 
 
 def build_components(
-    config: Config, bus: Bus, *, fake_brain: bool = False
+    config: Config, bus: Bus, *, fake_brain: bool = False, voice_factory: VoiceFactory | None = None
 ) -> tuple[Components, list[Notice]]:
-    """Call every factory, falling back to fakes for parts not built yet."""
+    """Call every package's factory. `voice_factory` replaces `vision.voice.make_voice`."""
     notices: list[Notice] = []
-
-    def build(what: str, factory: Callable[[], T], fallback: Callable[[], T]) -> T:
-        try:
-            return factory()
-        except NotImplementedError:
-            notices.append(Notice(level="warn", text=f"{what} is not built yet; using a stand-in."))
-            return fallback()
-
-    mem = build("Memory", lambda: memory.make_memory(config), FakeMemory)
-    budget = build(
-        "The budget", lambda: brains.make_budget(config, bus), lambda: FakeBudget.from_config(config)
-    )
-    tools = build("The tool gate", lambda: gate.make_tool_host(config, bus, mem), FakeToolHost)
+    mem = memory.make_memory(config)
+    budget = brains.make_budget(config, bus)
+    tools = gate.make_tool_host(config, bus, mem)
     brain: Brain
     if fake_brain:
         notices.append(Notice(level="info", text="Running on the fake brain (--fake-brain)."))
         brain = FakeBrain()
     else:
-        brain = build(
-            "The brain", lambda: brains.make_brain(config, bus, tools, mem, budget), FakeBrain
-        )
-    vox = build("Voice", lambda: voice.make_voice(config, bus), FakeVoice)
-    home = build("The house", lambda: house.make_house(config, bus), FakeHouse)
+        brain = brains.make_brain(config, bus, tools, mem, budget)
+    vox = (voice_factory or voice.make_voice)(config, bus)
+    home = house.make_house(config, bus)
     return Components(brain, tools, mem, budget, vox, home), notices
 
 
@@ -110,7 +89,8 @@ class Daemon:
     """The whole daemon. `serve()` runs it until cancelled or stopped by signal.
 
     `components` builds every part on the daemon's bus instead of the
-    packages' factories (tests use it to run on fakes).
+    packages' factories (tests use it to run on fakes); `voice` replaces only
+    the voice factory.
     """
 
     def __init__(
@@ -120,6 +100,7 @@ class Daemon:
         fake_brain: bool = False,
         port: int | None = None,
         components: ComponentsFactory | None = None,
+        voice: VoiceFactory | None = None,
     ) -> None:
         self.config = config
         self.port = port or config.server.port
@@ -127,7 +108,9 @@ class Daemon:
         self.bus = Bus()
         self.token = ensure_token(config.paths.token)
         if components is None:
-            built = build_components(config, self.bus, fake_brain=fake_brain)
+            built = build_components(
+                config, self.bus, fake_brain=fake_brain, voice_factory=voice
+            )
             self.components, self._notices = built
         else:
             self.components, self._notices = components(self.bus), []

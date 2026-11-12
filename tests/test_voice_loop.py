@@ -15,10 +15,18 @@ import soundfile
 from tests.test_voice_fakes import LoudnessVad, ScriptedStt, ToneSynth, drain, run_now
 from vision.core.bus import Bus
 from vision.core.config import Config
-from vision.core.events import InputInterrupt, InputPtt, StateChanged, UserUtterance
+from vision.core.events import (
+    GateRequest,
+    GateResolved,
+    InputInterrupt,
+    InputPtt,
+    Notice,
+    StateChanged,
+    UserUtterance,
+)
 from vision.core.interfaces import Voice
 from vision.core.session import Session
-from vision.testing.fakes import FakeBrain, FakeMemory
+from vision.testing.fakes import FakeBrain, FakeMemory, FakeToolHost
 from vision.voice import make_voice
 from vision.voice.errors import VoiceUnavailable
 from vision.voice.filemode import FileSource, WavSink
@@ -249,7 +257,8 @@ async def test_file_mode_conversation_with_the_fake_brain(tmp_path: Path) -> Non
     assert isinstance(voice, Voice)
     sub = voice.bus.subscribe()
     memory = FakeMemory()
-    session = Session(voice.bus, FakeBrain([reply], delay=0.001), voice.speaker, memory)
+    brain = FakeBrain([reply], delay=0.001)
+    session = Session(voice.bus, brain, voice.speaker, memory, FakeToolHost())
     running = asyncio.create_task(session.run())
     await voice.start()
     try:
@@ -290,3 +299,42 @@ def test_make_voice_does_no_io(config: Config) -> None:
     voice = make_voice(config, Bus())
     assert isinstance(voice, Voice)
     assert isinstance(voice, LocalVoice) and voice.loop is None
+
+
+def gate_request(request_id: str = "r1") -> GateRequest:
+    return GateRequest(id=request_id, tool="shell", summary="Run", detail="ls", expires_at=0.0)
+
+
+async def test_bare_answer_is_passed_on_while_a_gate_request_waits(tmp_path: Path) -> None:
+    h = Harness(tmp_path, "Yes.", "Yes.")
+    h.session("speaking")  # a sentence was said before the tool call, then the gate waits
+    h.loop.on_event(gate_request())
+    await h.utter()
+    assert utterances(await h.events()) == ["Yes."]
+    h.loop.on_event(GateResolved(id="r1", decision="allow"))
+    await h.utter()
+    assert utterances(await h.events()) == []  # speaking again, nothing waits
+
+
+async def test_no_answer_is_taken_while_audio_plays_during_a_gate_wait(tmp_path: Path) -> None:
+    h = Harness(tmp_path, "Yes.")
+    h.session("thinking")
+    h.loop.on_event(gate_request())
+    saying = asyncio.create_task(h.speaker.say("Shall I run it?"))
+    await asyncio.sleep(0.25)  # after the thinking chime, into the sentence
+    assert h.speaker.playing
+    await h.utter()
+    await saying
+    assert utterances(await h.events()) == []
+
+
+async def test_falling_back_to_say_is_a_notice(tmp_path: Path) -> None:
+    voice = file_voice(tmp_path, [("quiet", 0.1)], ScriptedStt(), pace=0)
+    sub = voice.bus.subscribe({Notice.TYPE})
+    voice._models = lambda: Models(LoudnessVad(), ScriptedStt(), ToneSynth(0.1), "Using say.")
+    await voice.start()
+    try:
+        notice = await asyncio.wait_for(sub.__anext__(), 2)
+    finally:
+        await voice.stop()
+    assert isinstance(notice, Notice) and (notice.level, notice.text) == ("warn", "Using say.")

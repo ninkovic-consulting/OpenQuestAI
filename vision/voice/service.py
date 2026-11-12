@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from vision.core.bus import Bus
+from vision.core.events import Notice
 from vision.voice.audio_io import AudioSink, AudioSource
 from vision.voice.errors import VoiceUnavailable
 from vision.voice.loop import VoiceLoop
@@ -31,6 +32,8 @@ class Models:
     detector: SpeechDetector
     transcriber: Transcriber
     synth: Synth
+    degraded: str | None = None
+    """Why voice runs with less than it should (shown as a notice), or None."""
 
 
 ModelLoader = Callable[[], Models]
@@ -55,7 +58,8 @@ def default_models(settings: VoiceSettings) -> ModelLoader:
         _load("Voice detection", settings.vad_model, detector)
         transcriber = WhisperStt(settings.stt_model)
         _load("Speech recognition", settings.stt_model, transcriber)
-        return Models(detector, transcriber, load_synth(settings))
+        synth, degraded = load_synth(settings)
+        return Models(detector, transcriber, synth, degraded)
 
     return load
 
@@ -97,6 +101,8 @@ class LocalVoice:
             self._worker.close()
             raise
         self._speaker.use(models.synth)
+        if models.degraded is not None:
+            self.bus.publish(Notice(level="warn", text=models.degraded))
         self.loop = VoiceLoop(
             self.bus,
             self.settings,

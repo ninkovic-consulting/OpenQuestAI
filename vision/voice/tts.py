@@ -142,12 +142,15 @@ class SaySynth:
         return audio[:, 0].copy()
 
 
-def load_synth(settings: VoiceSettings) -> Synth:
-    """Kokoro if it loads, else macOS `say`. Blocking: loads models."""
+def load_synth(settings: VoiceSettings) -> tuple[Synth, str | None]:
+    """Kokoro if it loads, else macOS `say`, with a line for the user when it fell back.
+
+    Blocking: loads models.
+    """
     kokoro = KokoroSynth(settings.tts_model, settings.tts_voice, settings.tts_speed)
     try:
         kokoro.load()
-        return kokoro
+        return kokoro, None
     except Exception as exc:
         log.warning("Kokoro could not load (%s); falling back to macOS say", exc)
         kokoro_error = exc
@@ -159,7 +162,11 @@ def load_synth(settings: VoiceSettings) -> Synth:
             f"Speech output could not load: Kokoro failed ({kokoro_error}) and macOS `say` "
             f"failed ({exc})."
         ) from exc
-    return say
+    reason = (str(kokoro_error).strip().splitlines() or [type(kokoro_error).__name__])[0]
+    return say, (
+        f"Speech is using the macOS voice because Kokoro could not load ({reason[:160]}). "
+        "Check the network and free disk space, then restart to try again."
+    )
 
 
 def _chime(rate: int) -> np.ndarray:

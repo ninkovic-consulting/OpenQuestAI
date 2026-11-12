@@ -1,3 +1,5 @@
+import importlib.util
+
 import pytest
 
 from vision.app import build_components
@@ -5,7 +7,15 @@ from vision.brains.budget import MonthlyBudget
 from vision.brains.router import Router
 from vision.core.bus import Bus
 from vision.core.config import Config
-from vision.core.interfaces import Brain, Budget, House, Memory, Speaker, ToolHost, Voice
+from vision.core.interfaces import (
+    Brain,
+    Budget,
+    House,
+    Memory,
+    Speaker,
+    ToolHost,
+    Voice,
+)
 from vision.gate.gate import ToolGate
 from vision.house import GridHouse
 from vision.memory.service import VaultMemory
@@ -17,17 +27,33 @@ from vision.testing.fakes import (
     FakeToolHost,
     FakeVoice,
 )
+from vision.voice import make_voice as real_make_voice
 
 
-def test_built_parts_are_real_and_unbuilt_voice_falls_back(config: Config) -> None:
+def test_every_part_comes_from_its_package(config: Config) -> None:
     components, notices = build_components(config, Bus())
     assert isinstance(components.brain, Router)
     assert isinstance(components.memory, VaultMemory)
     assert isinstance(components.budget, MonthlyBudget)
     assert isinstance(components.tools, ToolGate)
     assert isinstance(components.house, GridHouse)
-    assert isinstance(components.voice, FakeVoice)
-    assert [n.text for n in notices] == ["Voice is not built yet; using a stand-in."]
+    assert isinstance(components.voice, FakeVoice)  # the test guard in conftest
+    assert notices == []
+
+
+def test_real_voice_factory_builds_a_voice_without_io(config: Config) -> None:
+    vox = real_make_voice(config, Bus())
+    assert isinstance(vox, Voice)
+    if importlib.util.find_spec("mlx_audio") is not None:
+        from vision.voice.service import LocalVoice
+
+        assert isinstance(vox, LocalVoice)
+
+
+def test_voice_factory_can_be_replaced(config: Config) -> None:
+    mine = FakeVoice()
+    components, _ = build_components(config, Bus(), voice_factory=lambda config, bus: mine)
+    assert components.voice is mine
 
 
 def test_fake_brain_flag(config: Config) -> None:
