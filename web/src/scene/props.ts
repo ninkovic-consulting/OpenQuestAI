@@ -5,6 +5,7 @@
 import * as THREE from "three";
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
 import { HOST_LAYOUT } from "./layout";
+import { palette } from "./palette";
 
 /** Real heights, in metres. */
 const HEIGHT = {
@@ -78,6 +79,7 @@ export class Props {
       object = standIn(HEIGHT[name]);
     }
     object.name = name === "floor-lamp" ? "lamp" : name;
+    if (name === "floor-lamp") object.add(bulb(HEIGHT[name] / object.scale.y));
     object.position.set(layout.x, object.position.y, layout.z);
     object.rotation.y = layout.turn;
     shade(object);
@@ -98,7 +100,16 @@ export class Props {
     figure.rotation.y = HOST_LAYOUT.armchair.turn;
     shade(figure);
     figure.traverse((o) => {
-      if (o instanceof THREE.SkinnedMesh) o.frustumCulled = false;
+      if (!(o instanceof THREE.SkinnedMesh)) return;
+      o.frustumCulled = false;
+      // Cloth, not satin: a matte suit keeps its pinstripes under the lamp.
+      for (const m of [o.material].flat()) {
+        if (m instanceof THREE.MeshStandardMaterial) {
+          m.roughness = 0.82;
+          m.envMapIntensity = 0.4;
+          m.color.setScalar(0.82);
+        }
+      }
     });
     this.root.add(figure);
     this.mixer = new THREE.AnimationMixer(figure);
@@ -112,6 +123,16 @@ export class Props {
     this.idle = this.mixer.clipAction(idleClip).play();
     this.talk = this.mixer.clipAction(talkClip);
   }
+}
+
+/** A warm bulb inside the lamp's shade, so the lamp reads lit. `height` is in model units. */
+function bulb(height: number): THREE.Mesh {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(height * 0.035, 16, 12),
+    new THREE.MeshStandardMaterial({ color: 0x000000, emissive: palette.lamp, emissiveIntensity: 6 }),
+  );
+  mesh.position.y = height * 0.38;
+  return mesh;
 }
 
 /** Scale to a real height and stand the model on the floor. */

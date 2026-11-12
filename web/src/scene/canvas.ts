@@ -27,3 +27,31 @@ export function glowTexture(): THREE.CanvasTexture {
   tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
   return tex;
 }
+
+/**
+ * Light thrown out of a window onto the ground: brightest at the wall (v = 0)
+ * and fading outward, widening as it goes, with no hard rim.
+ */
+export function spillTexture(): THREE.CanvasTexture {
+  const size = 128;
+  const tex = canvasTexture(size, (g) => {
+    const img = g.createImageData(size, size);
+    for (let y = 0; y < size; y++) {
+      // Canvas row 0 lands at v = 1 once the texture is flipped.
+      const v = 1 - y / (size - 1);
+      const along = Math.pow(1 - v, 1.8) * Math.min(1, v * 14);
+      const spread = 0.16 + 0.22 * v;
+      for (let x = 0; x < size; x++) {
+        const u = (x / (size - 1) - 0.5) / spread;
+        const a = along * Math.exp(-u * u * 1.6);
+        const i = (y * size + x) * 4;
+        // Alpha maps read the green channel.
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = Math.round(a * 255);
+        img.data[i + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+  });
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
+}

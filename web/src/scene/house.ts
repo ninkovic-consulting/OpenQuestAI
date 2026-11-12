@@ -6,9 +6,10 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Plan, Room } from "../net/types";
-import { glowTexture } from "./canvas";
+import { glowTexture, spillTexture } from "./canvas";
 import { floorDressing, lamp, painting, type Add, type DecorContext } from "./decor";
 import { cellKey, cellOwners, edgeOf, towers, wallEdges, wallRuns, type Tower, type WallRun } from "./grid";
+import { furnish } from "./furnish";
 import { DIM, HOST_LAYOUT } from "./layout";
 import { applyWorldUVs, type Materials } from "./materials";
 import { palette } from "./palette";
@@ -33,7 +34,9 @@ export interface RoomView {
 }
 
 const RISE_S = 1.6;
-const SPILL_TEXTURE = glowTexture();
+const POOL_TEXTURE = glowTexture();
+const SPILL_TEXTURE = spillTexture();
+const SPILL_DEPTH = 3.4;
 
 export class HouseView {
   readonly root = new THREE.Group();
@@ -121,21 +124,26 @@ class Builder {
     this.owners = cellOwners(plan);
     this.order = new Map(plan.rooms.map((r, i) => [r.id, i]));
     for (const room of plan.rooms) {
+      const round = room.shape === "round";
+      // A round tower's lining glows itself: its wall texture lit from within in deep red.
+      const lining = round ? mats.surface(room.wall).map : null;
       this.glows.set(
         room.id,
         new THREE.MeshStandardMaterial({
-          color: 0x3a2a18,
-          emissive: room.shape === "round" ? palette.towerGlow : palette.lamp,
+          color: round ? 0x4a0c06 : 0x3a2a18,
+          map: lining,
+          emissive: round ? palette.towerGlow : palette.lamp,
+          emissiveMap: lining,
           emissiveIntensity: 0,
-          roughness: 0.4,
+          roughness: round ? 0.9 : 0.4,
           side: THREE.DoubleSide,
         }),
       );
       this.spills.set(
         room.id,
         new THREE.MeshBasicMaterial({
-          color: room.shape === "round" ? palette.towerGlow : palette.lamp,
-          alphaMap: SPILL_TEXTURE,
+          color: round ? palette.towerGlow : palette.lamp,
+          alphaMap: round ? POOL_TEXTURE : SPILL_TEXTURE,
           transparent: true,
           opacity: 0,
           blending: THREE.AdditiveBlending,
@@ -285,9 +293,7 @@ class Builder {
       add(this.mats.capWood, slab(run.axis, line, [mid - 0.03, mid + 0.03], [-0.04, 0.04], [DIM.sill, top - 0.03]));
       add(this.mats.capWood, slab(run.axis, line, [p.a, p.b], [-0.04, 0.04], [DIM.sill + (top - DIM.sill) * 0.55, DIM.sill + (top - DIM.sill) * 0.55 + 0.05]));
       this.adder(owner)(this.mats.capStone, slab(run.axis, line, [p.a - 0.08, p.b + 0.08], sorted(0, out * (DIM.stone + 0.08)), [DIM.sill - 0.06, DIM.sill]));
-      const reach = DIM.stone + 1.7;
-      const spillGeo = run.axis === "h" ? flat(mid, DIM.ground + 0.02, line + out * reach, 3.0, 3.2) : flat(line + out * reach, DIM.ground + 0.02, mid, 3.2, 3.0);
-      this.extra(room, spillMesh(spillGeo, spill));
+      this.extra(room, spillMesh(windowSpill(run.axis, line, mid, out), spill));
     }
   }
 
@@ -376,11 +382,14 @@ class Builder {
     const center = new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2);
     let lampPosition: THREE.Vector3;
     if (room.id === this.furnishedId) {
-      lampPosition = center.clone().add(new THREE.Vector3(HOST_LAYOUT.lamp.x, 1.45, HOST_LAYOUT.lamp.z));
+      // Hung high and back, so the lamp warms the room without blowing out the seated figure.
+      lampPosition = center.clone().add(new THREE.Vector3(HOST_LAYOUT.lamp.x * 0.6, 2.9, -1.6));
     } else {
       lampPosition = lamp(ctx);
-      const art = painting(ctx, this.order.get(room.id) ?? 0);
-      if (art) this.extra(room.id, art);
+      if (!furnish(ctx)) {
+        const art = painting(ctx, this.order.get(room.id) ?? 0);
+        if (art) this.extra(room.id, art);
+      }
     }
     const group = new THREE.Group();
     group.name = `room:${room.id}`;
@@ -427,7 +436,7 @@ class Builder {
       add(this.mats.surface("pale-stone"), outer);
       const inner = facingIn(new THREE.CylinderGeometry(r, r, top + DIM.floorDepth, steps, 1, true, start, length));
       inner.translate(cx, (top - DIM.floorDepth) / 2, cz);
-      add(this.mats.surface(t.room.wall), inner);
+      add(lining, inner);
       // Ring angles start at +x; cylinder angles start at +z.
       const cap = new THREE.RingGeometry(r - 0.03, r + DIM.stone + 0.03, steps, 1, start - Math.PI / 2, length);
       cap.rotateX(-Math.PI / 2);
@@ -469,7 +478,7 @@ class Builder {
     add(this.mats.plinth, new THREE.CylinderGeometry(r + DIM.stone + 0.4, r + DIM.stone + 0.5, -DIM.ground - DIM.floorDepth, 40).translate(cx, (DIM.ground - DIM.floorDepth) / 2, cz));
     add(this.mats.surface("red-carpet"), new THREE.CylinderGeometry(r * 0.62, r * 0.62, 0.014, 40).translate(cx, 0.007, cz));
     const spill = this.spills.get(room.id) as THREE.MeshBasicMaterial;
-    this.extra(room.id, spillMesh(flat(cx, DIM.ground + 0.025, cz, r * 4.2, r * 4.2), spill));
+    this.extra(room.id, spillMesh(flat(cx, DIM.ground + 0.025, cz, r * 3.4, r * 3.4), spill));
     const group = new THREE.Group();
     group.name = `room:${room.id}`;
     group.add(floor);
@@ -505,6 +514,17 @@ function facingIn(g: THREE.BufferGeometry): THREE.BufferGeometry {
   const n = g.getAttribute("normal");
   for (let i = 0; i < n.count; i++) n.setXYZ(i, -n.getX(i), -n.getY(i), -n.getZ(i));
   return g;
+}
+
+/** The fan of light below a window, from the plinth edge outward. */
+function windowSpill(axis: "h" | "v", line: number, mid: number, out: -1 | 1): THREE.BufferGeometry {
+  const g = new THREE.PlaneGeometry(2.6, SPILL_DEPTH);
+  g.rotateX(-Math.PI / 2);
+  // After that turn the far end (v = 1) points to -z; swing it to face outward.
+  const turn = axis === "h" ? (out < 0 ? 0 : Math.PI) : out > 0 ? -Math.PI / 2 : Math.PI / 2;
+  g.rotateY(turn);
+  const offset = line + out * (DIM.stone + DIM.plinthOverhang + SPILL_DEPTH / 2 - 0.1);
+  return axis === "h" ? g.translate(mid, DIM.ground + 0.03, offset) : g.translate(offset, DIM.ground + 0.03, mid);
 }
 
 function spillMesh(geometry: THREE.BufferGeometry, material: THREE.Material): THREE.Mesh {

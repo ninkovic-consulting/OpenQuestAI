@@ -7,7 +7,8 @@ import type { RoomLight } from "../net/types";
 import type { HouseView, RoomView } from "./house";
 import { palette } from "./palette";
 
-const LEVEL: Record<RoomLight, number> = { dark: 0.04, idle: 0.75, active: 1 };
+/** A dark room keeps a low ember so it still reads from above. */
+const LEVEL: Record<RoomLight, number> = { dark: 0.32, idle: 0.75, active: 1 };
 /** The tower always smoulders, whatever its state. */
 const TOWER_FLOOR = 0.7;
 const EASE_PER_S = 2.2;
@@ -29,7 +30,7 @@ export class Lighting {
     scene.environmentIntensity = 0.07;
     pmrem.dispose();
 
-    scene.add(new THREE.HemisphereLight(palette.sky, palette.earth, 1.15));
+    scene.add(new THREE.HemisphereLight(palette.sky, palette.earth, 1.5));
 
     this.moon = new THREE.DirectionalLight(palette.moon, 2.1);
     this.moon.castShadow = true;
@@ -47,10 +48,10 @@ export class Lighting {
     for (const view of house.rooms.values()) {
       const round = view.room.shape === "round";
       const size = Math.max(view.extent.x, view.extent.y);
-      const light = new THREE.PointLight(round ? palette.towerGlow : palette.lamp, 0, size * 1.35 + 3, 1.6);
+      const light = new THREE.PointLight(round ? palette.towerLight : palette.lamp, 0, size * 1.35 + 3, 1.6);
       light.position.copy(view.lampPosition);
       view.group.add(light);
-      const base = round ? 70 : 14 + view.extent.x * view.extent.y * 0.45;
+      const base = round ? 24 : 14 + view.extent.x * view.extent.y * 0.45;
       this.lamps.push({ view, light, level: previous.get(view.room.id) ?? 0, base });
     }
     this.moon.position.set(center.x - radius * 1.1, radius * 1.5, center.z + radius * 0.7);
@@ -73,8 +74,9 @@ export class Lighting {
       const flicker = room.id === hostId ? 1 + voice * 0.18 : 1;
       const k = lamp.level * flicker;
       lamp.light.intensity = lamp.base * k;
-      lamp.view.glow.emissiveIntensity = 3.2 * k;
-      lamp.view.spill.opacity = (room.shape === "round" ? 0.1 : 0.05) * k;
+      const round = room.shape === "round";
+      lamp.view.glow.emissiveIntensity = (round ? 1.15 : 2.2) * k;
+      lamp.view.spill.opacity = (round ? 0.16 : 0.2) * k;
     }
   }
 }

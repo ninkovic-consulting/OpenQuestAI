@@ -29,7 +29,7 @@ export class Post {
     this.composer.addPass(new RenderPass(scene, camera));
     this.tilt = new TiltShiftEffect({ focusArea: 0.5, feather: 0.32, offset: 0.04 });
     this.composer.addPass(new EffectPass(camera, this.tilt));
-    const bloom = new BloomEffect({ luminanceThreshold: 0.75, luminanceSmoothing: 0.25, intensity: 1.15, radius: 0.72, mipmapBlur: true });
+    const bloom = new BloomEffect({ luminanceThreshold: 0.9, luminanceSmoothing: 0.2, intensity: 1.05, radius: 0.72, mipmapBlur: true });
     const tone = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });
     const vignette = new VignetteEffect({ offset: 0.28, darkness: 0.72 });
     const grain = new NoiseEffect({ premultiply: true, blendFunction: BlendFunction.ADD });

@@ -19,6 +19,7 @@ import type {
   Plan,
   PostResult,
   Room,
+  StateSnapshot,
 } from "./types";
 
 const WORD_MS = 75;
@@ -33,9 +34,18 @@ export class MockDaemon implements Daemon {
 
   start(): void {
     this.store.dispatch({ kind: "connection", connection: "open" });
+    // What `GET /api/state` answers on connect, in the daemon's shape.
+    const snapshot: StateSnapshot = {
+      state: "idle",
+      brain: "claude",
+      gate_pending: [],
+      notices: [{ level: "info", text: "Mock mode: no daemon is connected." }],
+      budget: { month: "2026-11", spent_usd: 18.42, cap_usd: 150 },
+    };
+    this.store.dispatch({ kind: "snapshot", snapshot, initial: true });
     this.store.dispatch({ kind: "plan", plan: structuredClone(this.plan) });
     const name = (id: string): string => this.plan.agents.find((a) => a.id === id)?.name ?? id;
-    const workshop = this.plan.rooms.find((r) => r.agent === "maker")?.name ?? "Workshop";
+    const workshop = this.plan.rooms.find((r) => r.id === "workshop")?.name ?? "Workshop";
     this.at(300, () => this.emit("budget", { month: "2026-11", spent_usd: 18.42, cap_usd: 150 }));
     this.at(600, () => this.setState("listening"));
     this.at(1600, () => this.emit("user.utterance", { text: "What got done on the engine this afternoon?", source: "voice" }));
@@ -55,7 +65,6 @@ export class MockDaemon implements Daemon {
         expires_at: Date.now() / 1000 + 60,
       }),
     );
-    this.at(10_000, () => this.emit("notice", { level: "info", text: "Mock mode: no daemon is connected." }));
     this.at(12_000, () => this.addScriptedRoom());
   }
 
@@ -123,8 +132,11 @@ export class MockDaemon implements Daemon {
     this.store.dispatch({ kind: "event", event: { type, ts: Date.now() / 1000, data } as OutboundEvent });
   }
 
+  /** Like the daemon: the Hall is active while thinking or speaking, idle otherwise. */
   private setState(state: AssistantState): void {
     this.emit("state.changed", { state, brain: "claude" });
+    const hall = hostRoom(this.plan)?.id;
+    if (hall) this.emit("room.state", { room: hall, state: state === "thinking" || state === "speaking" ? "active" : "idle" });
   }
 
   private answer(text: string, source: "voice" | "text"): void {
@@ -140,7 +152,6 @@ export class MockDaemon implements Daemon {
     const timers: number[] = [];
     this.speaking = { timers, text: "", turn };
     this.setState("speaking");
-    this.emit("room.state", { room: hostRoom(this.plan)?.id ?? "", state: "active" });
     words.forEach((word, i) =>
       timers.push(
         this.at(i * WORD_MS, () => {
@@ -173,7 +184,7 @@ export class MockDaemon implements Daemon {
   }
 
   private addScriptedRoom(): void {
-    const slot = this.plan.free_slots[0];
+    const slot = this.plan.free_slots.find(([x, y]) => x === 4 && y === 1) ?? this.plan.free_slots[0];
     const scout = this.plan.agents.find((a) => a.id === "scout") ?? this.plan.agents[0];
     if (!slot || !scout) return;
     this.addRoom({

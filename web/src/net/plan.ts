@@ -39,13 +39,19 @@ export function roomById(plan: Plan, id: string): Room | undefined {
   return plan.rooms.find((r) => r.id === id);
 }
 
-/** The agent that is the assistant: the one carrying the assistant's name, else the first. */
+/**
+ * The agent that is the assistant: the one running the room with id `hall`,
+ * else the agent with id `host`, else the one carrying the assistant's name.
+ */
 export function hostAgentId(plan: Plan): string | undefined {
+  const hall = plan.rooms.find((r) => r.id === "hall")?.agent;
+  if (hall !== undefined) return hall;
+  if (plan.agents.some((a) => a.id === "host")) return "host";
   return (plan.agents.find((a) => a.name === plan.assistant.name) ?? plan.agents[0])?.id;
 }
 
-/** The room the assistant lives in. */
+/** The room the assistant sits in: the room with id `hall`, else the assistant's first room. */
 export function hostRoom(plan: Plan): Room | undefined {
   const host = hostAgentId(plan);
-  return plan.rooms.find((r) => r.agent === host) ?? plan.rooms[0];
+  return plan.rooms.find((r) => r.id === "hall") ?? plan.rooms.find((r) => r.agent === host) ?? plan.rooms[0];
 }

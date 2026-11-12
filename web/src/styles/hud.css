@@ -138,9 +138,7 @@ select {
 .resident .name {
   font-size: 13px;
   letter-spacing: 0.2em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .resident.is-asleep .name {
@@ -150,9 +148,6 @@ select {
 .resident .where {
   color: var(--muted-light);
   font-size: 14px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .budget {

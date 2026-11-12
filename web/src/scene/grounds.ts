@@ -42,7 +42,7 @@ export class Grounds {
       color: palette.lamp,
       alphaMap: glowTexture(),
       transparent: true,
-      opacity: 0.09,
+      opacity: 0.07,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -119,7 +119,7 @@ export class Grounds {
       for (const x of [door - PATH_W / 2 - 0.5, door + PATH_W / 2 + 0.5]) {
         posts.push(box(x - 0.06, g, z - 0.06, x + 0.06, g + 1.1, z + 0.06));
         glows.push(box(x - 0.12, g + 1.1, z - 0.12, x + 0.12, g + 1.36, z + 0.12));
-        spills.push(flat(x, g + 0.035, z, 3.4, 3.4));
+        spills.push(flat(x, g + 0.035, z, 2.4, 2.4));
       }
     }
     this.addMerged(posts, this.mats.bronze);

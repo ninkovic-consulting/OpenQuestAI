@@ -146,8 +146,8 @@ function reduceSnapshot(s: ViewState, snap: StateSnapshot, initial: boolean): Vi
     budget: snap.budget,
     gates: [],
   };
-  for (const ev of snap.gate_pending) if (ev.type === "gate.request") next = addGate(next, ev.data);
-  if (initial) for (const ev of snap.notices) if (ev.type === "notice") next = reduceEvent(next, ev);
+  for (const gate of snap.gate_pending) next = addGate(next, gate);
+  if (initial) for (const notice of snap.notices) next = addToast(next, notice.level, notice.text);
   return next;
 }
 

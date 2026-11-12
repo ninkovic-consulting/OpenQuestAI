@@ -25,7 +25,7 @@ function withObservatory(plan: Plan): Plan {
     ...plan,
     revision: plan.revision + 1,
     rooms: [...plan.rooms, room],
-    doors: [...plan.doors, { a: "observatory", b: "gallery", cell: [4, 1], side: "w" }],
+    doors: [...plan.doors, { a: "observatory", b: "game-room", cell: [4, 1], side: "w" }],
   };
 }
 
@@ -34,8 +34,9 @@ describe("wall edges", () => {
   const edges = wallEdges(plan);
 
   it("builds a wall shared by two rooms once", () => {
-    expect(between(edges, "library", "hall")).toHaveLength(1);
-    expect(between(edges, "hall", "dining")).toHaveLength(2);
+    expect(between(edges, "library", "control-room")).toHaveLength(1);
+    expect(between(edges, "control-room", "hall")).toHaveLength(2);
+    expect(between(edges, "kitchen", "hall")).toHaveLength(2);
     const keys = [...edges.values()].map((e) => e.key);
     expect(new Set(keys).size).toBe(keys.length);
   });
@@ -55,27 +56,26 @@ describe("wall edges", () => {
 
   it("marks walls to the outside as exterior and walls between rooms as interior", () => {
     expect(edges.get("v:0:0")).toMatchObject({ a: null, b: "library", exterior: true });
-    expect(edges.get("h:1:4")).toMatchObject({ a: "dining", b: null, exterior: true });
-    expect(edges.get("v:3:1")).toMatchObject({ a: "hall", b: "gallery", exterior: false });
+    expect(edges.get("h:1:4")).toMatchObject({ a: "workshop", b: null, exterior: true });
+    expect(edges.get("v:3:1")).toMatchObject({ a: "hall", b: "game-room", exterior: false });
   });
 
   it("puts doors exactly where the plan says", () => {
     const doors = [...edges.values()].filter((e) => e.door).map((e) => e.key).sort();
     const expected = plan.doors.map((d) => edgeOf(d.cell, d.side).key).sort();
     expect(doors).toEqual(expected);
-    const run = wallRuns(plan).find((r) => r.axis === "v" && r.line === 1 && r.a === "library" && r.b === "hall");
-    expect(run).toMatchObject({ from: 1, to: 2, doors: [1.5] });
+    const run = wallRuns(plan).find((r) => r.axis === "v" && r.line === 1 && r.a === "library" && r.b === "control-room");
+    expect(run).toMatchObject({ from: 0, to: 1, doors: [0.5] });
   });
 
   it("merges collinear edges into runs and keeps door centres along them", () => {
-    const hallDining = wallRuns(plan).find((r) => r.a === "hall" && r.b === "dining");
-    expect(hallDining).toMatchObject({ axis: "h", line: 3, from: 1, to: 3, doors: [2.5] });
+    const hallWorkshop = wallRuns(plan).find((r) => r.a === "hall" && r.b === "workshop");
+    expect(hallWorkshop).toMatchObject({ axis: "h", line: 3, from: 1, to: 3, doors: [1.5] });
     const north = wallRuns(plan).filter((r) => r.axis === "h" && r.line === 0 && r.a === null);
     expect(north.map((r) => [r.from, r.to, r.b])).toEqual([
       [0, 1, "library"],
-      [1, 2, "study"],
-      [2, 3, "parlour"],
-      [3, 4, "gallery"],
+      [1, 3, "control-room"],
+      [3, 4, "comms-room"],
     ]);
   });
 });
@@ -92,7 +92,7 @@ describe("round rooms", () => {
 
   it("is walled off by its rect neighbour with stone, and has no other edges", () => {
     const edges = wallEdges(plan);
-    expect(edges.get("v:4:0")).toMatchObject({ a: "gallery", b: "attic", exterior: true, door: true });
+    expect(edges.get("v:4:0")).toMatchObject({ a: "comms-room", b: "attic", exterior: true, door: true });
     expect(between(edges, "attic", null)).toHaveLength(0);
   });
 
@@ -112,8 +112,8 @@ describe("adding a room", () => {
     const around = new Set(["n", "e", "s", "w"].map((s) => edgeOf([4, 1], s as "n").key));
     expect(changed.size).toBeGreaterThan(0);
     for (const key of changed) expect(around.has(key), key).toBe(true);
-    expect(before.get("v:4:1")).toMatchObject({ a: "gallery", b: null, exterior: true });
-    expect(after.get("v:4:1")).toMatchObject({ a: "gallery", b: "observatory", exterior: false, door: true });
+    expect(before.get("v:4:1")).toMatchObject({ a: "game-room", b: null, exterior: true });
+    expect(after.get("v:4:1")).toMatchObject({ a: "game-room", b: "observatory", exterior: false, door: true });
     expect(after.get("h:4:1")).toMatchObject({ a: "attic", b: "observatory", exterior: true });
   });
 });

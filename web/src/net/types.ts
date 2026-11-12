@@ -100,8 +100,10 @@ export function envelope<K extends InboundType>(type: K, data: InboundData[K]): 
 export interface StateSnapshot {
   state: AssistantState;
   brain: BrainName;
-  gate_pending: OutboundEvent[];
-  notices: OutboundEvent[];
+  /** Pending requests, each shaped like a `gate.request` event's data. */
+  gate_pending: GateRequest[];
+  /** Recent notices, each shaped like a `notice` event's data. */
+  notices: OutboundData["notice"][];
   budget: OutboundData["budget"];
 }
 

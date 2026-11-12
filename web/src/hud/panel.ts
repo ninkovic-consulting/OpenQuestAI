@@ -79,6 +79,8 @@ function residentRows(s: ViewState): HTMLElement[] {
     const light: RoomLight = lights.includes("active") ? "active" : lights.includes("idle") ? "idle" : "dark";
     const isHost = agent.id === host;
     const status = isHost ? s.assistant : LIGHT_WORD[light];
+    const here = (isHost ? rooms.find((r) => r.id === "hall") : undefined) ?? rooms.find((r) => (s.roomLights[r.id] ?? r.state) === "active");
+    const where = here ? here.name : rooms[0] ? rooms[0].name + (rooms.length > 1 ? ` +${rooms.length - 1}` : "") : "No room";
     const tower = rooms.some((r) => r.shape === "round");
     const row = el("li", "resident");
     row.classList.add(isHost ? "is-awake" : `is-${light === "dark" ? "asleep" : light}`);
@@ -87,7 +89,7 @@ function residentRows(s: ViewState): HTMLElement[] {
     row.append(
       el("span", filled ? "dot" : "dot hollow"),
       el("span", "name caps", agent.name),
-      el("span", "where", [rooms.map((r) => r.name).join(", ") || "No room", status].join(", ")),
+      el("span", "where", `${where}, ${status}`),
     );
     return row;
   });

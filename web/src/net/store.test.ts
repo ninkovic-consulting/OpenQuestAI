@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { hostAgentId } from "./plan";
 import { samplePlan } from "./sample-plan";
 import { initialState, reduce, Store, type ViewState } from "./store";
 import type { OutboundData, OutboundEvent, OutboundType, StateSnapshot } from "./types";
@@ -54,7 +55,8 @@ describe("store reducers", () => {
     const plan = samplePlan();
     let s = run({ kind: "plan", plan }, ev("room.state", { room: "library", state: "active" }));
     expect(s.roomLights["library"]).toBe("active");
-    expect(s.roomLights["hall"]).toBe("active");
+    expect(s.roomLights["hall"]).toBe("idle");
+    expect(s.roomLights["kitchen"]).toBe("dark");
     s = reduce(s, { kind: "plan", plan: { ...plan, revision: 2 } });
     expect(s.roomLights["library"]).toBe("active");
   });
@@ -81,13 +83,13 @@ describe("store reducers", () => {
     expect(s.toasts.map((t) => t.text)).toEqual(["n3", "n4", "n5"]);
   });
 
-  it("a snapshot restores state, brain, budget and pending gates; only the first one shows notices", () => {
+  it("loads a snapshot with one notice and one pending gate request; only the first snapshot shows notices", () => {
     const snapshot: StateSnapshot = {
       state: "thinking",
       brain: "local",
       budget: { month: "2026-11", spent_usd: 1, cap_usd: 2 },
-      gate_pending: [{ type: "gate.request", ts: 1, data: { id: "g9", tool: "shell", summary: "", detail: "", expires_at: 5 } }],
-      notices: [{ type: "notice", ts: 1, data: { level: "warn", text: "Voice is off." } }],
+      gate_pending: [{ id: "g9", tool: "shell", summary: "Run ls", detail: "ls -la", expires_at: 5 }],
+      notices: [{ level: "warn", text: "Voice is off." }],
     };
     const first = run({ kind: "snapshot", snapshot, initial: true });
     expect(first).toMatchObject({ assistant: "thinking", brain: "local", budget: snapshot.budget });
@@ -106,5 +108,18 @@ describe("store reducers", () => {
     store.subscribe((s, prev) => seen.push(`${prev.assistant}->${s.assistant}`));
     store.dispatch(ev("state.changed", { state: "listening", brain: null }));
     expect(seen).toEqual(["idle->listening"]);
+  });
+});
+
+describe("host agent", () => {
+  it("is the agent of the room with id hall, then the agent with id host, then the name match", () => {
+    const plan = samplePlan();
+    expect(hostAgentId(plan)).toBe("host");
+    const moved = { ...plan, rooms: plan.rooms.map((r) => (r.id === "hall" ? { ...r, agent: "steward" } : r)) };
+    expect(hostAgentId(moved)).toBe("steward");
+    const noHall = { ...plan, rooms: plan.rooms.filter((r) => r.id !== "hall") };
+    expect(hostAgentId(noHall)).toBe("host");
+    const renamed = { ...noHall, agents: plan.agents.map((a) => (a.id === "host" ? { ...a, id: "main" } : a)) };
+    expect(hostAgentId(renamed)).toBe("main");
   });
 });

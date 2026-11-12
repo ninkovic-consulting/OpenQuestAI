@@ -24,7 +24,7 @@ export interface DecorContext {
 
 const RUG_BORDER = new THREE.MeshStandardMaterial({ color: 0x6e4a17, roughness: 0.9 });
 /** Tints over the carpet texture, so neighbouring rugs differ. */
-const RUG_TINTS = [0xffffff, 0x6f9a86, 0xc9a070, 0x8a8fb8];
+const RUG_TINTS = [0x6f9a86, 0xc9a070, 0x8a8fb8, 0xb0605a];
 const rugs = new Map<number, THREE.MeshStandardMaterial>();
 
 function rugMaterial(mats: Materials, variant: number): THREE.MeshStandardMaterial {
@@ -49,6 +49,8 @@ export function floorDressing(ctx: DecorContext, variant: number): void {
     add(mats.surface("wood-floor"), box(x1 - band, y[0], z0 + band, x1, y[1], z1 - band));
     return;
   }
+  // Stone floors carry their own pattern; a rug only softens wood.
+  if (ctx.room.floor !== "wood-floor") return;
   const margin = Math.min(1.25, (x1 - x0) * 0.27, (z1 - z0) * 0.27);
   add(RUG_BORDER, box(x0 + margin, 0, z0 + margin, x1 - margin, 0.01, z1 - margin));
   add(rugMaterial(mats, variant), box(x0 + margin + 0.14, 0, z0 + margin + 0.14, x1 - margin - 0.14, 0.016, z1 - margin - 0.14));
