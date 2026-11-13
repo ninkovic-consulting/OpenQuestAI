@@ -13,6 +13,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from vision.core.config import touches_data_folder
 from vision.gate.tools import ToolFailure
 from vision.workbench.protected import HOOK_FOLDERS, is_git_internal, is_protected
 
@@ -63,6 +64,10 @@ class ProjectRoot:
         home = Path(os.path.realpath(Path.home()))
         if real == Path(real.anchor) or real == home or home.is_relative_to(real):
             raise ValueError("the project folder may not be the disk, the home folder or above it")
+        if touches_data_folder(real):
+            raise ValueError(
+                "the project folder may not be the assistant's data folder, inside it or a folder that holds it"
+            )
         self.real = real
         self.label = label
 

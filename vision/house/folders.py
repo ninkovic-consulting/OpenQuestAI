@@ -3,8 +3,10 @@
 A room lists `folders = ["~/Projects/shop", "~/Projects/shop-api"]`, in
 order, possibly none. The rules, checked whenever the house is built: at
 most `MAX_ROOM_FOLDERS`; each a full path (from `/` or `~`); none the disk,
-the home folder or a folder above it; no folder twice and none inside
-another of the same room (both compared as real paths, links followed).
+the home folder or a folder above it; none the assistant's own data folder,
+a folder inside it or one that holds it (an agent there could read the token
+and the settings); no folder twice and none inside another of the same room
+(all compared as real paths, links followed).
 
 Whether a folder exists is not checked when the house is built: a folder on
 a disk that is not connected leaves the house as it is, and a resident's
@@ -19,6 +21,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from vision.core.config import touches_data_folder
 from vision.house.model import MAX_ROOM_FOLDERS, HouseError
 
 
@@ -47,6 +50,12 @@ def check_rules(folders: tuple[str, ...], where: str) -> None:
             raise HouseError(
                 f"{where}: {folder} is the disk, the home folder or a folder above it, so it cannot be "
                 "a project folder. Attach the folder of one project instead."
+            )
+        if touches_data_folder(real):
+            raise HouseError(
+                f"{where}: {folder} is the assistant's own data folder, a folder inside it or one that "
+                "holds it, so it cannot be a project folder: an agent working there could read the "
+                "assistant's settings and keys. Attach the folder of one project instead."
             )
         for other, given in seen:
             if real == other:

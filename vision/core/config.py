@@ -306,6 +306,18 @@ def vision_home() -> Path:
     return Path(env).expanduser() if env else Path.home() / DEFAULT_HOME
 
 
+def touches_data_folder(folder: Path) -> bool:
+    """True when `folder` is the data folder, a folder inside it, or a folder that holds it.
+
+    Such a folder may not be a room's project folder: an agent's file tools,
+    which read without asking, would reach the token, the settings and the
+    log there. Both are compared as real paths, links followed.
+    """
+    real = Path(os.path.realpath(folder))
+    data = Path(os.path.realpath(vision_home()))
+    return real == data or real.is_relative_to(data) or data.is_relative_to(real)
+
+
 def _merge(base: dict[str, Any], over: dict[str, Any]) -> dict[str, Any]:
     out = dict(base)
     for key, value in over.items():

@@ -60,7 +60,7 @@ def test_folder_rules(config: Config, folders: Any, words: str) -> None:
 
 
 def test_home_and_above_are_refused(config: Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    home = tmp_path / "home" / "me"
+    home = tmp_path / "users" / "me"  # beside the test's data folder, not inside it
     home.mkdir(parents=True)
     monkeypatch.setenv("HOME", str(home))
     for folder in ("~", str(home), str(tmp_path), "~/.."):
@@ -70,13 +70,49 @@ def test_home_and_above_are_refused(config: Config, tmp_path: Path, monkeypatch:
 
 
 def test_the_same_folder_through_a_link_is_refused(config: Config, tmp_path: Path) -> None:
-    real, = made(tmp_path, "real")
+    area, real = made(tmp_path, "area", "area/real")
     os.symlink(real, tmp_path / "alias")
     with pytest.raises(HouseError, match="are the same folder"):
         folders_of(config, [real, str(tmp_path / "alias")])
-    os.symlink(tmp_path, tmp_path / "up")
+    os.symlink(area, tmp_path / "up")
     with pytest.raises(HouseError, match="is inside"):
         folders_of(config, [real, str(tmp_path / "up")])
+
+
+def test_the_data_folder_is_never_a_project_folder(config: Config, tmp_path: Path) -> None:
+    """An agent's file tools read without asking; there they would reach the token and the settings."""
+    data = config.paths.home
+    (data / "house").mkdir(parents=True, exist_ok=True)
+    os.symlink(data, tmp_path / "link-to-data")
+    refused = (
+        str(data),
+        str(data) + "/",
+        str(data / "house"),
+        str(data / "not-yet"),
+        str(tmp_path),  # holds the data folder
+        str(tmp_path / "link-to-data"),
+        str(tmp_path / "link-to-data" / "house"),
+    )
+    for folder in refused:
+        with pytest.raises(HouseError, match="own data folder"):
+            folders_of(config, [folder])
+    beside, = made(tmp_path, "beside")
+    assert folders_of(config, [beside]) == (beside,)
+
+
+def test_the_workbench_refuses_the_data_folder_too(config: Config, tmp_path: Path) -> None:
+    """The second check, when a job opens the folder: the house file may have been edited by hand."""
+    from vision.workbench.paths import ProjectRoot
+
+    data = config.paths.home
+    (data / "house").mkdir(parents=True, exist_ok=True)
+    os.symlink(data, tmp_path / "link-to-data")
+    for root in (data, data / "house", tmp_path, tmp_path / "link-to-data"):
+        with pytest.raises(ValueError, match="data folder"):
+            ProjectRoot(root, "x")
+    beside = tmp_path / "beside"
+    beside.mkdir()
+    assert ProjectRoot(beside, "beside").real == Path(os.path.realpath(beside))
 
 
 def test_a_project_key_that_holds_a_path_is_refused_with_a_pointer_to_folders(config: Config) -> None:
