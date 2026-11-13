@@ -55,7 +55,7 @@ The app is signed ad hoc, not with an Apple Developer ID. macOS therefore blocks
 1. A plain loading screen shows while the assistant starts. The first start takes a little longer.
 2. The house appears, and the first-start wizard opens over it (see below).
 3. When you turn on the microphone or run the microphone test, macOS asks whether Vision may use the microphone.
-4. When you give a room a project folder in Documents or on the Desktop, macOS asks once for that folder.
+4. When you give a room a project folder in Documents or on the Desktop, macOS asks once for each such folder.
 
 ## From source
 
@@ -120,7 +120,7 @@ The packaged app is macOS only for now; Windows and Linux are planned. It is a s
 | Assistant | Its name. |
 | Models | The talk, heavy and local models, and the monthly cap. |
 | Agents | The other agents' names and models. |
-| Rooms | Each room's name, agent, project folder, tools and model. |
+| Rooms | Each room's name, agent, project folders, tools and model. |
 | Voice | On or off, the microphone permission, devices, the speaking voice, the follow-up window, downloads and a three-second test. |
 | Asking first | Free, ask or never for each tool. |
 | Automations | Your automations. |
@@ -142,7 +142,7 @@ The window opens a seven-step wizard when no API key is found, or when setup has
 3. Downloads: the local model (about 2.1 GB) and the speech models (about 2.0 GB). Each starts only when you click it and runs in the background.
 4. The microphone permission and a three-second test.
 5. The assistant's name.
-6. A project folder for one room.
+6. Project folders for one room.
 7. A summary.
 
 **Finish** marks setup as done. **Later** closes the wizard without marking it, so it opens again next time. This Mac, **Run setup again** opens it any time.
@@ -164,7 +164,7 @@ Everything personal lives in `~/.vision/`, never in the repo or the app:
 | Path | What it is |
 |---|---|
 | `config.toml` | Your settings over the built-in defaults: name, models, cap, voice, gate tiers, automations, whether setup is done. |
-| `house.toml` | Your house: agent names and models, rooms, projects and tools. Created from the default house on first run. |
+| `house.toml` | Your house: agent names and models, rooms, project folders and tools. Created from the default house on first run. |
 | `house/` | The memory, as plain Markdown you can read and edit: personas in `agents/` (`host.md` is the assistant's), notes by day in `notes/`, a library about you and your projects in `library/`, and each resident's own notes in `agents/<id>/notes/`. |
 | `log.db` | Every conversation turn and every tool call with the gate's decision. |
 | `budget.json` | This month's spend. |
@@ -279,10 +279,14 @@ You can rename them and change their models in Settings, Agents. The assistant's
 
 1. Press **Build** and click a glowing slot.
 2. Fill in the room's name and the agent who runs it.
-3. Optionally, choose a project folder with the folder picker, and a model.
-4. Once you choose a project folder, the tools the project looks like it needs appear as toggles. Switch off any you do not want.
+3. Optionally, choose one or more project folders with the folder picker, and a model.
+4. Once you choose project folders, the tools they look like they need appear as toggles. Switch off any you do not want.
 
-Double-click a room to fly into it and see its agent, model, project and tools.
+Double-click a room to fly into it and see its agent, model, project folders and tools. You can add more folders to a room later, in Settings, Rooms.
+
+**Project folders.** A room can have up to eight project folders, so one room can hold a project made of several repositories, such as an app and its API. Each is a full path (starting with `/` or `~`). A folder cannot be the disk, your home folder or a folder above it, cannot be listed twice, and cannot sit inside another folder of the same room. A folder you add must exist; one that goes missing later (a disconnected disk, say) stays listed, and a job in the room says it is not there and works in the others.
+
+Residents know each folder by a short name, its own name: `~/Projects/shop` is `shop`. Two folders with the same name become `app` and `app-2`. Every path a resident uses starts with that name, such as `shop/src/app.py`, even when the room has only one folder, so what a resident wrote down still points to the same file after you add another folder.
 
 **In the file:** add a room to `~/.vision/house.toml` and it appears within a couple of seconds, without a restart:
 
@@ -290,26 +294,28 @@ Double-click a room to fly into it and see its agent, model, project and tools.
 [[rooms]]
 name = "Studio"
 agent = "maker"                      # any agent but the host
-project = "~/Projects/my-app"        # optional
+folders = ["~/Projects/my-app", "~/Projects/my-app-api"]   # optional
 tools = ["git", "gh", "npm"]         # optional; without it the room uses its agent's tools
 ```
 
-**With setup:** `vision setup` lists the rooms, lets you attach a project folder to any of them, and proposes tools for it.
+**With setup:** `vision setup` lists the rooms, lets you add a project folder to any of them (one at a time, added to the room's list), and proposes tools for it.
+
+A room in the file names its folders with `folders`; there is no `project` setting. A file that uses `project` is not applied: the default house is used until you fix it, and a notice says to write `folders = [...]` instead.
 
 Tools come from the catalog in `house/tools.toml`:
 
 - the assistant's built-in tools above, and the residents' own (marked `resident = true`);
 - project tools such as `git`, `gh`, `npm`, `maven`, `gradle`, `python`, `docker`, `xcode`, `unity` and `godot`.
 
-A proposal looks only at the names of files and folders in the project's top two levels, and at the remote's host in `.git/config`. A room's project tools run in its resident's jobs, in the project folder; see Agents at work.
+A proposal looks only at the names of files and folders in a folder's top two levels, and at the remote's host in `.git/config`. A room's project tools run in its resident's jobs, in the room's project folders; see Agents at work.
 
 ## Agents at work
 
 The assistant is the host. It talks with you and hands out work; it does no other room's work itself. The other five agents are residents: Brass the steward, Wren the envoy, Tink the maker, Tock the checker and Rook the scout. They never talk to you and never give each other orders. All work passes through a job board that the daemon runs.
 
-**Giving work.** Ask the assistant in plain words, for example "have Tink explain what the project in the Workshop does". It calls `hand_off` with the agent, a brief that stands on its own (the resident hears nothing of your conversation), and optionally a room, a title, and `careful` to use the agent's heavy model. A resident can work in any room but the Hall, so "have Tock run the tests of the project in the Workshop" sends the checker to the maker's room, with that room's project folder and tools; without a room it works in its own first room. It answers at once that the job is in hand. You can also start a job from the window (`POST /api/jobs`).
+**Giving work.** Ask the assistant in plain words, for example "have Tink explain what the project in the Workshop does". It calls `hand_off` with the agent, a brief that stands on its own (the resident hears nothing of your conversation), and optionally a room, a title, and `careful` to use the agent's heavy model. A resident can work in any room but the Hall, so "have Tock run the tests of the project in the Workshop" sends the checker to the maker's room, with that room's project folders and tools; without a room it works in its own first room. It answers at once that the job is in hand. You can also start a job from the window (`POST /api/jobs`).
 
-**While it works.** The job runs as the resident's own session, on the room's model in its own room or its own model when visiting, with its persona, a list of the house, the rules of the house, the shared library and its own notes. The room's light goes on and its figure works. Each tool call and progress note is a step on the job, shown live. A tool that asks first shows a card that names the resident, such as "Tock, in the Spare Room: run a program in the project", with the exact command and folder.
+**While it works.** The job runs as the resident's own session, on the room's model in its own room or its own model when visiting, with its persona, a list of the house, the rules of the house, the shared library and its own notes. The room's light goes on and its figure works. Each tool call and progress note is a step on the job, shown live. A tool that asks first shows a card that names the resident, such as "Tock, in the Spare Room: run a program in the project", with the exact command and the folder it runs in.
 
 **When it ends.** The assistant gets a turn of its own and tells you the outcome in its own words, aloud when voice is on and `[jobs] speak_results` is true. It is written to the history as a `job` turn.
 
@@ -318,7 +324,7 @@ The assistant is the host. It talks with you and hands out work; it does no othe
 | Who | Tools |
 |---|---|
 | Every resident | `remember` and `recall` on its own notes; `note_progress`; `ask_resident` to ask another resident for help through the board (not in a request it received) |
-| In the room it works in, when that room has a project folder | `list_files`, `read_file`, `search_files` (free); `write_file`, `edit_file` (ask); `run_program` (always asks) for the room's installed programs, such as `git` or `python` |
+| In the room it works in, when that room has a project folder | `list_files`, `read_file`, `search_files` (free); `write_file`, `edit_file` (ask); `run_program` (always asks) for the room's installed programs, such as `git` or `python`, in the folder it names (the room's first folder by default) |
 | Brass, the steward | `machine_status` (disk, memory, battery, uptime, load), `assistant_status`, `list_automations` |
 | Rook, the scout | `web_search`, Anthropic's server-side search, at most five searches per request, each charged at 10 dollars per thousand |
 
