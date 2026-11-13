@@ -1,10 +1,10 @@
 # Talk to your assistant from your phone (Discord)
 
-You can message your assistant from your phone through a Discord bot that belongs to you. You type or send a voice note in a direct message; the assistant on your Mac answers there. Results of automations, warnings and requests that need your yes can come to the phone too.
+You can message your assistant from your phone through a Discord bot that belongs to you. You type or send a voice note in a direct message; the assistant on your Mac answers there. What you type on the phone is answered on the phone and kept in the app; what you type at the Mac is answered at the Mac; anything the assistant does by itself (automations, finished work, warnings, requests for your yes, messages to you) reaches both.
 
 This guide is for anyone running Vision on their own Mac. It takes about ten minutes.
 
-> **Status.** The channel is tested against a local stand-in for Discord, not yet against the live service by many people. If a step does not behave as written here, please open an issue and say which step.
+> **Status.** Pairing, text messages, handing work off from the phone and that work's report have been run against the live Discord. Voice notes and the Yes and Not now buttons have not yet; they are tested against a local stand-in for Discord. If a step does not behave as written here, please open an issue and say which step.
 
 ## How it works, in short
 
@@ -94,12 +94,29 @@ Things to know:
 
 ### What the assistant sends you
 
-Each of these has its own switch under **Send to the phone**:
+The rule is simple:
 
-- **Automation results:** what a scheduled automation came to.
-- **Warnings and errors:** for example the budget warning.
-- **Requests that need your yes:** see below.
-- **Results of jobs you handed off from the phone:** when you ask from the phone for one of the other agents to do something, the assistant's report of the result comes back to the phone.
+- **What you type on the phone** is answered on the phone, and the exchange is in the app's conversation and history too, so the assistant remembers it.
+- **What you type or say at the Mac** is answered at the Mac. Nothing goes to the phone.
+- **Anything the assistant does by itself** reaches both the app and the phone, whether you are at the Mac or not.
+
+| Kind | What it is | App | Phone, by default |
+|---|---|---|---|
+| Automation results | What a scheduled automation came to. | Yes | Always |
+| Warnings and errors | For example the budget warning. Notes about the phone channel itself stay in the app. | Yes | Always |
+| Requests that need your yes | See below. | Yes | Always |
+| Results of jobs | The assistant's report when one of the other agents finishes a job, wherever you handed it off. | Yes | Always |
+| Messages from the assistant | When it messages your phone on purpose (below). | Yes | Always |
+
+If you want less on the phone, each kind under **Send to the phone** can also be **When away** (only while you are away from the Mac) or **Never**. Away means the Mac has had no keyboard, mouse or voice for five minutes (change it under **Away from the Mac**), or its screen is locked, or its display is asleep; Settings shows whether you count as here or away right now. If the Mac will not say, you count as here. Nothing depends on whether you are here unless you pick When away. A job you handed off from the phone reports there unless its kind is Never.
+
+**Messaging you on purpose.** Ask "send that to my phone", or write an automation that says to ping you ("at 17:30, remind me on my phone to leave for the train"), and the assistant sends a message to the phone at once, whether you are at the Mac or not. It does not send again what already comes to you by the choices above.
+
+**Nothing twice, nothing piled up.** Each message is sent once. One that cannot be delivered (Discord unreachable) is tried again a few times over about a minute and a half, then dropped with a note in the app, so nothing arrives in a flood later.
+
+**In the app,** everything stays in the conversation as before. What arrived while you were not looking at the window (another app in front, the window hidden, or you away from the Mac) sits under a quiet **While you were away** line with how many there are, and the conversation opens to it when you are back. The line goes once you have seen it.
+
+If you paired before these choices existed, your switches carry over: one that was on is **Always**, one that was off is **Never**.
 
 ### Approving from the phone
 
@@ -120,7 +137,8 @@ All under **Settings, Phone**. Changes apply at once.
 | Channel | The connection's state, and **Turn the channel off** to stop sending to and reading from Discord without unpairing. |
 | Bot token | **Save token** or **Replace token**, and **Verify** to ask Discord who the bot is. |
 | Pairing | **Show a pairing code**, who is paired, and **Unpair**. |
-| Send to the phone | The four switches described above. |
+| Send to the phone | Always, When away or Never for each kind of message, described above. |
+| Away from the Mac | Whether you count as here or away right now, and after how many minutes without keyboard, mouse or voice you count as away (1 to 120, default 5). It matters only for a kind set to When away. |
 | Replies | Also speak replies to the phone on the Mac; answer a voice note with a voice note too. |
 | Approvals from the phone | Which tools may be approved with Yes on the phone. |
 | Voice notes | Whether this Mac can read voice notes, and what is missing if not. |
