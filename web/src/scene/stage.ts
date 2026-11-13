@@ -55,6 +55,8 @@ export class Stage {
   onSlot: (cell: Cell) => void = () => {};
   /** Called with the room the camera flies into, and with null when it returns home. */
   onRoom: (roomId: string | null) => void = () => {};
+  /** How much of the scene's left edge a card covers while a room shows, in pixels; the room is kept clear of it. */
+  coverLeft: () => number = () => 0;
 
   constructor(
     private readonly container: HTMLElement,
@@ -100,8 +102,20 @@ export class Stage {
   home(): boolean {
     if (this.rig.room === null) return false;
     this.rig.home();
+    this.rig.setShift(0);
     this.post.setMiniature(true);
     this.onRoom(null);
+    return true;
+  }
+
+  /** Fly into a room and report it: what a double-click on the room does, and what the panel's room lists do. False for an unknown room. */
+  focusRoom(id: string): boolean {
+    const view = this.house.rooms.get(id);
+    if (!view || this.build.active) return false;
+    this.rig.flyTo(view.room.id, view.center, view.extent);
+    this.post.setMiniature(false);
+    this.onRoom(view.room.id);
+    this.rig.setShift(this.coverLeft() / 2);
     return true;
   }
 
@@ -153,6 +167,8 @@ export class Stage {
     this.renderer.setSize(this.width, this.height, false);
     this.post.setSize(this.width, this.height);
     this.rig.setAspect(this.width / this.height);
+    this.rig.setSize(this.width, this.height);
+    if (this.rig.room !== null) this.rig.setShift(this.coverLeft() / 2);
     if (this.plan) this.rig.frame(this.houseBox, this.clearWindow(), this.rig.room === null);
   }
 
@@ -168,12 +184,7 @@ export class Stage {
       this.raycaster.setFromCamera(this.ndc(ev), this.rig.camera);
       const hit = this.raycaster.intersectObjects(this.house.floors(), false)[0];
       const id = hit?.object.userData["roomId"] as string | undefined;
-      const view = id ? this.house.rooms.get(id) : undefined;
-      if (view) {
-        this.rig.flyTo(view.room.id, view.center, view.extent);
-        this.post.setMiniature(false);
-        this.onRoom(view.room.id);
-      }
+      if (id) this.focusRoom(id);
     });
     dom.addEventListener("pointerdown", (ev) => this.down.set(ev.clientX, ev.clientY));
     dom.addEventListener("pointerup", (ev) => {

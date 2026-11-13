@@ -2,6 +2,7 @@
 // The real HTTP client (settings-http.ts) and mock mode (mock-settings.ts)
 // both implement it.
 
+import type { DeleteAnswer, LocalListing, ServerTest } from "./brain-types";
 import type {
   Backup,
   Doctor,
@@ -19,6 +20,8 @@ import type {
   RoomPatch,
   Settings,
   SettingsPatch,
+  SpeakChoice,
+  SpeakTest,
   Verdict,
   VoiceDevices,
   VoiceState,
@@ -39,8 +42,18 @@ export interface SettingsApi {
   /** Turns the microphone loop on or off; this is what opens the microphone. */
   setVoice(enabled: boolean): Promise<Result<VoiceState>>;
   voiceTest(): Promise<Result<VoiceTest>>;
+  /** Says one sentence through the speakers; opens no microphone. */
+  speakTest(choice: SpeakChoice): Promise<Result<SpeakTest>>;
   downloads(): Promise<Result<Downloads>>;
   startDownload(what: DownloadWhat): Promise<Result<Downloads>>;
+  /** The local-model catalog against this Mac, with what is on disk and each download. */
+  localModels(): Promise<Result<LocalListing>>;
+  /** Starts fetching any Hugging Face repo in the background; answers the listing. */
+  downloadLocal(repo: string): Promise<Result<LocalListing>>;
+  /** Removes a model from the disk; the daemon refuses the one offline mode uses. */
+  deleteLocal(repo: string): Promise<Result<DeleteAnswer>>;
+  /** Asks a local server (the given address, else the saved one) for its models. */
+  testServer(server?: string): Promise<Result<ServerTest>>;
   folders(prefix: string): Promise<Result<FolderSuggestion[]>>;
   doctor(): Promise<Result<Doctor>>;
   fix(id: string): Promise<Result<FixAnswer>>;

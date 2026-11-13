@@ -7,14 +7,21 @@ None of these methods may log or return the API key.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
+import json
+import logging
+import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import keyring
 from keyring.errors import PasswordDeleteError
 
+from vision.brains import catalog
+from vision.brains.local_server import Probe, probe
 from vision.core import secrets
 from vision.core.config import Config
 from vision.setup import hf_cache
@@ -25,8 +32,13 @@ if TYPE_CHECKING:
 
     import numpy as np
 
+    from vision.voice.settings import VoiceSettings
+
+log = logging.getLogger(__name__)
+
 VOICE_MODULES = ("mlx_audio", "sounddevice")
 MODELS_TIMEOUT_S = 15.0
+DEVICES_TIMEOUT_S = 15.0
 
 
 class KeyRefused(Exception):
@@ -69,7 +81,7 @@ class Outside(Protocol):
 
     def voice_installed(self) -> bool: ...
     def audio_devices(self) -> list[AudioDevice]:
-        """Lists the devices without opening any."""
+        """Lists the devices as they are now (not as at start-up) without opening any."""
         ...
 
     async def mic_test(self, config: Config, seconds: float) -> str:
@@ -79,10 +91,30 @@ class Outside(Protocol):
         """
         ...
 
+    async def speak_test(self, settings: VoiceSettings, sentence: str) -> list[str]:
+        """Say `sentence` in the settings' voice through their speakers, opening no microphone.
+
+        Returns lines worth showing (a fallback to another voice or device).
+        Raises `VoiceUnavailable` (or ImportError) when it cannot.
+        """
+        ...
+
     def cached_size(self, repo: str, needs: str = "*") -> int | None: ...
     def download_size(self, repos: list[str]) -> int | None: ...
     def download(self, repos: list[str]) -> None: ...
-    def download_local_model(self, config: Config) -> None: ...
+    def download_local(self, repo: str) -> None:
+        """Fetch a local model's weights, configs and tokenizer (never code)."""
+        ...
+
+    def delete_local(self, repo: str) -> int:
+        """Remove a model from the Hugging Face cache; returns the bytes freed."""
+        ...
+
+    def memory_bytes(self) -> int: ...
+    async def probe_server(self, base_url: str, key: str | None) -> Probe:
+        """Ask an OpenAI-compatible server for its models. Never raises."""
+        ...
+
     def build_window(self) -> bool: ...
     def doctor_system(self) -> System: ...
 
@@ -141,18 +173,30 @@ class MacOutside:
     def audio_devices(self) -> list[AudioDevice]:
         if importlib.util.find_spec("sounddevice") is None:
             return []
-        import sounddevice
+        try:
+            done = subprocess.run(
+                [sys.executable, "-m", "vision.voice.devices"],
+                capture_output=True,
+                text=True,
+                timeout=DEVICES_TIMEOUT_S,
+                check=True,
+            )
+            rows: list[dict[str, Any]] = json.loads(done.stdout)
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            log.warning("listing the audio devices in a child process failed (%s); "
+                        "showing the list from start-up", exc)
+            from vision.voice import devices
 
-        default_in, default_out = sounddevice.default.device
+            rows = devices.current()
         return [
             AudioDevice(
-                name=str(dev["name"]),
-                inputs=int(dev["max_input_channels"]),
-                outputs=int(dev["max_output_channels"]),
-                default_input=index == default_in,
-                default_output=index == default_out,
+                name=str(row["name"]),
+                inputs=int(row["inputs"]),
+                outputs=int(row["outputs"]),
+                default_input=bool(row["default_input"]),
+                default_output=bool(row["default_output"]),
             )
-            for index, dev in enumerate(sounddevice.query_devices())
+            for row in rows
         ]
 
     async def mic_test(self, config: Config, seconds: float) -> str:
@@ -177,11 +221,32 @@ class MacOutside:
                 await mic.close()
             heard: str = await worker.run(lambda: stt.transcribe(audio))
             sink = SpeakerOutput(settings.output_device)
-            sink.open()
+            await asyncio.to_thread(sink.open)
             speaker = TtsSpeaker(Bus(), sink, worker.run)
             speaker.use(synth)
             await speaker.say(f"I heard: {heard}" if heard else "I did not hear anything.")
             return heard
+        finally:
+            worker.close()
+
+    async def speak_test(self, settings: VoiceSettings, sentence: str) -> list[str]:
+        from vision.core.bus import Bus
+        from vision.voice.audio_io import SpeakerOutput
+        from vision.voice.tts import TtsSpeaker, load_synth
+        from vision.voice.worker import Worker
+
+        said: list[str] = []
+        worker = Worker()
+        try:
+            synth, degraded = await worker.run(lambda: load_synth(settings))
+            if degraded is not None:
+                said.append(degraded)
+            sink = SpeakerOutput(settings.output_device, on_missing=said.append)
+            await asyncio.to_thread(sink.open)
+            speaker = TtsSpeaker(Bus(), sink, worker.run)
+            speaker.use(synth)
+            await speaker.say(sentence)
+            return said
         finally:
             worker.close()
 
@@ -194,8 +259,19 @@ class MacOutside:
     def download(self, repos: list[str]) -> None:
         self._system.download(repos)
 
-    def download_local_model(self, config: Config) -> None:
-        self._system.download_local_model(config)
+    def download_local(self, repo: str) -> None:
+        from vision.brains.mlx_local import setup_model
+
+        setup_model(repo)
+
+    def delete_local(self, repo: str) -> int:
+        return hf_cache.delete(repo)
+
+    def memory_bytes(self) -> int:
+        return catalog.memory_bytes()
+
+    async def probe_server(self, base_url: str, key: str | None) -> Probe:
+        return await probe(base_url, key)
 
     def build_window(self) -> bool:
         return self._system.build_window()

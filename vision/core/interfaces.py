@@ -4,7 +4,7 @@ Each Protocol here is implemented by one package and consumed by the core:
 
 | Protocol   | Implemented in     | Built by                                             |
 |------------|--------------------|------------------------------------------------------|
-| `Brain`    | `vision/brains/`   | `vision.brains.make_brain(config, bus, tools, memory, budget)` |
+| `Brain`    | `vision/brains/`   | `vision.brains.make_brain(config, bus, tools, memory, budget, engine)` |
 | `Budget`   | `vision/brains/`   | `vision.brains.make_budget(config, bus)`             |
 | `ToolHost` | `vision/gate/`     | `vision.gate.make_tool_host(config, bus, memory)`    |
 | `Memory`   | `vision/memory/`   | `vision.memory.make_memory(config)`                  |

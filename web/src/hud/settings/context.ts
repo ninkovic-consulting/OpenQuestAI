@@ -2,6 +2,7 @@
 // shared draft of edits, and ways to move about the screen.
 
 import type { AutomationsApi } from "../../net/automations-api";
+import type { LibraryApi } from "../../net/library-api";
 import type { NativeHelpers } from "../../net/native";
 import type { PhoneApi } from "../../net/phone-api";
 import type { SettingsApi } from "../../net/settings-api";
@@ -11,12 +12,13 @@ import type { ProposeResult } from "../../net/types";
 import type { ModelSource } from "../pickers/model-picker";
 import type { Draft } from "./draft";
 
-export type GroupId = "assistant" | "models" | "agents" | "rooms" | "voice" | "asking" | "automations" | "phone" | "key" | "mac" | "reset";
+export type GroupId = "assistant" | "library" | "models" | "agents" | "rooms" | "voice" | "asking" | "automations" | "phone" | "key" | "mac" | "reset";
 
 export interface SettingsContext {
   api: SettingsApi;
   automations: AutomationsApi;
   phone: PhoneApi;
+  library: LibraryApi;
   store: Store;
   native: NativeHelpers;
   models: ModelSource;

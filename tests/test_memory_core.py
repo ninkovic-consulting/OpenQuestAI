@@ -1,4 +1,8 @@
-"""The memory core: ordering, budget, persona lookup and caching."""
+"""The memory core: ordering, budget, persona lookup and caching.
+
+The owner's profile always opens the core; `alone` is the core a persona
+makes with an empty profile and nothing else.
+"""
 
 from __future__ import annotations
 
@@ -8,8 +12,14 @@ import pytest
 
 from tests.test_memory import config_with
 from vision.core.config import Config
-from vision.memory import make_memory
+from vision.memory import make_memory, profile
 from vision.memory.vault import bundled_template
+
+EMPTY_OWNER = profile.prompt_text(profile.Profile(), may_update=True)
+
+
+def alone(persona: str) -> str:
+    return f"{EMPTY_OWNER}\n\n{persona}"
 
 
 async def started(config: Config):  # type: ignore[no-untyped-def]
@@ -30,8 +40,8 @@ async def test_core_order_persona_library_notes(config: Config) -> None:
     await m.remember("Bought a kettle.")
     core = m.core()
     await m.close()
-    assert core.index("PERSONA TEXT") < core.index("Likes tea.") < core.index("Bought a kettle.")
-    assert "# Library" in core and "# Recent notes" in core
+    assert core.index("# The owner") < core.index("PERSONA TEXT") < core.index("Likes tea.") < core.index("Bought a kettle.")
+    assert "# The owner's library" in core and "# Recent notes" in core
     assert "What to put here" not in core  # the README is not part of the core
 
 
@@ -39,7 +49,7 @@ async def test_core_without_library_or_notes_is_just_the_persona(config: Config)
     m = await started(config)
     core = m.core()
     await m.close()
-    assert core == bundled_template("agents/host.md").strip()
+    assert core == alone(bundled_template("agents/host.md").strip())
 
 
 async def test_core_notes_newest_first_whole_and_within_budget(tmp_path: Path) -> None:
@@ -95,22 +105,22 @@ async def test_persona_lookup_order(tmp_path: Path) -> None:
     home = tmp_path / "h"
     config = config_with(home, persona="mine/custom.md")
     m = make_memory(config)  # not started: only the bundled persona exists
-    assert m.core() == bundled_template("agents/host.md").strip()
+    assert m.core() == alone(bundled_template("agents/host.md").strip())
 
     await m.start()
-    assert m.core().startswith("# Persona")  # seeded house/agents/host.md
+    assert m.core().removeprefix(EMPTY_OWNER).lstrip().startswith("# Persona")  # seeded house/agents/host.md
     (config.paths.house / "agents" / "host.md").write_text("HOUSE PERSONA")
-    assert m.core() == "HOUSE PERSONA"
+    assert m.core() == alone("HOUSE PERSONA")
 
     custom = home / "mine" / "custom.md"
     custom.parent.mkdir()
     custom.write_text("CONFIGURED PERSONA")
-    assert m.core() == "CONFIGURED PERSONA"
+    assert m.core() == alone("CONFIGURED PERSONA")
 
     custom.unlink()
-    assert m.core() == "HOUSE PERSONA"
+    assert m.core() == alone("HOUSE PERSONA")
     (config.paths.house / "agents" / "host.md").unlink()
-    assert m.core() == bundled_template("agents/host.md").strip()
+    assert m.core() == alone(bundled_template("agents/host.md").strip())
     await m.close()
 
 
@@ -119,7 +129,7 @@ async def test_absolute_persona_path(tmp_path: Path) -> None:
     elsewhere.write_text("ABSOLUTE")
     config = config_with(tmp_path / "h", persona=str(elsewhere))
     m = await started(config)
-    assert m.core() == "ABSOLUTE"
+    assert m.core() == alone("ABSOLUTE")
     await m.close()
 
 

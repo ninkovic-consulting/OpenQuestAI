@@ -1,0 +1,425 @@
+/* The room card, an agent's room list in the left panel, and the selected room's label. */
+
+/* ---------------------------------------------------------------- agent's rooms */
+
+.agent-rooms {
+  list-style: none;
+  margin: 0 0 clamp(8px, 1.4vh, 12px) 20px;
+  padding: 0;
+}
+
+.agent-rooms .is-empty {
+  padding: 4px 0 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.agent-room {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  margin: 3px 0;
+  padding: 7px 10px 6px;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted-light);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+
+.agent-room:hover {
+  border-color: var(--hairline-strong);
+  color: var(--text);
+}
+
+.agent-room:focus-visible {
+  outline: 1px solid var(--mustard);
+  outline-offset: 2px;
+}
+
+.agent-room.is-selected {
+  border-color: var(--mustard);
+  color: var(--text);
+}
+
+.agent-room .dot {
+  width: 6px;
+  height: 6px;
+  margin-top: 7px;
+  color: var(--muted);
+}
+
+.agent-room.is-working .dot,
+.agent-room.is-active .dot {
+  color: var(--mustard);
+}
+
+.agent-room.is-waiting .dot {
+  color: var(--alert);
+}
+
+.agent-room.is-queued .dot,
+.agent-room.is-idle .dot {
+  color: var(--muted-light);
+}
+
+.agent-room-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agent-room-name {
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.agent-room-meta {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* ---------------------------------------------------------------- the selected room's label */
+
+.chip.is-selected {
+  background: var(--ground);
+  border-color: var(--mustard);
+  color: var(--text);
+  opacity: 1;
+}
+
+/* ---------------------------------------------------------------- room card */
+
+.room-card {
+  position: absolute;
+  top: 56px;
+  left: clamp(16px, 2vw, 28px);
+  width: min(320px, max(280px, 44%));
+  max-height: calc(100% - 72px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-strong) transparent;
+  padding: 18px 20px 16px;
+  background: var(--ground);
+  border: 1px solid var(--hairline-strong);
+  z-index: 3;
+  animation: rise 0.3s ease-out;
+}
+
+.room-card[hidden] {
+  display: none;
+}
+
+.room-card .kicker {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.room-card h2 {
+  margin: 2px 0 0;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 24px;
+  line-height: 1.15;
+  overflow-wrap: break-word;
+}
+
+.card-head > div {
+  min-width: 0;
+}
+
+.card-edit,
+.card-send {
+  flex: none;
+  padding: 7px 9px 6px;
+  background: none;
+  border: 1px solid var(--hairline-strong);
+  color: var(--muted-light);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+
+.card-edit:hover,
+.card-send:hover:not(:disabled) {
+  border-color: var(--mustard);
+  color: var(--mustard);
+}
+
+.card-send {
+  border-color: var(--mustard);
+  color: var(--mustard);
+}
+
+.card-send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.card-edit:focus-visible,
+.card-send:focus-visible,
+.card-job:focus-visible,
+.room-card textarea:focus-visible {
+  outline: 1px solid var(--mustard);
+  outline-offset: 2px;
+}
+
+.room-card dl {
+  margin: 0;
+}
+
+.room-card .row {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.room-card dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.room-card dd {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted-light);
+  overflow-wrap: anywhere;
+}
+
+.room-card dd .path {
+  display: block;
+  padding: 1px 0;
+  font: 12px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.room-card dd.is-muted {
+  color: var(--muted);
+}
+
+.card-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+/* Jobs in the room: working now, or finished lately. Each opens in the Jobs panel. */
+.card-jobs {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.card-jobs .is-quiet {
+  padding: 3px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.card-job {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  margin: 2px 0;
+  padding: 6px 8px 5px;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted-light);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.card-job:hover {
+  border-color: var(--hairline-strong);
+}
+
+.card-job .dot {
+  width: 6px;
+  height: 6px;
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+.card-job.is-working .dot,
+.card-job.is-done .dot {
+  color: var(--mustard);
+}
+
+.card-job.is-waiting .dot,
+.card-job.is-failed .dot {
+  color: var(--alert);
+}
+
+.card-job.is-working .dot,
+.card-job.is-waiting .dot {
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+.card-job-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.card-job-title {
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.card-job-meta,
+.card-job-step {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.card-job-step {
+  color: var(--muted-light);
+}
+
+/* The job field. */
+.card-brief label.kicker {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.card-brief textarea {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 10px;
+  resize: vertical;
+  background: var(--scene);
+  border: 1px solid var(--hairline-strong);
+  color: var(--text);
+  font: 400 14px/1.45 var(--sans);
+}
+
+.card-brief textarea:focus {
+  border-color: var(--mustard);
+  outline: none;
+}
+
+.card-brief textarea::placeholder {
+  color: var(--muted);
+}
+
+.card-brief-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.card-careful {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted-light);
+  font-size: 12px;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.card-refusal,
+.card-said {
+  margin: 8px 0 0;
+  padding: 6px 9px 5px;
+  font-size: 13px;
+  line-height: 1.4;
+  border: 1px solid var(--hairline-strong);
+}
+
+.card-refusal {
+  border-color: var(--alert);
+  color: var(--text);
+}
+
+.card-refusal:empty,
+.card-said:empty {
+  display: none;
+}
+
+.card-said {
+  border-color: var(--mustard);
+  color: var(--text);
+}
+
+/* Tools. */
+.card-tools {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.card-tools li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 0;
+  font-size: 14px;
+  color: var(--muted-light);
+}
+
+.card-tools .dot {
+  width: 6px;
+  height: 6px;
+}
+
+.card-tools .tag {
+  margin-left: auto;
+  text-align: right;
+}
+
+.card-tools .is-runs .dot {
+  color: var(--mustard);
+}
+
+.card-tools .is-waits .dot {
+  color: var(--muted-light);
+}
+
+.card-tools .is-missing {
+  color: var(--muted);
+}
+
+.card-tools .is-missing .dot {
+  color: var(--alert);
+}
+
+.card-tools .is-empty {
+  color: var(--muted);
+}
+
+.room-card .note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}

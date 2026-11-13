@@ -1,6 +1,8 @@
 // The conversation thread as data: earlier turns from `/api/history`, then
 // the live ones built from the store's caption, then what was typed here and
-// not yet echoed back. Every function is pure; the dock feeds them.
+// not yet echoed back. What arrived while nobody was looking is marked, so
+// the thread can set it apart when the owner is back. Every function is
+// pure; the dock feeds them.
 
 import type { Caption } from "../../net/store";
 
@@ -26,6 +28,8 @@ export interface Entry {
   ended: "ok" | "interrupted" | "failed" | null;
   /** Typed while a request was waiting, so the daemon may take it as the answer. */
   toGate: boolean;
+  /** Arrived or changed while the window was not being looked at, and not seen since. */
+  away?: true;
 }
 
 export interface Thread {
@@ -138,6 +142,44 @@ export function withHistory(t: Thread, turns: readonly HistoryTurn[]): Thread {
     toGate: false,
   }));
   return { entries: [...made, ...t.entries], nextId };
+}
+
+/**
+ * Mark what this change brought while nobody was looking: an entry that is new,
+ * or whose reply or phase moved. Something typed here is never marked; it was seen.
+ */
+export function markAway(prev: Thread, next: Thread): Thread {
+  if (prev === next) return next;
+  const before = new Map(prev.entries.map((e) => [e.id, e]));
+  let marked = false;
+  const entries = next.entries.map((e) => {
+    const was = before.get(e.id);
+    const moved = was === undefined || was.reply !== e.reply || was.phase !== e.phase;
+    if (e.away || e.phase === "sending" || !moved) return e;
+    marked = true;
+    return { ...e, away: true as const };
+  });
+  return marked ? { ...next, entries } : next;
+}
+
+/** How many entries arrived while away, and the first of them; null when none did. */
+export function awayStart(t: Thread): { id: number; count: number } | null {
+  const away = t.entries.filter((e) => e.away);
+  const first = away[0];
+  return first ? { id: first.id, count: away.length } : null;
+}
+
+/** The owner has seen them: the marks go. */
+export function seenAway(t: Thread): Thread {
+  if (!t.entries.some((e) => e.away)) return t;
+  return {
+    ...t,
+    entries: t.entries.map((e) => {
+      if (!e.away) return e;
+      const { away: _seen, ...rest } = e;
+      return rest;
+    }),
+  };
 }
 
 /** True when this change started a reply streaming. */

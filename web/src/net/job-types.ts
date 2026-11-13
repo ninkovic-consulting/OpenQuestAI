@@ -32,6 +32,10 @@ export interface Job {
   ended_at: number | null;
   /** A tool asked for a yes during the work and nobody gave one. */
   needed_approval: boolean;
+  /** The model it ran on, once it has started; an older daemon leaves both out. */
+  model?: string;
+  /** It ran on the local model (offline mode, or Claude could not be used). */
+  local?: boolean;
   last_step: JobStep | null;
 }
 

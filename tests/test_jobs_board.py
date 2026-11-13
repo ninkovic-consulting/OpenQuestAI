@@ -42,7 +42,7 @@ async def test_hand_off_checks(config: Config) -> None:
     with pytest.raises(JobError, match="at most 8000"):
         await board.hand_off("Tock", "x" * 8001)
     spend.out = True
-    with pytest.raises(JobError, match="budget is used up.*no local model"):
+    with pytest.raises(JobError, match="budget is used up.*local model cannot take the work"):
         await board.hand_off("Tock", "Run the tests again.")
     await board.stop()
 
@@ -298,7 +298,7 @@ async def test_a_broken_file_is_moved_aside(config: Config) -> None:
     path = path_for(config)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{not json")
-    board = Board(config, Bus(), plan=dict, exhausted=lambda: False)
+    board = Board(config, Bus(), plan=dict, refusal=_never)
     await board.start(lambda job, desk: None)  # type: ignore[arg-type,return-value]
     assert board.all() == []
     assert path.with_name("jobs.json.broken").exists()
@@ -324,3 +324,7 @@ async def test_a_request_may_name_another_room(config: Config) -> None:
     await until(lambda: job.status == "done")
     assert asked[0].room == "garage" and "nobody else works there" in job.result
     await board.stop()
+
+
+async def _never() -> str | None:
+    return None

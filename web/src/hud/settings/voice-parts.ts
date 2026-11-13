@@ -1,11 +1,11 @@
 // Voice pieces shared by the Voice group and the wizard: the microphone
-// permission and the three-second test.
+// permission, the silent microphone and the three-second test.
 
 import type { MicStatus, NativeHelpers } from "../../net/native";
 import type { SettingsApi } from "../../net/settings-api";
 import type { VoiceState } from "../../net/settings-types";
 import { el } from "../dom";
-import { button, statusLine, type Tone } from "./fields";
+import { button, note, statusLine, type Tone } from "./fields";
 
 const MIC_PATH = "System Settings, Privacy & Security, Microphone";
 
@@ -23,9 +23,42 @@ export function daemonMicLine(voice: VoiceState): HTMLElement {
       return statusLine("ok", "Allowed. The microphone answered the last time it was opened.");
     case "denied":
       return statusLine("bad", `Denied. Allow it in ${MIC_PATH}, then turn voice on again.${voice.mic_detail ? ` (${voice.mic_detail})` : ""}`);
+    case "silent":
+      return statusLine("idle", "Not known: the microphone opened but sent only silence, which is usually the device, not the permission.");
     case "unknown":
       return statusLine("idle", "Not known yet: it shows once voice is turned on or tested.");
   }
+}
+
+/**
+ * The chosen microphone opened but sent only zeros. That is nearly always the
+ * device (muted, asleep, covered, a closed laptop lid), so it leads; the
+ * permission is mentioned only when the app cannot say it is allowed.
+ */
+export function silentMic(native: NativeHelpers, voice: VoiceState, again: () => Promise<void>, choose: () => void): HTMLElement {
+  const root = el("div", "silent-mic");
+  const who = voice.input_device ? `the microphone “${voice.input_device}”` : "the system default microphone";
+  const permission = note("");
+  const status = native.micStatus;
+  const permissionLine = `If no microphone works, check that the assistant may use it in ${MIC_PATH}.`;
+  if (status) void status().then((mic) => (permission.textContent = mic === "granted" ? "" : permissionLine));
+  else permission.textContent = permissionLine;
+  const retry = button("Try again", "primary");
+  const pick = button("Choose another microphone");
+  retry.addEventListener("click", () => {
+    retry.disabled = true;
+    retry.textContent = "Opening the microphone…";
+    void again();
+  });
+  pick.addEventListener("click", choose);
+  const actions = el("div", "row-actions");
+  actions.append(retry, pick);
+  root.append(
+    statusLine("warn", `On, but ${who} sends only silence. It may be muted, asleep or covered: a webcam in privacy mode, or a laptop's own microphone with the lid closed.`),
+    permission,
+    actions,
+  );
+  return root;
 }
 
 /**

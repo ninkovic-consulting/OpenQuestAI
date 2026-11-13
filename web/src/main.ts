@@ -6,7 +6,10 @@ import "@fontsource/inter/latin-400.css";
 import "@fontsource/inter/latin-500.css";
 import "./styles/tokens.css";
 import "./styles/hud.css";
+import "./styles/rooms.css";
 import "./styles/settings.css";
+import "./styles/local.css";
+import "./styles/library.css";
 
 import { mountBuildForm } from "./hud/build-form";
 import { mountCaption } from "./hud/caption";
@@ -15,49 +18,33 @@ import { mountGate } from "./hud/gate";
 import { mountInput } from "./hud/input";
 import { mountJobs } from "./hud/jobs/view";
 import { mountLabels } from "./hud/labels";
+import { mountOfflineSwitch } from "./hud/offline-switch";
 import { mountPanel } from "./hud/panel";
 import { modelSource } from "./hud/pickers/model-picker";
-import { mountRoomCard } from "./hud/room-card";
-import { mountSettings, type SettingsView } from "./hud/settings/view";
+import { mountRoomCard } from "./hud/rooms/card";
+import { RoomSelection } from "./hud/rooms/selection";
+import { mountSettings } from "./hud/settings/view";
 import { mountWizard } from "./hud/settings/wizard/wizard";
 import { mountToasts } from "./hud/toasts";
-import type { Daemon } from "./net/daemon";
-import { MockDaemon } from "./net/mock";
-import { SocketDaemon } from "./net/socket";
+import { connect } from "./net/connect";
 import { Store } from "./net/store";
-import { readToken } from "./net/token";
 import { Stage } from "./scene/stage";
-
-async function connect(store: Store): Promise<Daemon | null> {
-  if (new URLSearchParams(location.search).get("mock") === "1") return new MockDaemon(store);
-  const token = await readToken();
-  if (token === null) {
-    store.dispatch({
-      kind: "toast",
-      level: "error",
-      text: "No token: open this page with `vision ui`, or add ?mock=1 to try it without a daemon.",
-    });
-    store.dispatch({ kind: "connection", connection: "offline" });
-    return null;
-  }
-  return new SocketDaemon(store, token);
-}
 
 async function main(): Promise<void> {
   const store = new Store();
   const app = el("div", "app");
   document.body.append(app);
-  const panel = mountPanel(app, store);
+  const selection = new RoomSelection();
+  let focusRoom: (id: string) => void = () => {};
+  const panel = mountPanel(app, store, { selection, focus: (id) => focusRoom(id) });
   const stageRoot = el("main", "stage");
   app.append(stageRoot);
   mountToasts(stageRoot, store);
   const notify = (text: string): void => store.dispatch({ kind: "toast", level: "warn", text });
   const stage = new Stage(stageRoot, store, notify);
-  stage.onFrame = mountLabels(stageRoot, store);
+  stage.onFrame = mountLabels(stageRoot, store, selection);
   mountCaption(stageRoot, store);
-  let settings: SettingsView | null = null;
-  const roomCard = mountRoomCard(stageRoot, store, (id) => settings?.open("rooms", id));
-  stage.onRoom = (id) => roomCard.show(id);
+  stage.onRoom = (id) => selection.set(id);
   stage.start();
 
   const daemon = await connect(store);
@@ -84,10 +71,9 @@ async function main(): Promise<void> {
   stage.onSlot = (cell) => form.open(cell);
 
   const wizard = mountWizard(stageRoot, { api: daemon.settings, store, models, propose });
-  const view = mountSettings(stageRoot, { api: daemon.settings, automations: daemon.automations, phone: daemon.phone, store, models, propose, openWizard: () => wizard.open(),
+  const view = mountSettings(stageRoot, { api: daemon.settings, automations: daemon.automations, phone: daemon.phone, library: daemon.library, store, models, propose, openWizard: () => wizard.open(),
     onShown: (open) => panel.settingsToggle.classList.toggle("is-on", open),
   });
-  settings = view;
   const jobs = mountJobs(stageRoot, { api: daemon.jobs, store, onShown: (open) => panel.jobsToggle.classList.toggle("is-on", open) });
   const openSettings = (): void => {
     form.close();
@@ -96,13 +82,28 @@ async function main(): Promise<void> {
     jobs.close();
     view.open();
   };
-  const openJobs = (): void => {
+  const openJobs = (jobId?: string): void => {
     form.close();
     setBuilding(false);
     wizard.close();
     view.close();
-    jobs.open();
+    jobs.open(jobId);
   };
+  focusRoom = (id) => {
+    setBuilding(false);
+    stage.focusRoom(id);
+  };
+  const card = mountRoomCard(stageRoot, {
+    store,
+    jobs: daemon.jobs,
+    selection,
+    onEdit: (id) => {
+      jobs.close();
+      view.open("rooms", id);
+    },
+    onOpenJob: openJobs,
+  });
+  stage.coverLeft = card.cover;
   panel.jobsToggle.addEventListener("click", () => (jobs.isOpen() ? jobs.close() : openJobs()));
   panel.settingsToggle.addEventListener("click", () => (view.isOpen() ? view.close() : openSettings()));
   window.addEventListener("keydown", (ev) => {
@@ -113,6 +114,7 @@ async function main(): Promise<void> {
     }
   });
 
+  mountOfflineSwitch(panel.modeSlot, store, daemon.settings);
   mountGate(panel.foot, store, daemon);
   mountInput(stageRoot, store, daemon, [
     () => view.close(),

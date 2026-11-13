@@ -7,10 +7,11 @@ import pytest
 
 from vision.core.bus import Bus
 from vision.core.config import Config
-from vision.core.events import GateDecision, GateRequest, GateResolved
+from vision.core.events import GateDecision, GateRequest, GateResolved, TurnSource
 from vision.core.interfaces import ToolHost, ToolSpec
 from vision.gate import make_tool_host
-from vision.gate.gate import ToolGate, parse_yes_no
+from vision.core.turns import TurnOrigin, set_origin
+from vision.gate.gate import Actor, ToolGate, parse_yes_no
 from vision.gate.policy import tier_for
 from vision.gate.tools import Tool, ToolFailure
 from vision.testing.fakes import FakeMemory
@@ -48,11 +49,18 @@ def test_policy_tiers(config: Config) -> None:
     assert tier_for(gate, "open_url") == "never"
 
 
-def test_shell_can_be_stricter_but_never_free(config: Config) -> None:
+def test_free_shell_holds_only_for_the_owner_at_the_mac(config: Config) -> None:
     config.gate.tiers["shell"] = "free"
-    assert tier_for(config.gate, "shell") == "ask"
+    assert tier_for(config.gate, "shell", "text") == tier_for(config.gate, "shell", "voice") == "free"
+    for source in ("automation", "job", "phone", None):
+        assert tier_for(config.gate, "shell", source) == "ask"
     config.gate.tiers["shell"] = "never"
-    assert tier_for(config.gate, "shell") == "never"
+    assert tier_for(config.gate, "shell", "text") == "never"
+
+
+def test_run_program_is_never_free_even_for_the_owner(config: Config) -> None:
+    config.gate.tiers["run_program"] = "free"
+    assert tier_for(config.gate, "run_program", "text") == "ask"
 
 
 @pytest.mark.parametrize(
@@ -150,7 +158,7 @@ async def test_decision_for_another_request_is_ignored(setup) -> None:
     assert not result.ok and calls == []
 
 
-async def test_shell_always_asks_and_answer_resolves_by_text(setup) -> None:
+async def test_free_shell_outside_a_turn_asks_and_answer_resolves_by_text(setup) -> None:
     gate, bus, memory, calls = setup
     assert not gate.answer("yes")  # nothing waiting
     task = asyncio.create_task(gate.call("shell", {"command": "date"}))
@@ -161,6 +169,36 @@ async def test_shell_always_asks_and_answer_resolves_by_text(setup) -> None:
     result = await task
     assert result.ok and calls == [{"command": "date"}]
     assert memory.audits[0].tier == "ask"
+
+
+async def test_free_shell_runs_at_once_in_the_owners_turn_and_is_audited(setup) -> None:
+    gate, _, memory, calls = setup
+    set_origin(TurnOrigin("voice"))
+    result = await gate.call("shell", {"command": "date"})
+    assert result.ok and calls == [{"command": "date"}]
+    audit = memory.audits[0]
+    assert (audit.tool, audit.tier, audit.decision, audit.request_id) == ("shell", "free", "allow", "")
+
+
+@pytest.mark.parametrize("source", ["automation", "job", "phone"])
+async def test_free_shell_asks_first_in_turns_the_owner_did_not_type_or_say(
+    setup, source: TurnSource
+) -> None:
+    gate, _, memory, calls = setup
+    gate._gate.timeout_s = 0.05
+    set_origin(TurnOrigin(source, automation_name="Nightly"))
+    result = await gate.call("shell", {"command": "date"})
+    assert not result.ok and calls == []
+    assert (memory.audits[0].tier, memory.audits[0].decision) == ("ask", "timeout")
+
+
+async def test_free_shell_asks_first_for_a_resident_even_in_the_owners_turn(setup) -> None:
+    gate, _, memory, calls = setup
+    gate._gate.timeout_s = 0.05
+    set_origin(TurnOrigin("text"))
+    job = gate.scoped(list(gate._tools.values()), Actor("checker", "Checker", "j1"))
+    assert job.tier("shell") == "ask" and gate.tier("shell") == "free"
+    assert not (await job.call("shell", {"command": "date"})).ok and calls == []
 
 
 async def test_never_and_unknown_are_refused_and_audited(setup) -> None:

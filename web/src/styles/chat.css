@@ -10,7 +10,7 @@
   display: flex;
   flex-direction: column;
   gap: clamp(12px, 2vh, 18px);
-  padding: clamp(36px, 7vh, 72px) var(--scene-pad) clamp(14px, 2.6vh, 24px);
+  padding: clamp(36px, 7vh, 72px) var(--scene-pad) clamp(14px, 2.6vh, 24px) max(var(--scene-pad), var(--card-cover, 0px));
   background: linear-gradient(to top, rgba(20, 9, 7, 0.94) 50%, rgba(20, 9, 7, 0));
   pointer-events: none;
   z-index: 3;
@@ -187,6 +187,31 @@
   font-size: 16px;
   line-height: 1.4;
   color: var(--muted-light);
+}
+
+/* What arrived while the owner was away: a quiet rule above the first of it. */
+.away-divider {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 2px 0 10px;
+  color: var(--mustard);
+  font-size: 10px;
+  letter-spacing: var(--tracking-label);
+  pointer-events: none;
+  animation: rise 0.2s ease-out;
+}
+
+.away-divider::before,
+.away-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--hairline-strong);
+}
+
+.away-divider::before {
+  flex: 0 0 24px;
 }
 
 /* ---------------------------------------------------------------- the message field */

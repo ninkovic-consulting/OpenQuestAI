@@ -13,12 +13,12 @@ import os
 import plistlib
 import re
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from string import Template
 from xml.sax.saxutils import escape
 
-from vision import __version__
+from vision import display_version
 from vision.core.config import Config
 from vision.core.resources import SOURCE_ROOT as REPO_ROOT
 
@@ -30,6 +30,8 @@ TEMPLATE = MACOS_DIR / "Info.plist"
 BUILD_SCRIPT = MACOS_DIR / "build.sh"
 ICON = REPO_ROOT / "assets" / "icon" / "Vision.icns"
 DIST = REPO_ROOT / "dist"
+BUILD_NUMBER_ENV = "VISION_BUILD_NUMBER"
+"""The pipeline's run number; a build made without it is build 0."""
 STANDALONE_HOME = "~/.vision"
 """Expanded by the app on the Mac it runs on, never on the one that built it."""
 
@@ -60,6 +62,19 @@ def find_swiftc(run: Runner = subprocess.run) -> Path | None:
     return path if path is not None and path.is_file() else None
 
 
+def build_number(environ: Mapping[str, str] | None = None) -> str:
+    """The build number, from `VISION_BUILD_NUMBER`; `0` for a build made by hand.
+
+    Apple wants `CFBundleVersion` to be period-separated integers, so a whole number only.
+    """
+    value = (os.environ if environ is None else environ).get(BUILD_NUMBER_ENV, "").strip()
+    if not value:
+        return "0"
+    if not (value.isascii() and value.isdigit()):
+        raise AppBuildError(f"{BUILD_NUMBER_ENV} must be a whole number, not {value!r}.")
+    return str(int(value))
+
+
 def info_plist(
     config: Config,
     *,
@@ -67,8 +82,12 @@ def info_plist(
     template: Path = TEMPLATE,
     icon: bool = True,
     standalone: bool = False,
+    number: str | None = None,
 ) -> bytes:
     """The rendered Info.plist; without an icon the system's default icon is used.
+
+    `CFBundleShortVersionString` is the version as people read it (`0.1.0-beta`, which
+    the Settings page shows) and `CFBundleVersion` the build number.
 
     A standalone app names no project and uses `~/.vision` on whichever Mac it runs.
     """
@@ -77,7 +96,8 @@ def info_plist(
         "name": config.assistant.name,
         "executable": name,
         "bundle_id": BUNDLE_ID,
-        "version": __version__,
+        "version": display_version(),
+        "build": number if number is not None else build_number(),
         "min_macos": MIN_MACOS,
         "project": "" if standalone else str(project),
         "home": STANDALONE_HOME if standalone else str(config.paths.home),

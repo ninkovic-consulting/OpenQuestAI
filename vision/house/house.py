@@ -12,6 +12,7 @@ from typing import Any, get_args
 
 from fastapi import APIRouter
 
+from vision.core import effort
 from vision.core.bus import Bus
 from vision.core.config import Config
 from vision.core.events import HouseChanged, Notice, RoomLight
@@ -37,7 +38,7 @@ POLL_S = 1.0
 ADD_KEYS = {"id", "name", "at", "size", "agent", "model", "folders", "floor", "wall", "tools"}
 EDIT_KEYS = {"name", "agent", "model", "folders", "floor", "wall", "at", "size", "tools"}
 CLEARABLE = {"model", "folders", "tools"}
-AGENT_EDIT_KEYS = {"name", "model"}
+AGENT_EDIT_KEYS = {"name", "model", "effort", "heavy_effort"}
 
 Mutation = Callable[[dict[str, Any], Layout], str | None]
 """Edits the user's document in place; returns the id of the room to report, if any."""
@@ -97,10 +98,16 @@ class GridHouse:
                     "name": a.name,
                     "model": a.model,
                     "heavy_model": a.heavy_model,
+                    "effort": a.effort,
+                    "heavy_effort": a.heavy_effort,
                     "persona": a.persona,
                 }
                 for a in agents.values()
             ],
+            "effort_levels": effort.table(
+                [m for a in agents.values() for m in (a.model, a.heavy_model) if m]
+                + [r.model for r in layout.rooms if r.model]
+            ),
             "rooms": [
                 {
                     "id": r.id,
@@ -232,8 +239,8 @@ class GridHouse:
                     raise HouseError(f"There is no agent with the id {agent_id!r}.")
                 if agent_id == HOST and AGENT_EDIT_KEYS & fields.keys():
                     raise HouseError(
-                        "The host's name and model follow the assistant's name and the talk "
-                        "model; change those instead."
+                        "The host's name, model and effort follow the assistant's name, the talk "
+                        "model and [brain] talk_effort; change those instead."
                     )
                 _check_keys(fields, AGENT_EDIT_KEYS)
                 doc.setdefault("agents", {}).setdefault(agent_id, {}).update(fields)

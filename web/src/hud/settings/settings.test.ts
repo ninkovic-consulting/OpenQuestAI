@@ -92,7 +92,7 @@ describe("formatting", () => {
   });
 
   it("names a model with its price and its retiring date", () => {
-    const m = { id: "x", display_name: "Claude X", max_input_tokens: null, max_tokens: null, retires_at: "2026-11-30", price: { input_per_mtok: 15, output_per_mtok: 75 } };
+    const m = { id: "x", display_name: "Claude X", max_input_tokens: null, max_tokens: null, retires_at: "2026-11-30", price: { input_per_mtok: 15, output_per_mtok: 75 }, efforts: [] };
     expect(modelOption(m)).toBe("Claude X · $15 / $75 per M · retires 30 Nov 2026");
     expect(modelOption({ ...m, retires_at: null, price: null })).toBe("Claude X · price not known");
     expect(formatDay("not a date")).toBe("not a date");
@@ -115,7 +115,7 @@ describe("the model picker's choices", () => {
   const listing: ModelListing = {
     source: "api",
     fetched_at: null,
-    models: [{ id: "claude-opus-5-5", display_name: "Claude Opus 5.5", max_input_tokens: 1_000_000, max_tokens: null, retires_at: null, price: null }],
+    models: [{ id: "claude-opus-5-5", display_name: "Claude Opus 5.5", max_input_tokens: 1_000_000, max_tokens: null, retires_at: null, price: null, efforts: [] }],
   };
 
   it("offers the agent's own model first, sending nothing", () => {
@@ -186,7 +186,7 @@ describe("the wizard's steps", () => {
   it("counts and moves forward, keeping how each step ended", () => {
     let flow = forward(startFlow());
     expect(stepOf(flow)).toBe("key");
-    expect(stepCount(flow)).toBe("Step 2 of 7");
+    expect(stepCount(flow)).toBe("Step 2 of 8");
     flow = forward(flow, { status: "done", text: "Stored." });
     flow = skip(flow);
     expect(stepOf(flow)).toBe("microphone");
@@ -198,7 +198,7 @@ describe("the wizard's steps", () => {
   it("skipping on welcome goes to the summary with every task skipped", () => {
     const flow = skip(startFlow());
     expect(stepOf(flow)).toBe("done");
-    expect(summary(flow).map((s) => s.outcome.status)).toEqual(["skipped", "skipped", "skipped", "skipped", "skipped"]);
+    expect(summary(flow).map((s) => s.outcome.status)).toEqual(["skipped", "skipped", "skipped", "skipped", "skipped", "skipped"]);
     expect(skip(flow)).toBe(flow);
   });
 

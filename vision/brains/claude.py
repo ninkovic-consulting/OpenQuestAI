@@ -30,6 +30,7 @@ import anthropic
 from vision.brains.claude_errors import to_brain_error
 from vision.brains.models import HostModels, host_models
 from vision.brains.pump import Emit, Pump
+from vision.core import effort
 from vision.core.config import Config
 from vision.core.events import BrainName
 from vision.core.interfaces import (
@@ -45,8 +46,6 @@ from vision.core.secrets import get_api_key
 
 log = logging.getLogger(__name__)
 
-TALK_EFFORT = "low"
-HEAVY_EFFORT = "high"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 MAX_TOOL_ROUNDS = 8
 DEFAULT_HISTORY_TURNS = 20
@@ -249,9 +248,12 @@ class ClaudeBrain:
                 self._heavy_max_tokens if turn.heavy else self._config.brain.max_output_tokens
             ),
             "messages": [m for past in self._history for m in past] + turn.messages,
-            "output_config": {"effort": HEAVY_EFFORT if turn.heavy else TALK_EFFORT},
             "cache_control": {"type": "ephemeral"},
         }
+        brain = self._config.brain
+        level = effort.usable(turn.model, brain.heavy_effort if turn.heavy else brain.talk_effort)
+        if level is not None:
+            kwargs["output_config"] = {"effort": level}
         if self._system:
             kwargs["system"] = [
                 {"type": "text", "text": self._system, "cache_control": {"type": "ephemeral"}}

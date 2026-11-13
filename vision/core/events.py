@@ -42,6 +42,8 @@ NoticeLevel = Literal["info", "warn", "error"]
 JobStatus = Literal["queued", "working", "done", "failed", "cancelled"]
 AgentWork = Literal["idle", "working", "waiting"]
 """What a resident is doing: nothing, a job, or a job blocked on a gate request."""
+PresenceReason = Literal["idle", "locked", "asleep"]
+"""Why the owner counts as away from the Mac."""
 
 
 class EventError(ValueError):
@@ -183,6 +185,19 @@ class BrainFallback(Event):
     reason: str
 
 
+class BrainMode(Event):
+    """Offline mode or the local model changed. `answering` is the host's brain now;
+    `local_tools` is whether the local model can call tools (null until known)."""
+
+    TYPE: ClassVar[str] = "brain.mode"
+    DIRECTION: ClassVar[Direction] = "out"
+    offline: bool
+    answering: BrainName
+    local_backend: str
+    local_model: str
+    local_tools: bool | None
+
+
 class HouseChanged(Event):
     """The house plan changed; the window refetches `GET /api/house`."""
 
@@ -245,7 +260,8 @@ class JobChanged(Event):
 
     Times are Unix seconds (null until they happen). `asked_by` is `host`,
     `owner` (started from the window) or the id of the resident whose request
-    it is; `parent` is that resident's job. `last_step` is the newest step.
+    it is; `parent` is that resident's job. `model` is the model it runs on (empty until
+    it starts) and `local` is true when that is the local model. `last_step` is the newest step.
     """
 
     TYPE: ClassVar[str] = "job.changed"
@@ -261,6 +277,8 @@ class JobChanged(Event):
     started_at: float | None
     ended_at: float | None
     needed_approval: bool
+    model: str = ""
+    local: bool = False
     last_step: JobStep | None
 
 
@@ -272,6 +290,23 @@ class AgentState(Event):
     agent: str = Field(min_length=1)
     state: AgentWork
     job: str | None = None
+
+
+class PresenceChanged(Event):
+    """The owner came to the Mac or left it (`vision.presence`).
+
+    `reason` says why they count as away (`idle`, `locked`, `asleep`), null while
+    present. `known` is false when the Mac would not say; the owner then counts as
+    present. `since` is when this state began, Unix seconds.
+    """
+
+    TYPE: ClassVar[str] = "presence"
+    DIRECTION: ClassVar[Direction] = "out"
+    away: bool
+    known: bool
+    reason: PresenceReason | None = None
+    since: float
+    away_after_s: float
 
 
 class Notice(Event):
@@ -341,12 +376,14 @@ EVENT_TYPES: dict[str, type[Event]] = {
         GateRequest,
         GateResolved,
         BrainFallback,
+        BrainMode,
         HouseChanged,
         AutomationChanged,
         AutomationStarted,
         AutomationFinished,
         JobChanged,
         AgentState,
+        PresenceChanged,
         Notice,
         Hello,
         InputText,

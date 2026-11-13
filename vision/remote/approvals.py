@@ -81,8 +81,9 @@ class Approvals:
         return None
 
     async def request(self, req: GateRequest) -> None:
+        """Send the request; the notifier has decided it should go (requests that need a yes)."""
         state = self._link.state()
-        if not (state.paired and state.notify_approvals):
+        if not state.paired:
             return
         head = self.head(req) if len(req.detail) <= DETAIL_ROOM else self.head(req.model_copy(update={"detail": req.detail[:DETAIL_ROOM] + "…"}))
         why = self.mac_only_reason(req)

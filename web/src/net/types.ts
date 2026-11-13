@@ -1,6 +1,8 @@
 // The wire protocol (spec section 5) and the house plan (spec section 4.8).
 // Mirrors vision/core/events.py; the daemon is the source of truth.
 
+import { asBrainMode } from "./brain-guards";
+import type { BrainMode } from "./brain-types";
 import { asAgentState, asJob, gateFieldsOk } from "./job-guards";
 import type { AgentWork, Job } from "./job-types";
 
@@ -16,6 +18,9 @@ export interface Agent {
   name: string;
   model: string;
   heavy_model?: string | null;
+  /** The thinking level for the model and for careful work. */
+  effort?: string;
+  heavy_effort?: string;
 }
 
 /** A tool on a room, as the plan carries it. Project tools run only in a room with at least one project folder. */
@@ -61,6 +66,8 @@ export interface Plan {
   max_room_folders: number;
   assistant: { name: string };
   agents: Agent[];
+  /** The thinking levels each model in the house takes; a model that takes none has an empty list. */
+  effort_levels: Record<string, string[]>;
   rooms: Room[];
   doors: Door[];
   free_slots: Cell[];
@@ -90,13 +97,27 @@ export interface OutboundData {
   };
   "gate.resolved": { id: string; decision: "allow" | "deny" | "timeout" };
   "brain.fallback": { from: BrainName; to: BrainName; reason: string };
+  /** Offline mode or the local model changed. */
+  "brain.mode": BrainMode;
   /** `automation` is null when deleted; `reloaded` (empty id) means refetch the whole list. */
   "automation.changed": { id: string; change: "created" | "updated" | "deleted" | "reloaded"; automation: unknown };
   "automation.started": { id: string; name: string };
   "automation.finished": { id: string; name: string; status: string; reply: string };
   "job.changed": Job;
   "agent.state": { agent: string; state: AgentWork; job: string | null };
+  presence: Presence;
   notice: { level: NoticeLevel; text: string };
+}
+
+/** Whether the owner is at the Mac (`vision.presence`); unknown counts as present. */
+export interface Presence {
+  away: boolean;
+  /** False when the Mac would not say. */
+  known: boolean;
+  reason: "idle" | "locked" | "asleep" | null;
+  /** Unix seconds: when this state began. */
+  since: number;
+  away_after_s: number;
 }
 
 export type OutboundType = keyof OutboundData;
@@ -140,6 +161,9 @@ export interface StateSnapshot {
   budget: OutboundData["budget"];
   /** The automation running now, if any. */
   automation?: RunningAutomation | null;
+  /** Offline mode and the local model. */
+  mode?: BrainMode;
+  presence?: Presence;
 }
 
 export type RunningAutomation = OutboundData["automation.started"];
@@ -173,11 +197,13 @@ const OUTBOUND_TYPES: ReadonlySet<string> = new Set<OutboundType>([
   "gate.request",
   "gate.resolved",
   "brain.fallback",
+  "brain.mode",
   "automation.changed",
   "automation.started",
   "automation.finished",
   "job.changed",
   "agent.state",
+  "presence",
   "notice",
 ]);
 
@@ -185,7 +211,9 @@ const OUTBOUND_TYPES: ReadonlySet<string> = new Set<OutboundType>([
 const DATA_CHECKS: Partial<Record<OutboundType, (data: Record<string, unknown>) => boolean>> = {
   "job.changed": (d) => asJob(d) !== null,
   "agent.state": (d) => asAgentState(d) !== null,
+  "brain.mode": (d) => asBrainMode(d) !== null,
   "gate.request": gateFieldsOk,
+  presence: (d) => typeof d["away"] === "boolean" && typeof d["known"] === "boolean" && typeof d["since"] === "number",
 };
 
 /** Narrow raw JSON to an outbound event, or null when it is not one. */

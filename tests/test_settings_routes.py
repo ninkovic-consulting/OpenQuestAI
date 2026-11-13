@@ -50,9 +50,10 @@ async def test_settings_shape(daemon: Daemon) -> None:
     async with client(daemon) as http:
         got = (await http.get("/api/settings")).json()
     assert set(got) == {
-        "assistant", "models", "budget", "agents", "voice", "gate", "jobs", "key", "setup",
+        "assistant", "owner", "models", "budget", "agents", "voice", "gate", "jobs", "key", "setup",
         "restart_pending",
     }
+    assert got["owner"] == {"name": "", "business": "", "notes": ""}
     assert got["jobs"] == {
         "max_running": 2, "max_steps": 24, "timeout_s": 900.0, "max_job_usd": 1.0, "speak_results": True,
     }
@@ -63,14 +64,15 @@ async def test_settings_shape(daemon: Daemon) -> None:
     host = got["agents"][0]
     assert host["id"] == "host" and host["is_host"] and host["name"] == "Vision"
     assert not any(a["is_host"] for a in got["agents"][1:])
-    assert got["gate"]["never_free"] == ["run_program", "shell"]
+    assert got["gate"]["never_free"] == ["run_program"]
+    assert got["gate"]["free_at_the_mac_only"] == ["shell"]
     assert got["gate"]["tiers"]["run_program"] == "ask" and got["gate"]["tiers"]["read_file"] == "free"
     assert got["gate"]["tiers"]["shell"] == "ask"
     assert {t["id"] for t in got["gate"]["tools"]} >= {"remember", "shell"}
     assert got["gate"]["tools"][4] == {
         "id": "shell",
         "title": "Shell",
-        "description": "Runs a shell command, always after asking you.",
+        "description": "Runs a shell command on this Mac, after asking you unless you make it free.",
     }
     assert got["gate"]["tiers"]["delete_automation"] == "ask"
     assert got["gate"]["tiers"]["create_automation"] == "free"
@@ -114,19 +116,23 @@ async def test_cap_rejects_booleans_and_text(daemon: Daemon) -> None:
             assert answer.status_code == 400
 
 
-async def test_shell_can_never_be_free(daemon: Daemon) -> None:
+async def test_shell_can_be_free_but_run_program_never(daemon: Daemon) -> None:
     use(daemon)
     async with client(daemon) as http:
-        answer = await http.patch("/api/settings", json={"gate": {"tiers": {"shell": "free"}}})
-        assert answer.status_code == 400
-        [error] = answer.json()["detail"]["errors"]
-        assert error["field"] == "gate.tiers.shell"
+        program = await http.patch("/api/settings", json={"gate": {"tiers": {"run_program": "free"}}})
+        assert program.status_code == 400
+        [error] = program.json()["detail"]["errors"]
+        assert error["field"] == "gate.tiers.run_program"
         assert "never free" in error["message"]
         unknown = await http.patch("/api/settings", json={"gate": {"tiers": {"rm": "free"}}})
         assert unknown.status_code == 400
         bad = await http.patch("/api/settings", json={"gate": {"tiers": {"recall": "maybe"}}})
         assert bad.json()["detail"]["errors"][0]["message"] == "A tier is free, ask or never."
-    assert daemon.config.gate.tiers["shell"] == "ask"
+        shell = await http.patch("/api/settings", json={"gate": {"tiers": {"shell": "free"}}})
+    assert shell.status_code == 200 and shell.json()["applied"] == ["gate.tiers.shell"]
+    assert daemon.config.gate.tiers["shell"] == "free"
+    assert daemon.config.gate.tiers["run_program"] == "ask"
+    assert config_file(daemon)["gate"]["tiers"] == {"shell": "free"}
 
 
 async def test_gate_tiers_apply_at_once(daemon: Daemon) -> None:
@@ -187,8 +193,9 @@ async def test_models_need_a_restart(daemon: Daemon) -> None:
         got = answer.json()
         again = (await http.get("/api/settings")).json()
     assert got["changed"] == ["models.talk", "models.local"]
-    assert got["restart"] == ["models.talk", "models.local"] and got["applied"] == []
-    assert again["restart_pending"] == ["models.talk", "models.local"]
+    assert got["restart"] == ["models.talk"] and got["applied"] == ["models.local"]
+    assert again["restart_pending"] == ["models.talk"]
+    assert daemon.config.brain.local_model == "mlx-community/Qwen3-8B-4bit", "the local model follows at once"
     assert again["models"]["talk"] == "claude-sonnet-5-5"
     assert daemon.config.brain.talk_model == "claude-haiku-5-5", "the brain keeps its model"
     assert config_file(daemon)["brain"] == {

@@ -2,7 +2,8 @@
 
 The default model is `mlx-community/whisper-large-v3-turbo-asr-fp16`: large-v3 accuracy
 with a 4-layer decoder, which keeps a short utterance well under a second on
-Apple Silicon. Load once with `load()`; call `transcribe()` off the event loop.
+Apple Silicon. Load once with `load()`, from the disk only (`on_disk`); call
+`transcribe()` off the event loop.
 """
 
 from __future__ import annotations
@@ -10,6 +11,9 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 import numpy as np
+
+from vision.voice.on_disk import local_path
+from vision.voice.settings import STT_PART
 
 
 class Transcriber(Protocol):
@@ -26,7 +30,7 @@ class WhisperStt:
     def load(self) -> None:
         from mlx_audio.stt.utils import load
 
-        self._model = load(self.repo)
+        self._model = load(str(local_path(self.repo, STT_PART)))
         self.transcribe(np.zeros(16_000, dtype=np.float32))  # compile the kernels once
 
     def transcribe(self, audio: np.ndarray) -> str:

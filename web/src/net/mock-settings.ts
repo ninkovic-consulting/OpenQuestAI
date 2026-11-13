@@ -2,7 +2,12 @@
 // daemon validates them, so the whole settings screen and wizard work
 // without a daemon. Rooms and agents change the mock house through `MockHouse`.
 
+import type { BrainMode, DeleteAnswer, LocalListing, ServerTest } from "./brain-types";
+import { applied, BRAIN_FIELDS, brainProblems, HF_REPO, SERVER_URL, valueProblem, type BrainState } from "./mock-brain-rules";
+import { effortProblem, levelTable } from "./mock-effort";
 import { folderRefusal } from "./mock-folders";
+import { MockLocal } from "./mock-local";
+import { MOCK_SERVER } from "./mock-local-data";
 import { hostAgentId } from "./plan";
 import {
   DEFAULT_TIERS,
@@ -11,16 +16,17 @@ import {
   FOLDERS,
   HAIKU,
   INPUTS,
-  LOCAL_BYTES,
   LOCAL_MODEL,
   MOCK_MODELS,
   OLD_BACKUPS,
   OPUS,
   OUTPUTS,
+  SILENT_INPUT,
   SPEECH_BYTES,
   TOOL_TEXT,
   VOICES,
 } from "./mock-settings-data";
+import { emptyOwner, ownerProblem, type Owner } from "./owner";
 import { ok, refused, type Result, type SettingsApi } from "./settings-api";
 import type {
   Backup,
@@ -28,6 +34,7 @@ import type {
   Download,
   Downloads,
   DownloadWhat,
+  FieldError,
   FixAnswer,
   FolderSuggestion,
   Json,
@@ -40,6 +47,8 @@ import type {
   RoomPatch,
   Settings,
   SettingsPatch,
+  SpeakChoice,
+  SpeakTest,
   Tier,
   Verdict,
   VoiceDevices,
@@ -65,16 +74,25 @@ export interface MockHouse {
 
 const DOWNLOAD_MS = 15_000;
 const TEST_MS = 3000;
-const RESTART_FIELDS = new Set(["models.talk", "models.heavy", "models.local"]);
+const SPEAK_MS = 1500;
+/** As the daemon words it: speech models are downloaded only when the owner asks. */
+const MISSING_SPEECH =
+  "The speech models are not downloaded (speech recognition, the speaking voice, voice detection, the speaking voice's English tagger missing). Download them in Settings, Voice; nothing is downloaded by itself.";
+const SERVER_MS = 800;
+const RESTART_FIELDS = new Set(["models.talk", "models.heavy"]);
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,99}$/;
-const HF_REPO = /^[A-Za-z0-9][\w.-]{0,95}\/[\w.-]{1,95}$/;
 const KEY_SHAPE = /^sk-ant-[A-Za-z0-9_-]{20,300}$/;
 
 interface Config {
   name: string;
   talk: string;
   heavy: string;
+  talkEffort: string;
+  heavyEffort: string;
   local: string;
+  backend: string;
+  server: string;
+  offline: boolean;
   cap: number;
   voice: VoiceState;
   tiers: Record<string, Tier>;
@@ -85,7 +103,12 @@ const defaults = (): Config => ({
   name: "Vision",
   talk: HAIKU,
   heavy: OPUS,
+  talkEffort: "low",
+  heavyEffort: "high",
   local: LOCAL_MODEL,
+  backend: "mlx",
+  server: MOCK_SERVER,
+  offline: false,
   cap: 150,
   voice: { ...DEFAULT_VOICE },
   tiers: { ...DEFAULT_TIERS },
@@ -99,15 +122,37 @@ const plainName = (v: Json): boolean => typeof v === "string" && v.trim().length
 export class MockSettings implements SettingsApi {
   private config = defaults();
   /** What the pretend daemon started with; differences in models wait for a restart. */
-  private running = { talk: HAIKU, heavy: OPUS, local: LOCAL_MODEL };
+  private running = { talk: HAIKU, heavy: OPUS };
   private key: { stored: boolean; replaced: boolean } = { stored: false, replaced: false };
   private spent = 18.42;
-  private localStarted: number | null = null;
   private speechStarted: number | null = null;
-  private localDone = false;
+  private readonly local = new MockLocal();
+  /** The owner's profile lives in the vault, so only starting over clears it. */
+  private owner: Owner = emptyOwner();
   private backupList: Backup[] = OLD_BACKUPS.map((b) => ({ ...b, files: [...b.files] }));
 
-  constructor(private readonly house: MockHouse) {}
+  /** `announce` hears every change of offline mode or of the local model, as `brain.mode`. */
+  constructor(
+    private readonly house: MockHouse,
+    private readonly announce: (mode: BrainMode) => void = () => {},
+  ) {}
+
+  /** Offline mode and the local model, as `GET /api/state` and `brain.mode` carry them. */
+  mode(): BrainMode {
+    const c = this.config;
+    return {
+      offline: c.offline,
+      answering: c.offline ? "local" : "claude",
+      local_backend: c.backend,
+      local_model: c.local,
+      local_tools: c.backend === "mlx" ? MockLocal.tools(c.local) : true,
+    };
+  }
+
+  private brainState(): BrainState {
+    const c = this.config;
+    return { talk: c.talk, heavy: c.heavy, talkEffort: c.talkEffort, heavyEffort: c.heavyEffort, offline: c.offline, backend: c.backend, local: c.local, server: c.server };
+  }
 
   // ------------------------------------------------------------ settings
 
@@ -119,17 +164,33 @@ export class MockSettings implements SettingsApi {
     const c = this.config;
     this.tickDownloads();
     const host = hostAgentId(this.house.plan());
-    const pending = (["talk", "heavy", "local"] as const).filter((k) => c[k] !== this.running[k]).map((k) => `models.${k}`);
+    const pending = (["talk", "heavy"] as const).filter((k) => c[k] !== this.running[k]).map((k) => `models.${k}`);
     return structuredClone({
       assistant: { name: c.name },
-      models: { talk: c.talk, heavy: c.heavy, local: { backend: "mlx", model: c.local, downloaded: this.localDone, size_bytes: this.localDone ? LOCAL_BYTES : null } },
+      owner: { ...this.owner },
+      models: {
+        talk: c.talk,
+        heavy: c.heavy,
+        talk_effort: c.talkEffort,
+        heavy_effort: c.heavyEffort,
+        local: {
+          backend: c.backend,
+          model: c.local,
+          downloaded: c.backend !== "mlx" || this.local.onDisk(c.local),
+          size_bytes: c.backend === "mlx" ? this.local.bytes(c.local) : null,
+          server: c.server,
+          tools: c.backend === "mlx" ? MockLocal.tools(c.local) : true,
+          offline: c.offline,
+        },
+      },
       budget: { month: "2026-11", spent_usd: this.spent, cap_usd: c.cap, warn_fraction: 0.8 },
-      agents: this.house.plan().agents.map((a) => ({ id: a.id, name: a.name, model: a.model, heavy_model: a.heavy_model ?? null, is_host: a.id === host })),
+      agents: this.house.plan().agents.map((a) => ({ id: a.id, name: a.name, model: a.model, heavy_model: a.heavy_model ?? null, effort: a.effort ?? "medium", heavy_effort: a.heavy_effort ?? "high", is_host: a.id === host })),
       voice: c.voice,
       gate: {
         tools: Object.keys(DEFAULT_TIERS).map((id) => ({ id, title: titleOf(id), description: TOOL_TEXT[id] ?? "" })),
         tiers: c.tiers,
-        never_free: ["shell"],
+        never_free: [],
+        free_at_the_mac_only: ["shell"],
       },
       key: { stored: this.key.stored, source: this.key.stored ? "keychain" : null },
       setup: { completed: c.completed, first_run: !this.key.stored || !c.completed },
@@ -143,8 +204,11 @@ export class MockSettings implements SettingsApi {
       const message = this.problem(field, value);
       return message ? [{ field, message }] : [];
     });
+    if (errors.length === 0) errors.push(...this.changeProblems(fields));
     if (errors.length > 0) return Promise.resolve(refused(errors.map((e) => e.message).join(" "), errors));
+    const before = JSON.stringify(this.mode());
     const changed = fields.filter(([field, value]) => this.apply(field, value)).map(([field]) => field);
+    if (JSON.stringify(this.mode()) !== before) this.announce(this.mode());
     return Promise.resolve(
       ok({
         changed,
@@ -153,6 +217,27 @@ export class MockSettings implements SettingsApi {
         settings: this.snapshot(),
       }),
     );
+  }
+
+  /** The problems of the whole change: levels the models do not take, and offline mode without its model. */
+  private changeProblems(fields: readonly (readonly [string, Json])[]): FieldError[] {
+    const before = this.brainState();
+    const errors = brainProblems(before, applied(before, fields), this.local);
+    const plan = this.house.plan();
+    const value = (id: string, key: string): Json | undefined => fields.find(([f]) => f === `agents.${id}.${key}`)?.[1];
+    for (const agent of plan.agents) {
+      if (!fields.some(([f]) => f.startsWith(`agents.${agent.id}.`))) continue;
+      const model = String(value(agent.id, "model") ?? agent.model);
+      const levels = [
+        ["effort", model, value(agent.id, "effort") ?? agent.effort ?? "medium"],
+        ["heavy_effort", agent.heavy_model ?? model, value(agent.id, "heavy_effort") ?? agent.heavy_effort ?? "high"],
+      ] as const;
+      for (const [key, runsOn, level] of levels) {
+        const message = effortProblem(runsOn, String(level));
+        if (message) errors.push({ field: `agents.${agent.id}.${key}`, message });
+      }
+    }
+    return errors;
   }
 
   /** Why a value is refused, in the daemon's words; null when it is fine. */
@@ -164,21 +249,21 @@ export class MockSettings implements SettingsApi {
       if (agent.id === hostAgentId(this.house.plan())) return `The host's ${rest ?? "setting"} follows ${rest === "name" ? "the assistant's name" : "the talk model"}; change that.`;
       if (rest === "name") return plainName(value) ? null : "An agent's name must be 1 to 40 characters of plain text.";
       if (rest === "model") return typeof value === "string" && MODEL_ID.test(value) ? null : "Choose a model from the list; a model id looks like claude-opus-5-5.";
-      return "An agent has a name and a model.";
+      if (rest === "effort" || rest === "heavy_effort") return valueProblem(field, value);
+      return "An agent has a name, a model, an effort and a heavy_effort.";
     }
+    if (section === "owner") return ownerProblem(key ?? "", value);
     if (section === "gate") {
       if (key !== "tiers" || rest === undefined || !(rest in DEFAULT_TIERS)) return `There is no tool called '${rest ?? key ?? ""}'.`;
-      if (rest === "shell" && value === "free") return "shell always asks first, so it can be ask or never, but never free.";
       return value === "free" || value === "ask" || value === "never" ? null : "A tier is free, ask or never.";
     }
+    if (BRAIN_FIELDS.has(field)) return valueProblem(field, value);
     switch (field) {
       case "assistant.name":
         return plainName(value) ? null : "The assistant's name must be 1 to 40 characters of plain text.";
       case "models.talk":
       case "models.heavy":
         return typeof value === "string" && MODEL_ID.test(value) ? null : "Choose a model from the list; a model id looks like claude-opus-5-5.";
-      case "models.local":
-        return typeof value === "string" && HF_REPO.test(value) ? null : "The local model must be a Hugging Face repo, like mlx-community/Qwen3-4B-Instruct-2507-4bit.";
       case "budget.cap_usd":
         return isNum(value) && value >= 0 && value <= 1_000_000 ? null : "The monthly cap must be a number of dollars, 0 or more.";
       case "voice.input_device":
@@ -207,10 +292,19 @@ export class MockSettings implements SettingsApi {
     if (section === "agents" && key && rest) {
       const plan = this.house.plan();
       const agent = plan.agents.find((a) => a.id === key);
-      if (!agent || (rest !== "name" && rest !== "model")) return false;
-      const changed = set(agent[rest], String(value), (v) => (agent[rest] = v));
-      if (changed) this.house.changed();
+      if (!agent) return false;
+      let changed = false;
+      if (rest === "name" || rest === "model") changed = set(agent[rest], String(value), (v) => (agent[rest] = v));
+      if (rest === "effort" || rest === "heavy_effort") changed = set(agent[rest] ?? "", String(value), (v) => (agent[rest] = v));
+      if (changed) {
+        plan.effort_levels = levelTable(plan.agents.flatMap((a) => [a.model, a.heavy_model ?? a.model]));
+        this.house.changed();
+      }
       return changed;
+    }
+    if (section === "owner" && (key === "name" || key === "business" || key === "notes")) {
+      const part = key;
+      return set(this.owner[part], String(value).trim(), (v) => (this.owner[part] = v));
     }
     if (section === "gate" && rest) return set<Tier | undefined>(c.tiers[rest], value as Tier, (v) => (c.tiers[rest] = v ?? "ask"));
     switch (field) {
@@ -220,12 +314,25 @@ export class MockSettings implements SettingsApi {
         return set(c.talk, String(value), (v) => (c.talk = v));
       case "models.heavy":
         return set(c.heavy, String(value), (v) => (c.heavy = v));
+      case "models.talk_effort":
+        return set(c.talkEffort, String(value), (v) => ((c.talkEffort = v), this.syncHost()));
+      case "models.heavy_effort":
+        return set(c.heavyEffort, String(value), (v) => ((c.heavyEffort = v), this.syncHost()));
+      case "models.offline":
+        return set(c.offline, value === true, (v) => (c.offline = v));
       case "models.local":
-        return set(c.local, String(value), (v) => (c.local = v));
+        return set(c.local, String(value).trim(), (v) => (c.local = v));
+      case "models.local_backend":
+        return set(c.backend, String(value), (v) => (c.backend = v));
+      case "models.local_server":
+        return set(c.server, String(value).trim().replace(/\/$/, ""), (v) => (c.server = v));
       case "budget.cap_usd":
         return set(c.cap, Number(value), (v) => (c.cap = v));
       case "voice.input_device":
-        return set(c.voice.input_device, String(value), (v) => (c.voice.input_device = v));
+        return set(c.voice.input_device, String(value), (v) => {
+          c.voice.input_device = v;
+          if (c.voice.enabled) this.startVoice(); // a new microphone applies at once, after a failure too
+        });
       case "voice.output_device":
         return set(c.voice.output_device, String(value), (v) => (c.voice.output_device = v));
       case "voice.tts_voice":
@@ -237,6 +344,16 @@ export class MockSettings implements SettingsApi {
       default:
         return false;
     }
+  }
+
+  /** The host's levels are the talk and heavy levels. */
+  private syncHost(): void {
+    const plan = this.house.plan();
+    const host = plan.agents.find((a) => a.id === hostAgentId(plan));
+    if (!host) return;
+    host.effort = this.config.talkEffort;
+    host.heavy_effort = this.config.heavyEffort;
+    this.house.changed();
   }
 
   private rename(name: string): void {
@@ -274,15 +391,40 @@ export class MockSettings implements SettingsApi {
   setVoice(enabled: boolean): Promise<Result<VoiceState>> {
     const v = this.config.voice;
     v.enabled = enabled;
-    v.running = enabled;
-    if (enabled) v.mic = "granted";
+    v.running = false;
+    if (enabled) this.startVoice();
     return wait(400).then(() => ok({ ...v }));
+  }
+
+  /** Open the pretend microphone; the webcam in privacy mode sends only silence. */
+  private startVoice(): void {
+    const v = this.config.voice;
+    if (!v.models_downloaded) {
+      // Like the daemon: nothing downloads by itself, and the microphone stays closed.
+      v.running = false;
+      v.mic = "unknown";
+      v.mic_detail = MISSING_SPEECH;
+      return;
+    }
+    const silent = v.input_device === SILENT_INPUT;
+    v.running = !silent;
+    v.mic = silent ? "silent" : "granted";
+    v.mic_detail = silent
+      ? `The microphone “${SILENT_INPUT}” sends only silence. It may be muted, asleep or covered: a webcam in privacy mode, or a laptop's own microphone with the lid closed. Choose another microphone in Settings, Voice. If no microphone works, check that Vision may use the microphone in System Settings > Privacy & Security > Microphone.`
+      : null;
+  }
+
+  speakTest(choice: SpeakChoice): Promise<Result<SpeakTest>> {
+    if (choice.tts_voice !== undefined && !VOICES.includes(choice.tts_voice)) return Promise.resolve(refused("Choose one of the speaking voices."));
+    if (!this.config.voice.models_downloaded)
+      return Promise.resolve(ok({ ok: false, message: "The speech models are not downloaded (the speaking voice, the speaking voice's English tagger missing). Download them in Settings, Voice; nothing is downloaded by itself." }));
+    return wait(SPEAK_MS).then(() => ok({ ok: true, message: `Said: “Hello, I am ${this.config.name}. This is how I sound.”` }));
   }
 
   voiceTest(): Promise<Result<VoiceTest>> {
     this.config.voice.mic = "granted";
     if (!this.config.voice.models_downloaded)
-      return Promise.resolve(ok({ ok: false, heard: "", message: "The speech models are not downloaded yet. Download them first (about 2 GB)." }));
+      return Promise.resolve(ok({ ok: false, heard: "", message: MISSING_SPEECH }));
     const heard = "Testing one two three, can you hear me?";
     return wait(TEST_MS).then(() => ok({ ok: true, heard, message: `Heard: ${heard}` }));
   }
@@ -294,17 +436,13 @@ export class MockSettings implements SettingsApi {
   }
 
   startDownload(what: DownloadWhat): Promise<Result<Downloads>> {
-    if (what === "local_model" && !this.localDone && this.localStarted === null) this.localStarted = Date.now();
+    if (what === "local_model") this.local.start(this.config.local);
     if (what === "speech_models" && !this.config.voice.models_downloaded && this.speechStarted === null) this.speechStarted = Date.now();
     return this.downloads();
   }
 
   private tickDownloads(): void {
     const now = Date.now();
-    if (this.localStarted !== null && now - this.localStarted >= DOWNLOAD_MS) {
-      this.localStarted = null;
-      this.localDone = true;
-    }
     if (this.speechStarted !== null && now - this.speechStarted >= DOWNLOAD_MS) {
       this.speechStarted = null;
       this.config.voice.models_downloaded = true;
@@ -321,9 +459,42 @@ export class MockSettings implements SettingsApi {
       return { state: "running", done_bytes: Math.round(total * share), total_bytes: total, message: null };
     };
     return {
-      local_model: one(this.localDone, this.localStarted, LOCAL_BYTES),
+      local_model: this.local.download(this.config.local),
       speech_models: one(this.config.voice.models_downloaded, this.speechStarted, SPEECH_BYTES),
     };
+  }
+
+  // ------------------------------------------------------------ local models
+
+  private chosen(): Parameters<MockLocal["listing"]>[0] {
+    const c = this.config;
+    return { backend: c.backend, model: c.local, server: c.server, offline: c.offline };
+  }
+
+  localModels(): Promise<Result<LocalListing>> {
+    return Promise.resolve(ok(this.local.listing(this.chosen())));
+  }
+
+  downloadLocal(repo: string): Promise<Result<LocalListing>> {
+    if (!HF_REPO.test(repo) || repo.includes("..")) return Promise.resolve(refused("Name a Hugging Face repo, like mlx-community/Qwen3-8B-4bit."));
+    this.local.start(repo);
+    return this.localModels();
+  }
+
+  deleteLocal(repo: string): Promise<Result<DeleteAnswer>> {
+    const c = this.config;
+    if (!HF_REPO.test(repo) || repo.includes("..")) return Promise.resolve(refused("Name a Hugging Face repo, like mlx-community/Qwen3-8B-4bit."));
+    if (c.offline && c.backend === "mlx" && c.local === repo)
+      return Promise.resolve(refused(`${repo} is the model offline mode is using. Choose another or turn offline mode off first.`));
+    if (this.local.download(repo).state === "running") return Promise.resolve(refused(`${repo} is still downloading.`));
+    const freed = this.local.remove(repo);
+    return Promise.resolve(ok({ deleted: repo, freed_bytes: freed, ...this.local.listing(this.chosen()) }));
+  }
+
+  testServer(server?: string): Promise<Result<ServerTest>> {
+    const address = server ?? this.config.server;
+    if (!SERVER_URL.test(address.trim())) return Promise.resolve(refused("The server address is an http:// or https:// address, like http://127.0.0.1:1234/v1."));
+    return wait(SERVER_MS).then(() => ok(MockLocal.testServer(address)));
   }
 
   // ------------------------------------------------------------ folders and doctor
@@ -334,7 +505,7 @@ export class MockSettings implements SettingsApi {
 
   doctor(): Promise<Result<Doctor>> {
     this.tickDownloads();
-    const checks = doctorChecks(this.key.stored, this.localDone);
+    const checks = doctorChecks(this.key.stored, this.local.onDisk(this.config.local));
     const fixable = checks.filter((c) => c.status !== "ok" && ["local_model", "speech_models", "window"].includes(c.id)).map((c) => c.id);
     return Promise.resolve(ok({ ok: checks.every((c) => !c.needed || c.status === "ok"), checks, fixable }));
   }
@@ -354,10 +525,12 @@ export class MockSettings implements SettingsApi {
       const completed = level === "settings" && this.config.completed;
       this.config = { ...defaults(), completed };
       this.rename(this.config.name);
+      this.announce(this.mode());
     }
     if (level !== "settings") this.house.reset();
     if (level === "everything") {
       this.spent = 0;
+      this.owner = emptyOwner();
       this.house.forgetAutomations();
       this.house.forgetPhone(removeKey);
       if (removeKey) this.key = { stored: false, replaced: false };

@@ -3,10 +3,14 @@
 // from its first word (the type steps down for long replies and only what
 // still does not fit scrolls). Scrolling up over it, or "Earlier", expands it
 // to the earlier exchanges in a smaller size; a new reply collapses it again.
+// What arrived while the owner was not looking sits under a quiet divider,
+// "While you were away", and the thread opens to it when they are back; the
+// divider goes once they have had it in front of them for a few seconds.
 
 import type { Store } from "../net/store";
+import { followAttention, looking } from "./chat/attention";
 import { chatDock } from "./chat/dock";
-import { type Entry, type Origin, replyStarted, type Thread } from "./chat/entries";
+import { awayStart, type Entry, type Origin, replyStarted, type Thread } from "./chat/entries";
 import { el, setText } from "./dom";
 
 export type ReplySize = "normal" | "long" | "longer";
@@ -14,6 +18,13 @@ export type ReplySize = "normal" | "long" | "longer";
 /** Characters up to which a reply keeps each size. */
 const NORMAL_MAX = 140;
 const LONG_MAX = 320;
+/** How long the owner has the divider in front of them before it counts as seen. */
+export const SEEN_MS = 6000;
+
+/** The divider's words: "While you were away · 3". */
+export function awayLabel(count: number): string {
+  return `While you were away · ${count}`;
+}
 
 export function replySize(text: string): ReplySize {
   if (text.length <= NORMAL_MAX) return "normal";
@@ -106,6 +117,9 @@ export function mountCaption(parent: HTMLElement, store: Store): void {
 
   const views = new Map<number, EntryView>();
   let expanded = false;
+  const divider = el("div", "away-divider caps");
+  divider.setAttribute("role", "separator");
+  let seenTimer = 0;
 
   const latestReply = (): HTMLElement | null => views.get(dock.get().entries.at(-1)?.id ?? -1)?.reply ?? null;
   const toBottom = (): void => {
@@ -141,6 +155,8 @@ export function mountCaption(parent: HTMLElement, store: Store): void {
         views.delete(id);
       }
     }
+    const away = awayStart(t);
+    const nodes: HTMLElement[] = [];
     t.entries.forEach((e, i) => {
       let v = views.get(e.id);
       if (!v) {
@@ -149,14 +165,35 @@ export function mountCaption(parent: HTMLElement, store: Store): void {
       }
       paint(v, e, assistant);
       v.root.classList.toggle("is-latest", i === t.entries.length - 1);
-      if (list.children[i] !== v.root) list.insertBefore(v.root, list.children[i] ?? null);
+      if (away?.id === e.id) nodes.push(divider);
+      nodes.push(v.root);
+    });
+    if (away) setText(divider, awayLabel(away.count));
+    else divider.remove();
+    nodes.forEach((node, i) => {
+      if (list.children[i] !== node) list.insertBefore(node, list.children[i] ?? null);
     });
     toggle.hidden = t.entries.length < 2;
     labelToggle();
     thread.classList.toggle("is-empty", t.entries.length === 0);
-    if (prev && replyStarted(prev, t)) setExpanded(false);
+    if (prev && replyStarted(prev, t) && looking(document, store.get().presence)) setExpanded(false);
     else if (expanded && atBottom) toBottom();
   };
+
+  // Back in front of the window with something waiting: open the thread at the divider,
+  // and count it seen once it has been there a while.
+  const attend = (): void => {
+    window.clearTimeout(seenTimer);
+    if (!looking(document, store.get().presence) || !awayStart(dock.get())) return;
+    setExpanded(true);
+    requestAnimationFrame(() => {
+      list.scrollTop = Math.max(0, divider.offsetTop - list.offsetTop - 8);
+    });
+    seenTimer = window.setTimeout(() => {
+      if (looking(document, store.get().presence)) dock.seen();
+    }, SEEN_MS);
+  };
+  followAttention(store, attend);
 
   thread.dataset["mode"] = "collapsed";
   render(dock.get(), null);

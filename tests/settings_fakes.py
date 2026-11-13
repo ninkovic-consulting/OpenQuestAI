@@ -9,11 +9,13 @@ import httpx
 from test_setup import FakeSystem
 
 from vision.app import Daemon
+from vision.brains.local_server import Probe
 from vision.core.config import Config
 from vision.settings import SettingsService
 from vision.settings.outside import AudioDevice, KeyRefused, ModelRow, Unreachable
 from vision.setup.system import System
-from vision.voice.errors import VoiceUnavailable, mic_permission_hint
+from vision.voice.errors import VoiceUnavailable, mic_permission_hint, silent_mic_hint
+from vision.voice.settings import VoiceSettings
 
 GOOD_KEY = "sk-ant-api03-" + "Q" * 40
 
@@ -39,11 +41,16 @@ class FakeOutside:
     cache: dict[str, int] = field(default_factory=dict)
     heard: str = "testing one two"
     mic_error: Exception | None = None
+    speak_error: Exception | None = None
+    speak_notes: list[str] = field(default_factory=list)
+    spoken: list[tuple[VoiceSettings, str]] = field(default_factory=list)
     size: int | None = 3_000_000
     download_error: Exception | None = None
     hold: threading.Event | None = None
     """When set, downloads wait for it, so a test can see them running."""
     window_ok: bool = True
+    memory: int = 64 * 1024**3
+    server: Probe = field(default_factory=lambda: Probe(True, ["llama3.2"], "The server answers."))
     system: FakeSystem = field(default_factory=FakeSystem)
     calls: list[str] = field(default_factory=list)
 
@@ -82,6 +89,13 @@ class FakeOutside:
             raise self.mic_error
         return self.heard
 
+    async def speak_test(self, settings: VoiceSettings, sentence: str) -> list[str]:
+        self.calls.append("speak_test")
+        if self.speak_error is not None:
+            raise self.speak_error
+        self.spoken.append((settings, sentence))
+        return list(self.speak_notes)
+
     def cached_size(self, repo: str, needs: str = "*") -> int | None:
         return self.cache.get(repo)
 
@@ -91,8 +105,19 @@ class FakeOutside:
     def download(self, repos: list[str]) -> None:
         self._download(repos)
 
-    def download_local_model(self, config: Config) -> None:
-        self._download([config.brain.local_model])
+    def download_local(self, repo: str) -> None:
+        self._download([repo])
+
+    def delete_local(self, repo: str) -> int:
+        self.calls.append(f"delete {repo}")
+        return self.cache.pop(repo, 0)
+
+    def memory_bytes(self) -> int:
+        return self.memory
+
+    async def probe_server(self, base_url: str, key: str | None) -> Probe:
+        self.calls.append(f"probe {base_url}")
+        return self.server
 
     def _download(self, repos: list[str]) -> None:
         self.calls.append(f"download {' '.join(repos)}")
@@ -112,7 +137,14 @@ class FakeOutside:
 
 
 def denied() -> VoiceUnavailable:
-    return VoiceUnavailable(f"The microphone sends only silence. {mic_permission_hint()}")
+    return VoiceUnavailable(
+        f"The microphone “MacBook Pro Microphone” could not open (Error opening InputStream). "
+        f"{mic_permission_hint()}"
+    )
+
+
+def silent() -> VoiceUnavailable:
+    return VoiceUnavailable(f"The microphone “Insta360 Link 2C” sends only silence. {silent_mic_hint()}")
 
 
 def service(d: Daemon) -> SettingsService:

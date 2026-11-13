@@ -7,7 +7,7 @@ import plistlib
 import subprocess
 from pathlib import Path
 
-from vision import __version__
+from vision import display_version
 from vision.core.config import Config
 from vision.macapp.bundle import DIST, AppBuildError, Runner, app_name, built_app
 
@@ -18,7 +18,7 @@ def is_standalone(app: Path) -> bool:
 
 
 def package_path(config: Config, dist: Path = DIST) -> Path:
-    return dist / f"{app_name(config)}-{__version__}-macos-{platform.machine()}.zip"
+    return dist / f"{app_name(config)}-{display_version()}-macos-{platform.machine()}.zip"
 
 
 def package(config: Config, *, dist: Path = DIST, run: Runner = subprocess.run) -> Path:

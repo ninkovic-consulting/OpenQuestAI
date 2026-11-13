@@ -5,6 +5,7 @@ import { Api } from "./api";
 import { HttpAutomations, type AutomationsApi } from "./automations-api";
 import type { Daemon } from "./daemon";
 import { HttpJobs, type JobsApi } from "./jobs-api";
+import { HttpLibrary, type LibraryApi } from "./library-api";
 import { HttpPhone, type PhoneApi } from "./phone-api";
 import { asPlan } from "./plan";
 import type { Result, SettingsApi } from "./settings-api";
@@ -23,6 +24,7 @@ export class SocketDaemon implements Daemon {
   readonly automations: AutomationsApi;
   readonly phone: PhoneApi;
   readonly jobs: JobsApi;
+  readonly library: LibraryApi;
   private ws: WebSocket | null = null;
   private backoff = BACKOFF_MIN_MS;
   private loadedOnce = false;
@@ -39,6 +41,7 @@ export class SocketDaemon implements Daemon {
     this.automations = new HttpAutomations(this.api);
     this.phone = new HttpPhone(this.api);
     this.jobs = new HttpJobs(this.api);
+    this.library = new HttpLibrary(this.api);
   }
 
   start(): void {

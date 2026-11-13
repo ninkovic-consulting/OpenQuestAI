@@ -55,6 +55,10 @@ class Job:
     error: str = ""
     needed_approval: bool = False
     cost_usd: float = 0.0
+    model: str = ""
+    """The model it runs on, once it has started."""
+    local: bool = False
+    """It runs on the local model (offline mode, or Claude could not be used)."""
     steps: list[Step] = field(default_factory=list)
 
     @property
@@ -82,6 +86,8 @@ class Job:
             "started_at": self.started_at,
             "ended_at": self.ended_at,
             "needed_approval": self.needed_approval,
+            "model": self.model,
+            "local": self.local,
             "last_step": asdict(last) if last else None,
         }
 

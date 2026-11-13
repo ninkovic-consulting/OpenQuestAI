@@ -1,17 +1,31 @@
 import type { PhoneApi } from "../../../net/phone-api";
-import type { PhoneNotify, PhonePatch, PhoneView } from "../../../net/phone-types";
+import type { NotifyChoice, PhonePatch, PhoneView } from "../../../net/phone-types";
+import type { Store } from "../../../net/store";
 import { el, setText } from "../../dom";
 import type { Group } from "../context";
-import { block, button, confirmButton, fieldRow, note, statusLine } from "../fields";
+import { block, button, confirmButton, fieldRow, note, segmented, statusLine } from "../fields";
 import { formatWhen } from "../format";
-import { codeLine, connectionLine, pairedLine, spacedCode, toggledTools, verdictLine, voiceNotesLine } from "../phone-parts";
+import {
+  CHOICE_SEGMENTS,
+  choiceSaid,
+  codeLine,
+  connectionLine,
+  NOTIFY_ROWS,
+  pairedLine,
+  parseAwayMinutes,
+  presenceLine,
+  spacedCode,
+  toggledTools,
+  verdictLine,
+  voiceNotesLine,
+} from "../phone-parts";
 
 const POLL_MS = 2000;
 
 export const phoneGroup: Group = {
   id: "phone",
   title: "Phone",
-  blurb: "Message the assistant from your phone through a Discord bot of your own. Only the paired account is answered; changes apply at once.",
+  blurb: "Message the assistant from your phone through a Discord bot of your own. What you type on the phone is answered there and kept here; what you type at the Mac is answered at the Mac; what the assistant does by itself reaches both. Changes apply at once.",
   prefixes: [],
   render(ctx) {
     const api = ctx.phone;
@@ -45,6 +59,7 @@ export const phoneGroup: Group = {
         })),
         block("Pairing", pairingBlock(api, v, apply, () => void load())),
         block("Send to the phone", notifyChoices(v, change)),
+        block("Away from the Mac", awayBlock(v, ctx.store, change)),
         block("Replies", replyChoices(v, change)),
         block("Approvals from the phone", toolChoices(v, change)),
         block("Voice notes", statusLine(voiceNotesLine(v).tone, voiceNotesLine(v).text)),
@@ -198,14 +213,59 @@ function checkbox(label: string, checked: boolean, onChange: (on: boolean) => vo
 }
 
 function notifyChoices(v: PhoneView, change: Change): HTMLElement {
-  const root = el("div", "choices");
-  const one = (key: keyof PhoneNotify, label: string): HTMLElement =>
-    checkbox(label, v.notify[key], (on) => change({ notify: { [key]: on } }, on ? `${label}: sent to the phone.` : `${label}: not sent.`));
+  const root = el("div", "notify-choices");
+  for (const row of NOTIFY_ROWS) {
+    const pick = segmented(row.label, CHOICE_SEGMENTS, v.notify[row.kind], (value) =>
+      change({ notify: { [row.kind]: value as NotifyChoice } }, choiceSaid(row.label, value as NotifyChoice)),
+    );
+    root.append(fieldRow(row.label, pick, { note: row.note }));
+  }
+  return root;
+}
+
+/** Present or away right now, kept current by the daemon's `presence` events, and the away time. */
+function awayBlock(v: PhoneView, store: Store, change: Change): HTMLElement {
+  const root = el("div", "away");
+  const line = el("div");
+  const show = (): void => {
+    const p = store.get().presence ?? v.presence;
+    const words = presenceLine(p, formatWhen);
+    line.replaceChildren(statusLine(words.tone, words.text));
+  };
+  show();
+  const stop = store.subscribe((s, prev) => {
+    if (!root.isConnected) stop();
+    else if (s.presence !== prev.presence) show();
+  });
+  const minutes = el("input", "away-minutes");
+  minutes.type = "number";
+  minutes.min = "1";
+  minutes.max = "120";
+  minutes.step = "1";
+  minutes.value = String(Math.round(v.presence.away_after_s / 60));
+  const save = button("Save");
+  const error = note();
+  const send = (): void => {
+    const seconds = parseAwayMinutes(minutes.value);
+    if (typeof seconds === "string") {
+      setText(error, seconds);
+      return;
+    }
+    setText(error, "");
+    change({ away_after_s: seconds }, `You count as away after ${seconds / 60} ${seconds === 60 ? "minute" : "minutes"} without keyboard, mouse or voice.`);
+  };
+  save.addEventListener("click", send);
+  minutes.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") send();
+  });
+  const row = el("div", "row-actions away-time");
+  row.append(minutes, el("span", "field-note", "minutes"), save);
   root.append(
-    one("automations", "Automation results"),
-    one("warnings", "Warnings and errors"),
-    one("approvals", "Requests that need your yes"),
-    one("jobs", "Results of jobs you handed off from the phone"),
+    line,
+    fieldRow("Away after", row, {
+      note: "Without keyboard, mouse or speaking to the assistant at the Mac for this long, you count as away. A locked screen or a sleeping display counts at once.",
+    }),
+    error,
   );
   return root;
 }

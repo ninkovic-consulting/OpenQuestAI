@@ -33,7 +33,7 @@ export function fieldRow(label: string, control: HTMLElement, opts: FieldOptions
   const row = el("div", "field");
   const head = el("div", "field-head");
   const name = el("label", "caps", label);
-  const target = control.matches("input, select") ? control : control.querySelector("input, select");
+  const target = control.matches("input, select, textarea") ? control : control.querySelector("input, select, textarea");
   if (target) {
     target.id ||= `f-${Math.random().toString(36).slice(2, 9)}`;
     name.htmlFor = target.id;

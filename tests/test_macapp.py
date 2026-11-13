@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from vision import __version__, macapp
+from vision import __version__, display_version, macapp
 from vision.core import cli
 from vision.core.config import Config, load_config
 from vision.macapp import bundle, installation
@@ -35,6 +35,12 @@ class FakeRun:
         if self.build_status == 0:
             (Path(argv[2]) / "Contents" / "MacOS").mkdir(parents=True)
         return subprocess.CompletedProcess(argv, self.build_status, "", "")
+
+
+@pytest.fixture(autouse=True)
+def no_build_number(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A build made by hand has no run number, whatever the environment says."""
+    monkeypatch.delenv(bundle.BUILD_NUMBER_ENV, raising=False)
 
 
 @pytest.fixture
@@ -65,7 +71,8 @@ def test_info_plist(config: Config, project: Path) -> None:
     assert info["CFBundleIdentifier"] == "org.openquestai.vision"
     assert info["CFBundleName"] == info["CFBundleDisplayName"] == "Vision"
     assert info["CFBundleExecutable"] == "Vision"
-    assert info["CFBundleShortVersionString"] == __version__
+    assert info["CFBundleShortVersionString"] == display_version()
+    assert info["CFBundleVersion"] == "0"
     assert info["CFBundleIconFile"] == "AppIcon"
     assert info["LSMinimumSystemVersion"] == bundle.MIN_MACOS
     assert info["VisionProjectPath"] == str(project)
@@ -75,6 +82,46 @@ def test_info_plist(config: Config, project: Path) -> None:
     exceptions = info["NSAppTransportSecurity"]["NSExceptionDomains"]
     assert exceptions == {"127.0.0.1": {"NSExceptionAllowsInsecureHTTPLoads": True}}
     assert "NSAllowsArbitraryLoads" not in info["NSAppTransportSecurity"]
+
+
+@pytest.mark.parametrize(
+    ("version", "shown"),
+    [
+        ("0.1.0b1", "0.1.0-beta"),
+        ("0.1.0b2", "0.1.0-beta.2"),
+        ("0.2.0a1", "0.2.0-alpha"),
+        ("1.0.0rc1", "1.0.0-rc"),
+        ("0.1.0", "0.1.0"),
+        ("1.2.3.dev4", "1.2.3.dev4"),
+    ],
+)
+def test_the_version_people_read(version: str, shown: str) -> None:
+    assert display_version(version) == shown
+
+
+def test_the_version_is_a_valid_python_version() -> None:
+    from packaging.version import Version
+
+    assert str(Version(__version__)) == __version__  # already in PEP 440's own spelling
+    assert Version(__version__).is_prerelease == (display_version() != __version__)
+
+
+def test_info_plist_carries_the_build_number(config: Config, project: Path) -> None:
+    by_hand = plistlib.loads(bundle.info_plist(config, project=project))
+    piped = plistlib.loads(bundle.info_plist(config, project=project, number="57"))
+    assert by_hand["CFBundleVersion"] == "0"
+    assert piped["CFBundleVersion"] == "57"
+    assert piped["CFBundleShortVersionString"] == by_hand["CFBundleShortVersionString"]
+
+
+def test_the_build_number_comes_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert bundle.build_number({}) == "0"
+    assert bundle.build_number({bundle.BUILD_NUMBER_ENV: " 0042 "}) == "42"
+    monkeypatch.setenv(bundle.BUILD_NUMBER_ENV, "9")
+    assert bundle.build_number() == "9"
+    for bad in ("v9", "1.2", "-3", "٣"):
+        with pytest.raises(macapp.AppBuildError, match=bundle.BUILD_NUMBER_ENV):
+            bundle.build_number({bundle.BUILD_NUMBER_ENV: bad})
 
 
 def test_info_plist_takes_the_name_and_port(config: Config, project: Path) -> None:
@@ -189,3 +236,22 @@ def test_cli_reports_a_missing_compiler(
     monkeypatch.setattr(bundle, "find_swiftc", lambda run=None: None)
     assert cli.main(["app", "build"]) == 1
     assert "Swift compiler (swiftc) was not found" in capsys.readouterr().out
+
+
+def test_cli_build_into_another_folder(
+    config: Config, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--out` builds a test copy elsewhere, leaving `dist/` (and the app running from it) alone."""
+    seen: list[dict[str, Any]] = []
+
+    def fake_build(config: Config, **kwargs: Any) -> Path:
+        seen.append(kwargs)
+        return kwargs.get("dist", Path("/fake/dist")) / "Vision.app"
+
+    monkeypatch.setattr(macapp, "build", fake_build)
+    assert cli.main(["app", "build", "--out", str(tmp_path / "scratch")]) == 0
+    assert seen == [{"dist": tmp_path / "scratch"}]
+    assert f"Built {tmp_path / 'scratch' / 'Vision.app'}" in capsys.readouterr().out
+    assert cli.main(["app", "build"]) == 0
+    assert seen[-1] == {}

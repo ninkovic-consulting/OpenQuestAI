@@ -5,12 +5,16 @@ never give each other orders: a resident that needs help posts a request
 here, which runs as a child job of its own. The board
 
 - checks a hand-off (the agent exists and is not the host, the room exists
-  and is not the Hall, the month's budget is not used up, the queue is not
-  full). A resident may work in another agent's room, where the project the
+  and is not the Hall, the residents can work now, the queue is not full).
+  Whether they can work is asked of `refusal`: in offline mode the local
+  model must be on disk and able to call tools; with the month's budget used
+  up the local model takes the work when it can, else the hand-off is
+  refused. A resident may work in another agent's room, where the project the
   work is about lives; a request between residents runs in the asking job's
   room unless it names another;
 - runs at most `[jobs] max_running` jobs at once and never two for one
-  agent; the rest wait in the order they came. A child job runs at once
+  agent (on the local model they work side by side, but their generations
+  take turns in the engine, the host's first); the rest wait in the order they came. A child job runs at once
   beside its parent (which is blocked waiting for it), so it does not take a
   place of its own, and is refused when the agent it asks for is busy:
   waiting there could deadlock two residents asking each other;
@@ -84,6 +88,11 @@ class Desk:
         self.job.add_step(Step(self.board.clock(), kind, text))
         self.board.changed(self.job)
 
+    def using(self, model: str, *, local: bool) -> None:
+        """Record the model the job runs on, and whether it is the local one."""
+        self.job.model, self.job.local = model, local
+        self.board.changed(self.job)
+
     def charge(self, usd: float) -> bool:
         """Add a model call's cost; True when the job's own cost has passed the cap."""
         self.job.cost_usd += usd
@@ -110,14 +119,14 @@ class Board:
         bus: Bus,
         *,
         plan: Callable[[], dict[str, Any]],
-        exhausted: Callable[[], bool],
+        refusal: Callable[[], Awaitable[str | None]],
         light: Callable[[str, RoomLight], None] | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.config = config
         self.bus = bus
         self._plan = plan
-        self._exhausted = exhausted
+        self._refusal = refusal
         self._light = light
         self.clock = clock
         self.path = store.path_for(config)
@@ -240,7 +249,7 @@ class Board:
         agent_id = self._resident(plan, agent)
         room_id = self._room(plan, agent_id, room)
         text = _brief(brief)
-        self._affordable()
+        await self._affordable()
         waiting = sum(1 for j in self._jobs.values() if j.status == "queued")
         if waiting >= self.config.jobs.max_queued:
             raise JobError(
@@ -273,7 +282,7 @@ class Board:
                 "Do it yourself, or say in your result that it is still needed."
             )
         text = _brief(brief)
-        self._affordable()
+        await self._affordable()
         room_id = self._room(plan, agent_id, room, default=parent.room)
         desk.asks += 1
         child = self._new(agent_id, room_id, text, None, False, parent.agent, parent.id, "")
@@ -348,13 +357,10 @@ class Board:
             )
         return str(found["id"])
 
-    def _affordable(self) -> None:
-        if self._exhausted():
-            raise JobError(
-                "This month's API budget is used up, and the residents work only on Claude (they "
-                "have no local model), so nobody can take work until the month turns or the cap "
-                "is raised in Settings."
-            )
+    async def _affordable(self) -> None:
+        reason = await self._refusal()
+        if reason is not None:
+            raise JobError(reason)
 
     # ------------------------------------------------------------ running
 

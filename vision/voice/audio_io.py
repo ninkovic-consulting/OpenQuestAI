@@ -7,22 +7,38 @@ Playback runs one output stream per sentence with 20 ms blocks; `stop()` makes
 the next block silent and ends the stream, so speech stops within one block
 plus the device's latency, well inside 100 ms. `levels()` computes the output
 level envelope the speaker publishes while a sentence plays.
+
+PortAudio reads the device list once, when it initialises, so a device
+plugged in later (AirPods connected while the assistant runs) cannot be
+opened until it initialises again. `refresh_devices()` does that before a
+microphone or speaker opens, but only while no stream is open: initialising
+again invalidates every open stream. A configured device that is not
+connected falls back to the system default, and `on_missing` hears why.
 """
 
 from __future__ import annotations
 
 import asyncio
 import threading
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any, Literal, Protocol
 
 import numpy as np
 
-from vision.voice.errors import VoiceUnavailable, mic_permission_hint
+from vision.voice.errors import VoiceUnavailable, mic_permission_hint, silent_mic_hint
 from vision.voice.vad import FRAME, SAMPLE_RATE
 
 LEVEL_RATE = 30
 """Level envelope frames per second."""
+SOUND_WAIT_S = 3.0
+"""How long a newly opened microphone may send only zeros. AirPods take about half a second."""
+NO_AUDIO_GRACE_S = 2.0
+"""Beyond `SOUND_WAIT_S`, how long to wait for the first chunk at all."""
+
+Kind = Literal["input", "output"]
+Missing = Callable[[str], None]
+"""Hears why a configured device is not used (it is not connected), in words for a notice."""
+WHAT: dict[Kind, str] = {"input": "microphone", "output": "speakers"}
 
 
 class AudioSource(Protocol):
@@ -74,42 +90,89 @@ def _sd() -> Any:
     return sounddevice
 
 
+_streams = 0
+_streams_lock = threading.Lock()
+
+
+def _count(change: int) -> None:
+    """Count streams from before one is built until it is closed, so no refresh breaks one."""
+    global _streams
+    with _streams_lock:
+        _streams += change
+
+
+def refresh_devices() -> bool:
+    """Make PortAudio see the devices as they are now; False when a stream is open.
+
+    Blocking (it initialises CoreAudio again). sounddevice has no public call
+    for this, so it uses the two it runs itself at import and at exit.
+    """
+    sd = _sd()
+    with _streams_lock:
+        if _streams:
+            return False
+        sd._terminate()
+        sd._initialize()
+    return True
+
+
 def describe_devices() -> str:
     """The audio devices, one per line, as `sounddevice` lists them."""
     return str(_sd().query_devices())
 
 
-def find_device(spec: str, kind: Literal["input", "output"]) -> int | None:
-    """Resolve a configured device: "" is the default, a number an index, else a name fragment."""
+def device_name(index: int | None, kind: Kind) -> str:
+    """The name of a device by index; None is the system default."""
+    return str(_sd().query_devices(index, kind=kind)["name"])
+
+
+def resolve_device(spec: str, kind: Kind) -> tuple[int | None, str | None]:
+    """A configured device as an index, and why it is not the one asked for.
+
+    "" is the system default, a number an index, else a name fragment. A name
+    that matches no connected device gives the system default (None) and a
+    line saying so.
+    """
     spec = spec.strip()
     if not spec:
-        return None
+        return None, None
     if spec.isdigit():
-        return int(spec)
+        return int(spec), None
     channels = f"max_{kind}_channels"
     for index, dev in enumerate(_sd().query_devices()):
         if dev[channels] > 0 and spec.lower() in dev["name"].lower():
-            return index
-    raise VoiceUnavailable(
-        f"No {kind} device matches {spec!r}. Run `python -m vision.voice.check` "
-        f"to list devices, then fix `{kind}_device` under [voice] in config.toml."
+            return index, None
+    fallback = device_name(None, kind)
+    return None, (
+        f"The {WHAT[kind]} “{spec}” {'is' if kind == 'input' else 'are'} not connected, "
+        f"so the system default ({fallback}) is used."
     )
 
 
 class Microphone:
     """Captures 16 kHz mono in 32 ms chunks. Audio callbacks hand over to the loop."""
 
-    def __init__(self, device: str = "", probe_s: float = 0.5) -> None:
+    def __init__(
+        self, device: str = "", wait_s: float = SOUND_WAIT_S, on_missing: Missing | None = None
+    ) -> None:
         self.device = device
-        self.probe_s = probe_s
+        self.wait_s = wait_s
+        self.name = ""
+        """The device opened, by name; set by `open()`."""
+        self._on_missing = on_missing
         self._queue: asyncio.Queue[np.ndarray | None] = asyncio.Queue()
         self._head: list[np.ndarray] = []
         self._stream: Any = None
+        self._counted = False
 
     async def open(self) -> None:
         sd = _sd()
         loop = asyncio.get_running_loop()
-        device = find_device(self.device, "input")
+        await asyncio.to_thread(refresh_devices)
+        device, missing = resolve_device(self.device, "input")
+        if missing is not None and self._on_missing is not None:
+            self._on_missing(missing)
+        self.name = device_name(device, "input")
 
         def callback(indata: np.ndarray, frames: int, t: Any, status: Any) -> None:
             chunk = indata[:, 0].copy()
@@ -118,6 +181,8 @@ class Microphone:
             except RuntimeError:  # the loop closed under us
                 pass
 
+        _count(+1)
+        self._counted = True
         try:
             self._stream = sd.InputStream(
                 samplerate=SAMPLE_RATE,
@@ -129,24 +194,38 @@ class Microphone:
             )
             await asyncio.to_thread(self._stream.start)
         except sd.PortAudioError as exc:
-            raise VoiceUnavailable(f"The microphone could not open ({exc}). {mic_permission_hint()}") from exc
-        await self._check_permission()
+            await self.close()
+            raise VoiceUnavailable(
+                f"The microphone “{self.name}” could not open ({exc}). {mic_permission_hint()}"
+            ) from exc
+        await self._wait_for_sound()
 
-    async def _check_permission(self) -> None:
-        """macOS hands a denied app pure digital silence instead of an error."""
-        wanted = max(1, round(self.probe_s * SAMPLE_RATE / FRAME))
+    async def _wait_for_sound(self) -> None:
+        """Wait for the first sample that is not zero, for up to `wait_s` of audio.
+
+        A microphone that is muted, asleep or covered sends zeros, and so does
+        any microphone to an app macOS has not allowed. Some devices take a
+        moment to wake (AirPods about half a second), so the wait ends at the
+        first sound rather than after a fixed time. The audio read here is kept
+        for `chunks()`.
+        """
+        wanted = max(1, round(self.wait_s * SAMPLE_RATE))
+        got = 0
         try:
-            async with asyncio.timeout(self.probe_s + 2.0):
-                while len(self._head) < wanted:
+            async with asyncio.timeout(self.wait_s + NO_AUDIO_GRACE_S):
+                while got < wanted:
                     chunk = await self._queue.get()
-                    if chunk is not None:
-                        self._head.append(chunk)
+                    if chunk is None:
+                        break
+                    self._head.append(chunk)
+                    got += len(chunk)
+                    if np.any(chunk):
+                        return
         except TimeoutError:
-            await self.close()
-            raise VoiceUnavailable(f"The microphone sends no audio. {mic_permission_hint()}") from None
-        if not any(np.any(chunk) for chunk in self._head):
-            await self.close()
-            raise VoiceUnavailable(f"The microphone sends only silence. {mic_permission_hint()}")
+            pass
+        await self.close()
+        heard = "sends only silence" if got else "sends no audio"
+        raise VoiceUnavailable(f"The microphone “{self.name}” {heard}. {silent_mic_hint()}")
 
     async def chunks(self) -> AsyncIterator[np.ndarray]:
         head, self._head = self._head, []
@@ -159,24 +238,41 @@ class Microphone:
         stream, self._stream = self._stream, None
         if stream is not None:
             await asyncio.to_thread(stream.close)
+        if self._counted:
+            self._counted = False
+            _count(-1)
         self._queue.put_nowait(None)
 
 
 class SpeakerOutput:
-    """Plays audio on the configured output device, stoppable mid-sentence."""
+    """Plays audio on the configured output device, stoppable mid-sentence.
+
+    The device is looked up again for every sentence, so speech follows the
+    device list after a refresh, and falls back to the system default (saying
+    so once) while the chosen speakers are not connected.
+    """
 
     BLOCK_S = 0.02
 
-    def __init__(self, device: str = "") -> None:
+    def __init__(self, device: str = "", on_missing: Missing | None = None) -> None:
         self.device = device
-        self._index: int | None = None
+        self._on_missing = on_missing
+        self._said: str | None = None
         self._stop = threading.Event()
         self._played = 0
         self._rate = 1
 
     def open(self) -> None:
-        """Resolve the device now so a wrong name fails at start-up."""
-        self._index = find_device(self.device, "output")
+        """See the devices as they are now. Blocking."""
+        refresh_devices()
+        self._resolve()
+
+    def _resolve(self) -> int | None:
+        index, missing = resolve_device(self.device, "output")
+        if missing is not None and missing != self._said and self._on_missing is not None:
+            self._on_missing(missing)
+        self._said = missing
+        return index
 
     def stop(self) -> None:
         self._stop.set()
@@ -209,19 +305,23 @@ class SpeakerOutput:
             except RuntimeError:
                 pass
 
-        stream = sd.OutputStream(
-            samplerate=sample_rate,
-            channels=1,
-            dtype="float32",
-            blocksize=max(1, int(sample_rate * self.BLOCK_S)),
-            latency="low",
-            device=self._index,
-            callback=callback,
-            finished_callback=finished,
-        )
+        _count(+1)
         try:
-            await asyncio.to_thread(stream.start)
-            await done.wait()
+            stream = sd.OutputStream(
+                samplerate=sample_rate,
+                channels=1,
+                dtype="float32",
+                blocksize=max(1, int(sample_rate * self.BLOCK_S)),
+                latency="low",
+                device=self._resolve(),
+                callback=callback,
+                finished_callback=finished,
+            )
+            try:
+                await asyncio.to_thread(stream.start)
+                await done.wait()
+            finally:
+                await asyncio.to_thread(stream.close)
         finally:
-            await asyncio.to_thread(stream.close)
+            _count(-1)
         return not stop.is_set()

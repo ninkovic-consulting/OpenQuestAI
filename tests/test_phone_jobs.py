@@ -1,4 +1,4 @@
-"""The phone and the residents: job reports behind their switch, and `run_program`, which
+"""The phone and the residents: job reports by their choice, and `run_program`, which
 the phone does not approve until the owner adds it."""
 
 from __future__ import annotations
@@ -28,15 +28,15 @@ def program_request() -> GateRequest:
     )
 
 
-async def test_job_reports_follow_their_switch() -> None:
+async def test_a_job_from_the_phone_reports_there_unless_never() -> None:
     r = rig()
-    await r.channel.notifier.job_result("Tock ran the tests: test_b fails.")
+    await r.channel.notifier.job_result("j1", "Tock ran the tests: test_b fails.", from_phone=True, started_at=0.0)
     assert r.transport.sent == [(CHAT, "Tock ran the tests: test_b fails.")]
-    r.state.notify_jobs = False
-    await r.channel.notifier.job_result("Again.")
+    r.state.notify_jobs = "never"
+    await r.channel.notifier.job_result("j2", "Again.", from_phone=True, started_at=0.0)
     assert len(r.transport.sent) == 1
     unpaired = rig(paired=False)
-    await unpaired.channel.notifier.job_result("Nobody to tell.")
+    await unpaired.channel.notifier.job_result("j3", "Nobody to tell.", from_phone=True, started_at=0.0)
     assert unpaired.transport.sent == []
 
 
@@ -72,10 +72,10 @@ async def test_settings_list_run_program_off_and_shell_impossible(daemon: Daemon
         tools = [t["id"] for t in view["tools"]]
         assert "run_program" in tools and "write_file" in tools
         assert "run_program" not in view["phone_tools"] and "write_file" in view["phone_tools"]
-        assert view["mac_only"] == ["shell"] and view["notify"]["jobs"] is True
+        assert view["mac_only"] == ["shell"] and view["notify"]["jobs"] == "always"
         allowed = (await http.patch("/api/phone", json={"phone_tools": ["run_program", "edit_file"]})).json()
         assert set(allowed["phone_tools"]) == {"edit_file", "run_program"}
-        quiet = (await http.patch("/api/phone", json={"notify": {"jobs": False}})).json()
-        assert quiet["notify"]["jobs"] is False
+        quiet = (await http.patch("/api/phone", json={"notify": {"jobs": "never"}})).json()
+        assert quiet["notify"]["jobs"] == "never"
         shell = await http.patch("/api/phone", json={"phone_tools": ["shell"]})
     assert shell.status_code == 400

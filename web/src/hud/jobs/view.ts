@@ -27,7 +27,8 @@ export interface JobsDeps {
 }
 
 export interface JobsView {
-  open(): void;
+  /** Open the panel, on this job when it is known. */
+  open(jobId?: string): void;
   /** One step back: the form, then the job on a narrow scene, then the panel. False when it was not open. */
   back(): boolean;
   close(): boolean;
@@ -221,12 +222,14 @@ export function mountJobs(parent: HTMLElement, deps: JobsDeps): JobsView {
   });
 
   return {
-    open(): void {
+    open(jobId?: string): void {
       root.hidden = false;
       deps.onShown(true);
       form = false;
-      listing = true;
       said = "";
+      const wanted = jobId !== undefined && s().jobs[jobId] !== undefined;
+      listing = !wanted;
+      if (wanted) selected = jobId;
       const rows = jobRows(s().jobs);
       if (!selected || !s().jobs[selected]) selected = rows[0]?.job.id ?? null;
       render();

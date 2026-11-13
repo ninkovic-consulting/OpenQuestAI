@@ -1,7 +1,8 @@
-// Push to talk from two places, Space and the hold-to-talk control. Whichever
-// pressed first owns the hold, so the other cannot end it early.
+// Push to talk from several places: Space and the hold-to-talk control, and in
+// the widget the Mac app's global shortcut. Whichever pressed first owns the
+// hold, so another cannot end it early.
 
-export type TalkHand = "key" | "pointer";
+export type TalkHand = "key" | "pointer" | "shortcut";
 
 export class Talk {
   private hand: TalkHand | null = null;

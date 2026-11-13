@@ -6,6 +6,7 @@ import { hostRoom } from "../net/plan";
 import type { Store, ViewState } from "../net/store";
 import type { RoomAnchor } from "../scene/stage";
 import { el, setText } from "./dom";
+import type { RoomSelection } from "./rooms/selection";
 
 /** Clearance from the scene's edges; the top keeps clear of the key hints. */
 const EDGE = 8;
@@ -47,7 +48,10 @@ interface Chip {
   rank: number;
 }
 
-export function mountLabels(parent: HTMLElement, store: Store): (anchors: RoomAnchor[]) => void {
+/** The room the owner is in keeps its label whatever else is near. */
+const SELECTED_RANK = -1e9;
+
+export function mountLabels(parent: HTMLElement, store: Store, selection: RoomSelection): (anchors: RoomAnchor[]) => void {
   const layer = el("div", "labels");
   layer.setAttribute("aria-hidden", "true");
   parent.append(layer);
@@ -82,7 +86,9 @@ export function mountLabels(parent: HTMLElement, store: Store): (anchors: RoomAn
       chip.node.classList.toggle("is-active", light === "active" && !tower);
       chip.node.classList.toggle("is-tower", tower);
       chip.node.classList.toggle("is-dark", light === "dark");
-      chip.rank = rank(light === "active", room.id === hostId, room.size[0] * room.size[1]);
+      const selected = room.id === selection.get();
+      chip.node.classList.toggle("is-selected", selected);
+      chip.rank = selected ? SELECTED_RANK : rank(light === "active", room.id === hostId, room.size[0] * room.size[1]);
     }
     for (const chip of chips.values()) {
       chip.w = chip.node.offsetWidth;
@@ -90,6 +96,7 @@ export function mountLabels(parent: HTMLElement, store: Store): (anchors: RoomAn
     }
   };
   style(store.get());
+  selection.subscribe(() => style(store.get()));
   void document.fonts.ready.then(() => style(store.get()));
   store.subscribe((s, prev) => {
     if (s.plan !== prev.plan || s.roomLights !== prev.roomLights || s.agents !== prev.agents || s.jobs !== prev.jobs) style(s);

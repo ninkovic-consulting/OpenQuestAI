@@ -1,15 +1,21 @@
 // Mock mode's phone channel: checked the way the daemon checks it. A code
 // that is shown pairs by itself a few seconds later, as if the owner sent it.
+// It also keeps the owner's presence, which mock mode's away scene changes.
 
 import { DEFAULT_TIERS } from "./mock-settings-data";
 import type { PhoneApi } from "./phone-api";
-import type { PairingCode, PhonePatch, PhoneView, TokenAnswer, VerifyAnswer } from "./phone-types";
+import { NOTIFY_KINDS } from "./phone-guards";
+import type { NotifyChoice, PairingCode, PhonePatch, PhoneView, TokenAnswer, VerifyAnswer } from "./phone-types";
 import { ok, refused, type Result } from "./settings-api";
+import type { Presence } from "./types";
 
 const TOKEN_SHAPE = /^[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{20,}$/;
 const CODE_TTL_S = 600;
 const MAC_ONLY = ["shell"];
 const BOT = "Vision Bot";
+const CHOICES: readonly NotifyChoice[] = ["always", "away", "never"];
+const MIN_AWAY_S = 60;
+const MAX_AWAY_S = 7200;
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 const now = (): number => Date.now() / 1000;
@@ -29,7 +35,8 @@ function fresh(): PhoneView {
     detail: null,
     paired: null,
     pairing: null,
-    notify: { automations: true, warnings: true, approvals: true, jobs: true },
+    notify: { automations: "always", warnings: "always", approvals: "always", jobs: "always", assistant: "always" },
+    presence: { away: false, known: true, reason: null, since: now(), away_after_s: 300 },
     speak_on_mac: false,
     voice_replies: false,
     tools,
@@ -60,7 +67,16 @@ export class MockPhone implements PhoneApi {
       if (strange) return no(`There is no tool called '${strange}'.`);
       s.phone_tools = s.tools.map((t) => t.id).filter((id) => patch.phone_tools?.includes(id));
     }
-    if (patch.notify) s.notify = { ...s.notify, ...patch.notify };
+    if (patch.notify) {
+      const strange = Object.entries(patch.notify).find(([k, v]) => !NOTIFY_KINDS.includes(k as never) || !CHOICES.includes(v));
+      if (strange) return no(`Send ${strange[0]} as one of ${CHOICES.join(", ")}.`);
+      s.notify = { ...s.notify, ...patch.notify };
+    }
+    if (patch.away_after_s !== undefined) {
+      const t = patch.away_after_s;
+      if (!Number.isFinite(t) || t < MIN_AWAY_S || t > MAX_AWAY_S) return no(`The away time is a number of seconds from ${MIN_AWAY_S} to ${MAX_AWAY_S}.`);
+      s.presence = { ...s.presence, away_after_s: t };
+    }
     if (patch.speak_on_mac !== undefined) s.speak_on_mac = patch.speak_on_mac;
     if (patch.voice_replies !== undefined) s.voice_replies = patch.voice_replies;
     if (patch.enabled !== undefined) {
@@ -105,10 +121,23 @@ export class MockPhone implements PhoneApi {
     return this.view();
   }
 
+  /** The owner as mock mode has them now. */
+  presence(): Presence {
+    return { ...this.state.presence };
+  }
+
+  /** The owner locks the Mac, or comes back to it; answers the `presence` event's data. */
+  setAway(away: boolean): Presence {
+    this.state.presence = { ...this.state.presence, away, reason: away ? "locked" : null, since: now() };
+    return this.presence();
+  }
+
   /** Start over: unpaired, defaults; the token goes only when asked. */
   reset(removeToken: boolean): void {
     const token = this.state.token.stored && !removeToken;
+    const away = this.state.presence.away;
     this.state = fresh();
+    this.state.presence = { ...this.state.presence, away, reason: away ? "locked" : null };
     if (token) {
       this.state.token = { stored: true };
       this.state.bot = { name: BOT };

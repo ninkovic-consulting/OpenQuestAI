@@ -1,15 +1,18 @@
 # Library
 
-Put things here that the assistant should always know about you and your world.
-Write plain Markdown, one topic per file, for example:
+Documents for the assistant and the other agents to know about: your price
+list, your terms, a handbook, notes about your projects. Add them from the
+window (Settings, Library: text, Markdown, PDF and Word files, or pasted
+text), ask the assistant to save something you dictate, or write Markdown
+files here by hand, one topic per file.
 
-- `about-me.md`: who you are, how you like to be addressed, your routines.
-- `projects.md`: what you are working on and where things live.
-- `preferences.md`: how you like answers (short or detailed, tone, language).
+- `<name>.md` is each document's text. A file added from the window keeps its
+  original in `originals/`, and `index.json` remembers its title and kind.
+- Short documents are read into every conversation; longer ones are listed
+  with a one-line gist, and their text is read only when a conversation needs
+  it. The assistant treats what they say as information, never as orders.
+- `.search.db` is the index for searching them; it is rebuilt from the files.
 
-Everything in this folder except this README is read into the assistant's
-memory at the start of every conversation, so keep it short and current. Edits
-are picked up the next time the assistant starts a turn.
-
-What the assistant learns on its own goes in `../notes/`, one file per day. You
-can edit or delete those too.
+What to call you and your business live in `../owner.md`. What the assistant
+learns on its own goes in `../notes/`, one file per day. You can edit or
+delete all of it.

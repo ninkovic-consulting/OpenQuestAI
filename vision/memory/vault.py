@@ -1,8 +1,12 @@
 """The Markdown vault under `$VISION_HOME/house/`.
 
+    owner.md   the owner's profile: what to call them, their business, what to
+               keep in mind (`profile.py`)
     notes/     what the assistant has learned: one file per day, each note under
                a `## HH:MM:SS` heading
-    library/   shared knowledge the user writes by hand
+    library/   the owner's documents: Markdown written by hand or saved by the
+               assistant, and the text of files added in the window, with the
+               files themselves in `library/originals/` (`documents.py`)
     agents/    personas (`host.md` is the default one)
 
 All of it is plain text a person can edit or delete; readers always go back to
@@ -20,6 +24,7 @@ from pathlib import Path
 
 PERSONA_FILE = Path("agents/host.md")
 LIBRARY_README = "README.md"
+LIBRARY_ORIGINALS = "originals"
 _HEADING = re.compile(r"^## (\d{2}:\d{2}(?::\d{2})?)[ \t]*$", re.MULTILINE)
 
 FileStamp = tuple[str, int, int]
@@ -99,9 +104,19 @@ class Vault:
     # ------------------------------------------------------------ library and persona
 
     def library_paths(self) -> list[Path]:
+        """Every document's text file: the library's Markdown files, but for its README,
+        the kept originals and anything hidden."""
         if not self.library_dir.is_dir():
             return []
-        return sorted(p for p in self.library_dir.rglob("*.md") if p.name != LIBRARY_README)
+        found = []
+        for path in self.library_dir.rglob("*.md"):
+            rel = path.relative_to(self.library_dir)
+            if rel.as_posix() == LIBRARY_README or rel.parts[0] == LIBRARY_ORIGINALS:
+                continue
+            if any(part.startswith(".") for part in rel.parts):
+                continue
+            found.append(path)
+        return sorted(found)
 
     def persona_path(self) -> Path | None:
         """The configured persona file, else `agents/host.md`, else None (use the bundled one)."""

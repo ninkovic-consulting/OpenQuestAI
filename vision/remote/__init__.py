@@ -9,8 +9,11 @@ Layers, top down:
 - `service.Phone`: lifetime, settings, the token, pairing codes; the routes.
 - `channel.PhoneChannel`: who is served (pairing, the owner), commands,
   voice notes, and turns queued until the assistant is idle;
-  `notify.Notifier` and `approvals.Approvals`: what is sent unasked, and
-  gate requests answered with buttons.
+  `notify.Notifier` and `approvals.Approvals`: what is sent unasked, by the
+  owner's choices and whether they are at the Mac (`rules`), and gate
+  requests answered with buttons; `outbox.Outbox`: each message once, retried
+  a few times when it does not arrive.
+- `tools`: `send_to_phone`, the host's way to message the phone on purpose.
 - `transport.Transport`: one chat service. `discord.DiscordTransport` is the
   only one: the Gateway over `websockets`, the HTTP API over `httpx`, direct
   messages only. Nothing on the Mac listens for the internet.
@@ -31,6 +34,7 @@ from vision.remote.routes import build_router
 from vision.remote.service import Phone
 from vision.remote.store import FILE_NAME
 from vision.remote.token import KeychainToken
+from vision.remote.tools import build_tools
 
 if TYPE_CHECKING:
     from vision.app import Daemon
@@ -48,4 +52,4 @@ def make_phone(daemon: Daemon) -> Phone:
     )
 
 
-__all__ = ["FILE_NAME", "Phone", "build_router", "make_phone"]
+__all__ = ["FILE_NAME", "Phone", "build_router", "build_tools", "make_phone"]

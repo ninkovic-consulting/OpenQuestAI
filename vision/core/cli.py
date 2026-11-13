@@ -9,6 +9,7 @@
     vision setup                           set up step by step, asking before each change
     vision ui [--browser]                  (developer) open the window without the app
     vision app build [--standalone]        build the Mac app (with everything inside it)
+        [--out DIR]                        into DIR instead of dist/
     vision app package                     zip the standalone app for another Mac
     vision app install|open                copy it to ~/Applications, open it
     vision install [--dry-run]             install the LaunchAgent
@@ -156,7 +157,8 @@ def cmd_app(config: Config, args: argparse.Namespace) -> int:
     try:
         if args.action == "build":
             build = macapp.build_standalone if args.standalone else macapp.build
-            print(f"Built {build(config)}")
+            built = build(config, dist=args.out) if args.out else build(config)
+            print(f"Built {built}")
         elif args.action == "package":
             print(f"Packaged {macapp.package(config)}")
         elif args.action == "install":
@@ -227,6 +229,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--standalone",
         action="store_true",
         help="build: put Python, every package, the house and the window inside the app",
+    )
+    app.add_argument(
+        "--out", type=Path, help="build: write the app into this folder instead of dist/"
     )
     app.set_defaults(func=cmd_app)
 

@@ -17,6 +17,7 @@ export function welcomeStep(env: WizardEnv): StepView {
     "Optional downloads: a local model for offline answers, and speech for talking out loud.",
     "The microphone, with a three-second test.",
     "Its name.",
+    "What it should call you, and what business you run.",
     "Project folders for one of the rooms, if you like.",
   ]) {
     list.append(el("li", "", line));

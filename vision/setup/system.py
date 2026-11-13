@@ -194,7 +194,7 @@ class MacSystem:
     def download_local_model(self, config: Config) -> None:
         from vision.brains.mlx_local import setup_model
 
-        setup_model(config)
+        setup_model(config.brain.local_model)
 
     def mic_check(self) -> None:
         from vision.voice.check import check

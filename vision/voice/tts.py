@@ -3,8 +3,9 @@
 `KokoroSynth` runs `mlx-community/Kokoro-82M-bf16` through `mlx-audio`, with
 misaki for English pronunciation. misaki wants to pip-install its spaCy model
 on first use, which does not work in a uv environment, so the model is loaded
-from spaCy's own Hugging Face repository instead. espeak-ng (bundled by
-`espeakng-loader`) spells out words misaki does not know.
+from spaCy's own Hugging Face repository instead. Both load from the disk
+only (`on_disk`): a missing one fails, it is never fetched. espeak-ng (bundled
+by `espeakng-loader`) spells out words misaki does not know.
 
 `TtsSpeaker` is the `Speaker` the session uses: it synthesises a sentence on
 the model worker, plays it, and publishes `voice.level` about 30 times a
@@ -33,7 +34,8 @@ from vision.core.bus import Bus
 from vision.core.events import VoiceLevel
 from vision.voice.audio_io import LEVEL_RATE, AudioSink, levels
 from vision.voice.errors import VoiceUnavailable
-from vision.voice.settings import SPACY_REPO, VoiceSettings
+from vision.voice.on_disk import local_path
+from vision.voice.settings import SPACY_REPO, TAGGER_PART, TTS_PART, VoiceSettings
 from vision.voice.wake import words
 
 log = logging.getLogger(__name__)
@@ -66,13 +68,13 @@ class KokoroSynth:
         from mlx_audio.tts.models.kokoro.pipeline import KokoroPipeline
         from mlx_audio.tts.utils import load
 
-        model = load(self.repo)
+        folder = local_path(self.repo, TTS_PART)
+        model = load(str(folder))
         # KokoroPipeline.__init__ would build misaki's G2P, which pip-installs spaCy's model.
         pipeline = KokoroPipeline.__new__(KokoroPipeline)
         pipeline.lang_code = "a"
         pipeline.repo_id = self.repo
-        model_path = model.config.model_path
-        pipeline.model_path = Path(model_path) if model_path is not None else None
+        pipeline.model_path = folder  # the voices load from the same snapshot, never the Hub
         pipeline.model = model
         pipeline.voices = {}
         pipeline.g2p = _english_g2p()
@@ -93,10 +95,9 @@ def _english_g2p() -> Any:
     """misaki's American English G2P, with spaCy's tagger from the Hugging Face Hub."""
     import espeakng_loader
     import spacy
-    from huggingface_hub import snapshot_download
     from misaki import en, espeak
 
-    nlp_dir = snapshot_download(SPACY_REPO, ignore_patterns=["*.whl"])
+    nlp_dir = local_path(SPACY_REPO, TAGGER_PART)
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message=r".*\[W095\]")  # 3.7 model on spaCy 3.8
         nlp = spacy.load(nlp_dir, enable=["tok2vec", "tagger"])
@@ -164,7 +165,8 @@ def load_synth(settings: VoiceSettings) -> tuple[Synth, str | None]:
     reason = (str(kokoro_error).strip().splitlines() or [type(kokoro_error).__name__])[0]
     return say, (
         f"Speech is using the macOS voice because Kokoro could not load ({reason[:160]}). "
-        "Check the network and free disk space, then restart to try again."
+        "Download the speech models in Settings, Voice, or check the free disk space, then "
+        "turn voice off and on to try again."
     )
 
 

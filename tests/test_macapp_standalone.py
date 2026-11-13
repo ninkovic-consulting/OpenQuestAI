@@ -6,6 +6,7 @@ and leaves behind what the real step would.
 
 from __future__ import annotations
 
+import platform
 import plistlib
 import subprocess
 from pathlib import Path
@@ -13,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from vision import macapp
+from vision import display_version, macapp
 from vision.core import cli, resources
 from vision.core.config import Config
 from vision.macapp import bundle, packaging, standalone
@@ -91,6 +92,7 @@ def project(tmp_path: Path) -> Path:
     (root / "house" / "default.toml").write_text("")
     (root / "web" / "dist").mkdir(parents=True)
     (root / "web" / "dist" / "index.html").write_text("<html>")
+    (root / "web" / "dist" / "widget.html").write_text("<html>")
     return root
 
 
@@ -103,6 +105,7 @@ def test_stage_builds_the_payload(tmp_path: Path, runtime: Path, project: Path) 
 
     assert (out / "house" / "default.toml").is_file()
     assert (out / "web" / "dist" / "index.html").is_file()
+    assert (out / "web" / "dist" / "widget.html").is_file()
     assert sorted(p.name for p in (python / "bin").iterdir()) == ["python3", PY]
     for gone in ["include", "lib/tcl8.6", f"lib/{PY}/tkinter", f"lib/{PY}/__pycache__",
                  f"lib/{PY}/site-packages/pip"]:
@@ -127,8 +130,10 @@ def test_stage_builds_the_payload(tmp_path: Path, runtime: Path, project: Path) 
     assert sorted(Path(p).name for p in run.signed) == ["core.so", f"lib{PY}.dylib", PY]
 
 
-def test_stage_needs_the_window(tmp_path: Path, runtime: Path, project: Path) -> None:
-    (project / "web" / "dist" / "index.html").unlink()
+@pytest.mark.parametrize("page", ["index.html", "widget.html"])
+def test_stage_needs_the_window(tmp_path: Path, runtime: Path, project: Path, page: str) -> None:
+    """The house and the floating widget are both built pages; either missing stops the build."""
+    (project / "web" / "dist" / page).unlink()
     with pytest.raises(macapp.AppBuildError, match="npm run build"):
         standalone.stage(tmp_path / "s", runtime=runtime, project=project,
                          uv=Path("/fake/uv"), run=FakeRun())
@@ -184,7 +189,7 @@ def test_package_needs_the_standalone_app(config: Config, tmp_path: Path) -> Non
     (app / "Info.plist").write_bytes(plistlib.dumps({"VisionStandalone": True}))
     run = FakeRun()
     out = packaging.package(config, dist=tmp_path, run=run)
-    assert out.name.startswith("Vision-") and out.name.endswith(".zip")
+    assert out.name == f"Vision-{display_version()}-macos-{platform.machine()}.zip"
     assert run.calls[-1][:5] == ["/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", "--keepParent"]
 
 

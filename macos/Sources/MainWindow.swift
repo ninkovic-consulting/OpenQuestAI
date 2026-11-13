@@ -21,6 +21,8 @@ final class MainWindow: NSObject, NSWindowDelegate {
     private var pageToken: String?
     private(set) var isFullScreen: Bool
     var onRestart: () -> Void = {}
+    /// Handed to the page's bridge, for the widget block in Settings.
+    weak var shell: Background?
 
     var pageView: PageView? { page }
 
@@ -84,7 +86,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
             if window.contentView !== page.webView { window.contentView = page.webView }
             return
         }
-        let page = PageView(settings: settings, supervisor: supervisor, token: token)
+        let page = PageView(settings: settings, supervisor: supervisor, token: token, shell: shell)
         page.onLoadFailed = { [weak self] reason in
             self?.showStatus("The page did not load: \(reason)", canRestart: true)
         }

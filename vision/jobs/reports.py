@@ -6,7 +6,8 @@ assistant is idle and nobody is speaking (the same wait the automations and
 the phone use), then runs a session turn with source `job` whose text says
 which agent finished which job and how. The host answers in its own words;
 the reply is spoken only when `[jobs] speak_results` is on and voice runs,
-and goes to the phone too when the job was handed off from a phone turn.
+and is handed to the phone with the job, which decides by the owner's choice
+for job results and whether the job came from the phone (`vision.remote`).
 """
 
 from __future__ import annotations
@@ -25,6 +26,8 @@ IDLE_POLL_S = 0.25
 
 RunTurn = Callable[[str, bool], Awaitable[TurnRecord]]
 """Runs a job turn (text, speak) and returns its record; raises `RuntimeError` when busy."""
+ToPhone = Callable[[Job, TurnRecord], Awaitable[None]]
+"""Offers the report's turn to the phone, which sends it or not."""
 
 
 class Reporter:
@@ -34,7 +37,7 @@ class Reporter:
         busy: Callable[[], bool],
         run_turn: RunTurn,
         speak: Callable[[], bool],
-        to_phone: Callable[[str], Awaitable[None]],
+        to_phone: ToPhone,
         name: Name,
         poll_s: float = IDLE_POLL_S,
     ) -> None:
@@ -70,5 +73,5 @@ class Reporter:
                 await asyncio.sleep(self._poll_s)
                 continue
             break
-        if job.via == "phone" and record.reply.strip():
-            await self._to_phone(record.reply)
+        if record.reply.strip():
+            await self._to_phone(job, record)

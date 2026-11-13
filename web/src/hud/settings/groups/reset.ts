@@ -45,9 +45,9 @@ export const resetGroup: Group = {
     };
 
     root.append(
-      level("settings", "Reset settings", "Every setting back to its default. Keeps the house, memory notes, conversation log, automations and API key.", "Reset settings"),
-      level("house", "Reset the house", "Rooms and agents back to the default house. Keeps settings, memory, the log and the key.", "Reset the house"),
-      level("everything", "Start over", "Settings, house, memory notes, conversation log, automations, this month's spend and the phone's pairing start fresh, then setup runs again. The key and the bot token stay unless you choose otherwise.", "Start over", {
+      level("settings", "Reset settings", "Every setting back to its default. Keeps the house, memory notes, what it knows about you, the library, conversation log, automations and API key.", "Reset settings"),
+      level("house", "Reset the house", "Rooms and agents back to the default house. Keeps settings, memory, what it knows about you, the library, the log and the key.", "Reset the house"),
+      level("everything", "Start over", "Settings, house, memory notes, what it knows about you, the library's documents, conversation log, automations, this month's spend and the phone's pairing start fresh, then setup runs again. The key and the bot token stay unless you choose otherwise.", "Start over", {
         typed: name,
         extra: keyChoice,
         question: "Start over with everything fresh? A backup is made first.",

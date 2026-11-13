@@ -1,8 +1,8 @@
 """Opt-in tests with the real models: `VISION_VOICE_MODELS=1 uv run pytest -s tests/test_voice_models.py`.
 
-They download Silero VAD, Whisper and Kokoro from Hugging Face on the first
-run (about 1.8 GB) and print load, recognition and synthesis times. No audio
-hardware is used.
+They load Silero VAD, Whisper and Kokoro from the disk only, so download the
+speech models first (Settings, Voice, or `vision setup`), and print load,
+recognition and synthesis times. No audio hardware is used.
 """
 
 from __future__ import annotations

@@ -38,6 +38,7 @@ from vision.remote.ears import Ears
 from vision.remote.host import TurnsBusy
 from vision.remote.link import Link
 from vision.remote.notify import Notifier
+from vision.remote.outbox import Outbox
 from vision.remote.pairing import looks_like_code
 from vision.remote.text import clip
 from vision.remote.transport import Attachment, Handlers, Incoming, Unreachable
@@ -82,7 +83,8 @@ class PhoneChannel:
         self._job: asyncio.Task[None] | None = None
         self._refused_at: dict[str, float] = {}
         self.approvals = Approvals(link)
-        self.notifier = Notifier(link, self.approvals)
+        self.outbox = Outbox(link)
+        self.notifier = Notifier(link, self.approvals, self.outbox)
 
     def handlers(self, online: Callable[[bool], None]) -> Handlers:
         return Handlers(message=self.on_message, press=self.approvals.press, online=online)

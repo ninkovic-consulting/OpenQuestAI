@@ -1,5 +1,6 @@
 // The wizard's last steps: the assistant's name, a room with project folders, and the summary.
 
+import { OWNER_LIMITS, OWNER_PARTS, type Owner, type OwnerPart } from "../../../net/owner";
 import type { Room } from "../../../net/types";
 import { toolsNote } from "../../build-form";
 import { el } from "../../dom";
@@ -8,7 +9,7 @@ import { mountModelPicker, OWN_MODEL } from "../../pickers/model-picker";
 import { mountToolToggles } from "../../pickers/tool-toggles";
 import { fieldRow } from "../fields";
 import { isHostRoom, roomEditFrom, roomPatch } from "../room-edit";
-import { summary } from "./flow";
+import { aboutOutcome, summary } from "./flow";
 import type { StepView, WizardEnv } from "./step";
 
 export function nameStep(env: WizardEnv): StepView {
@@ -32,6 +33,61 @@ export function nameStep(env: WizardEnv): StepView {
       if (r.ok) return { status: "done", text: `Named ${r.value.settings.assistant.name}.` };
       error.textContent = r.errors.find((e) => e.field === "assistant.name")?.message ?? r.message;
       error.hidden = false;
+      return null;
+    },
+  };
+}
+
+const QUESTIONS: Record<OwnerPart, { label: string; placeholder: string }> = {
+  name: { label: "What should I call you?", placeholder: "Your name, or what you like to be called" },
+  business: { label: "What business are we running?", placeholder: "Its name and what it does, in your own words" },
+  notes: { label: "Anything else I should know? (optional)", placeholder: "How you like to work, who is who, what matters this year" },
+};
+
+export function aboutStep(env: WizardEnv): StepView {
+  const before = env.settings.owner;
+  const body = el("div", "wizard-about");
+  const controls = new Map<OwnerPart, { input: HTMLInputElement | HTMLTextAreaElement; error: HTMLElement }>();
+  for (const part of OWNER_PARTS) {
+    const input = part === "name" ? el("input") : el("textarea");
+    input.maxLength = OWNER_LIMITS[part];
+    input.placeholder = QUESTIONS[part].placeholder;
+    input.value = before[part];
+    if (input instanceof HTMLTextAreaElement) input.rows = part === "business" ? 3 : 2;
+    else input.autocomplete = "off";
+    const row = fieldRow(QUESTIONS[part].label, input);
+    const error = row.querySelector<HTMLElement>(".field-error") ?? el("p", "field-error");
+    controls.set(part, { input, error });
+    body.append(row);
+  }
+  body.append(el("p", "field-note", "I keep this in mind in every conversation, and so do the other agents at work. Change it any time in Settings, Assistant, or just tell me."));
+  return {
+    heading: "About you",
+    lead: "A few words, so I know who I work for. Everything here is optional.",
+    body,
+    finish: async () => {
+      const now: Owner = { name: "", business: "", notes: "" };
+      const changes: Partial<Owner> = {};
+      for (const part of OWNER_PARTS) {
+        const value = (controls.get(part)?.input.value ?? "").trim();
+        now[part] = value;
+        if (value !== before[part]) changes[part] = value;
+      }
+      if (Object.keys(changes).length === 0) return aboutOutcome(now, false);
+      const r = await env.api.patchSettings({ owner: changes });
+      if (r.ok) return aboutOutcome(r.value.settings.owner, true);
+      for (const [part, c] of controls) {
+        const message = r.errors.find((e) => e.field === `owner.${part}`)?.message;
+        c.error.textContent = message ?? "";
+        c.error.hidden = !message;
+      }
+      if (!r.errors.some((e) => e.field.startsWith("owner."))) {
+        const first = controls.get("name");
+        if (first) {
+          first.error.textContent = r.message;
+          first.error.hidden = false;
+        }
+      }
       return null;
     },
   };

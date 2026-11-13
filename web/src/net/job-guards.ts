@@ -32,6 +32,8 @@ export function asJob(v: unknown): Job | null {
     numOrNull(v["started_at"]) &&
     numOrNull(v["ended_at"]) &&
     isBool(v["needed_approval"]) &&
+    (v["model"] === undefined || isStr(v["model"])) &&
+    (v["local"] === undefined || isBool(v["local"])) &&
     (v["last_step"] === null || isJobStep(v["last_step"]));
   return ok ? (v as unknown as Job) : null;
 }

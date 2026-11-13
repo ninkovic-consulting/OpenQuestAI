@@ -32,6 +32,11 @@ export class CameraRig {
   private flight: Flight | null = null;
   /** The room the camera has flown into, or null at home. */
   room: string | null = null;
+  private width = 1;
+  private height = 1;
+  /** How far the picture is slid to the right, in pixels, so a card on the left leaves the room clear; it eases toward `shiftTo`. */
+  private shift = 0;
+  private shiftTo = 0;
 
   constructor(dom: HTMLElement) {
     this.camera = new THREE.PerspectiveCamera(FOV, 1, 0.5, 600);
@@ -48,6 +53,18 @@ export class CameraRig {
   setAspect(aspect: number): void {
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
+  }
+
+  /** The size of the picture, in pixels. */
+  setSize(width: number, height: number): void {
+    this.width = width;
+    this.height = height;
+    this.slide();
+  }
+
+  /** Slide the picture to the right by this many pixels, smoothly; 0 puts it back. */
+  setShift(px: number): void {
+    this.shiftTo = Math.max(0, px);
   }
 
   /**
@@ -101,7 +118,17 @@ export class CameraRig {
         this.controls.enabled = true;
       }
     }
+    if (this.shift !== this.shiftTo) {
+      this.shift += (this.shiftTo - this.shift) * (1 - Math.exp(-dt * 6));
+      if (Math.abs(this.shiftTo - this.shift) < 0.5) this.shift = this.shiftTo;
+      this.slide();
+    }
     this.controls.update(dt);
+  }
+
+  private slide(): void {
+    if (this.shift === 0) this.camera.clearViewOffset();
+    else this.camera.setViewOffset(this.width, this.height, -this.shift, 0, this.width, this.height);
   }
 
   private homePosition(): THREE.Vector3 {

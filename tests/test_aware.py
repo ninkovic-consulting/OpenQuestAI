@@ -93,7 +93,7 @@ async def test_the_library_room_says_what_the_notes_hold(daemon: Daemon) -> None
     (library / "about-me.md").write_text("Prefers short answers.\n")
     assert [e.title for e in library_contents(daemon.config)] == ["about me", "Projects"]
     full = await call(daemon, "room_details", room="the library")
-    assert "The shared library holds 2 notes:" in full
+    assert "The shared library holds 2 documents:" in full
     assert "- Projects (library/projects.md): The engine rewrite lives in ~/Projects/engine and ships in March." in full
 
 
@@ -105,7 +105,7 @@ async def test_its_own_status_tells_the_truth_and_no_secret(daemon: Daemon) -> N
     assert "API key: stored." in text and GOOD_KEY not in text
     assert "Spend this month" in text and "of the $150.00 cap" in text
     assert "Phone channel (Discord): not set up (no bot token); not paired." in text
-    assert "Tools that ask first: delete_automation, edit_file, run_program, shell, write_file." in text
+    assert "Tools that ask first: delete_automation, edit_file, remove_document, run_program, shell, write_file." in text
     assert "Residents' jobs: 0 at work, 0 waiting" in text
     assert f"Data lives in {daemon.config.paths.home}" in text
     assert "Automations: 0; none due." in text
@@ -115,8 +115,9 @@ async def test_the_new_tools_are_free_and_audited(daemon: Daemon) -> None:
     for name in ("house_overview", "room_details", "assistant_status"):
         assert daemon.config.gate.tiers[name] == "free"
     names = [s.name for s in daemon.components.tools.specs()]
-    assert names[-7:] == [
+    assert names[-8:] == [
         "house_overview", "room_details", "assistant_status", "hand_off", "list_jobs", "job_details", "cancel_job",
+        "send_to_phone",
     ]
 
 

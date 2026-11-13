@@ -1,7 +1,9 @@
 """The settings routes, mounted by the core under `/api` behind the token.
 
 Bodies are read by hand, not by pydantic models, so a refused value (the API
-key above all) is never echoed back in an error.
+key above all) is never echoed back in an error. The library's and the owner's
+profile routes (`vision.memory.routes`) are mounted here too, beside the Library
+and Assistant groups they serve.
 """
 
 from __future__ import annotations
@@ -14,15 +16,18 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from vision.core.server import require_token
+from vision.memory import routes as memory_routes
 from vision.settings import backups, folders
 from vision.settings.downloads import WHATS
+from vision.settings.local_models import NotAllowed
 from vision.settings.reset import NAMES
 from vision.settings.service import Refused, SettingsService
-from vision.settings.values import Invalid
+from vision.settings.values import DEVICE_MAX, KOKORO_VOICES, Invalid
 
 
 def build_router(service: SettingsService) -> APIRouter:
     router = APIRouter(dependencies=[Depends(require_token)])
+    router.include_router(memory_routes.build_router(service.config.paths.house))
 
     @router.get("/settings")
     async def get_settings() -> dict[str, Any]:
@@ -63,6 +68,16 @@ def build_router(service: SettingsService) -> APIRouter:
     async def voice_test() -> dict[str, Any]:
         return await service.voice.test()
 
+    @router.post("/voice/speak")
+    async def voice_speak(request: Request) -> dict[str, Any]:
+        body = await _body(request)
+        voice, device = body.get("tts_voice"), body.get("output_device")
+        if voice is not None and voice not in KOKORO_VOICES:
+            raise HTTPException(status_code=400, detail="Choose one of the speaking voices.")
+        if device is not None and (not isinstance(device, str) or len(device) > DEVICE_MAX):
+            raise HTTPException(status_code=400, detail="Choose the speakers by their name.")
+        return await service.voice.speak_test(voice, device)
+
     @router.get("/downloads")
     async def downloads() -> dict[str, Any]:
         return await asyncio.to_thread(service.downloads.status)
@@ -75,6 +90,22 @@ def build_router(service: SettingsService) -> APIRouter:
                 status_code=400, detail=f"Choose what to download: {' or '.join(WHATS)}."
             )
         return await service.downloads.start(what)
+
+    @router.get("/local-models")
+    async def local_models() -> dict[str, Any]:
+        return await asyncio.to_thread(service.local.listing)
+
+    @router.post("/local-models/download")
+    async def download_local(request: Request) -> dict[str, Any]:
+        return await _refusable(service.local.download((await _body(request)).get("repo")))
+
+    @router.post("/local-models/delete")
+    async def delete_local(request: Request) -> dict[str, Any]:
+        return await _refusable(service.local.delete((await _body(request)).get("repo")))
+
+    @router.post("/local-models/server/test")
+    async def test_server(request: Request) -> dict[str, Any]:
+        return await _refusable(service.local.test_server(await _body(request)))
 
     @router.get("/fs/dirs")
     async def dirs(prefix: str = Query(...)) -> dict[str, Any]:
@@ -134,5 +165,5 @@ async def _body(request: Request) -> dict[str, Any]:
 async def _refusable(call: Awaitable[dict[str, Any]]) -> dict[str, Any]:
     try:
         return await call
-    except Refused as exc:
+    except (Refused, NotAllowed) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None

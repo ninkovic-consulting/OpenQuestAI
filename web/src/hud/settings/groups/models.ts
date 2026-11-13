@@ -1,10 +1,13 @@
 import { el } from "../../dom";
-import { modelInput, row, textInput } from "../bind";
-import type { Group } from "../context";
-import { downloadControl } from "../download-control";
+import { row, textInput } from "../bind";
+import type { Group, SettingsContext } from "../context";
+import { effortSlot } from "../effort-slot";
+import { EFFORT_HELP } from "../effort";
 import { block, note } from "../fields";
-import { formatSpend } from "../../money";
 import { formatMonth } from "../format";
+import { mountLocal } from "../local-control";
+import { formatSpend } from "../../money";
+import { mountModelPicker } from "../../pickers/model-picker";
 
 const SOURCE_WORDS = {
   api: "Listed from Anthropic with your key.",
@@ -12,10 +15,26 @@ const SOURCE_WORDS = {
   built_in: "The built-in list: Anthropic could not be asked (no key, or offline).",
 } as const;
 
+/** A model's dropdown with its thinking level under it; a new model may move the level. */
+function modelWithLevel(ctx: SettingsContext, field: string, label: string, note: string, levelField: string): HTMLElement[] {
+  const model = ctx.draft[field] ?? "";
+  const level = effortSlot(ctx, levelField, "Thinking level", model);
+  const picker = mountModelPicker({
+    source: ctx.models,
+    value: model,
+    own: null,
+    onChange: (v) => {
+      ctx.edit(field, v);
+      level.follow(v);
+    },
+  });
+  return [row(ctx, field, label, picker.root, { note }), level.root];
+}
+
 export const modelsGroup: Group = {
   id: "models",
   title: "Models",
-  blurb: "Which Claude models the assistant talks and thinks with, the local fallback, and the monthly cap. Model changes take effect after a restart; the cap applies at once.",
+  blurb: "Which Claude models the assistant talks and thinks with and how hard they think, working offline on a model of your own, and the monthly cap. A change of Claude model takes effect after a restart; the rest applies at once.",
   prefixes: ["models.", "budget."],
   render(ctx) {
     const s = ctx.settings;
@@ -25,17 +44,10 @@ export const modelsGroup: Group = {
 
     const claude = block(
       "Claude",
-      row(ctx, "models.talk", "Talk model", modelInput(ctx, "models.talk"), { note: "Answers every turn; also the host agent's model." }),
-      row(ctx, "models.heavy", "Heavy model", modelInput(ctx, "models.heavy"), { note: "Used when a question needs more thought." }),
+      ...modelWithLevel(ctx, "models.talk", "Talk model", "Answers every turn; also the host agent's model.", "models.talk_effort"),
+      ...modelWithLevel(ctx, "models.heavy", "Heavy model", "Used when a question needs more thought.", "models.heavy_effort"),
+      el("p", "field-note effort-help", EFFORT_HELP),
       source,
-    );
-
-    const local = block(
-      "Local fallback",
-      row(ctx, "models.local", "Local model", textInput(ctx, "models.local", { placeholder: "mlx-community/…" }), {
-        note: "Answers when offline or over the cap. A Hugging Face repo, run on this Mac.",
-      }),
-      downloadControl(ctx.api, "local_model", () => void ctx.reload({ redraw: false })),
     );
 
     const cap = el("div", "money-input");
@@ -48,7 +60,8 @@ export const modelsGroup: Group = {
       }),
       el("p", "spend", `${formatSpend(s.budget.spent_usd)} spent in ${formatMonth(s.budget.month)}${share === null ? "" : `, ${share}% of the cap`}.`),
     );
-    root.append(claude, local, budget);
+    const local = mountLocal(ctx);
+    root.append(local.offline, claude, budget, local.local);
     return root;
   },
 };

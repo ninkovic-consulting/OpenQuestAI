@@ -2,6 +2,8 @@
 // helper is optional: an older app, or a plain browser, has fewer or none, so
 // each one is feature-detected and the screen hides what cannot work.
 
+import { asWidgetPrefs, type WidgetPrefs, type WidgetPrefsChange } from "./shell-prefs";
+
 export type MicStatus = "granted" | "denied" | "restricted" | "undetermined";
 export type SettingsPane = "microphone" | "login-items";
 
@@ -16,6 +18,12 @@ interface PywebviewApi {
   restartDaemon?: () => Promise<unknown>;
   appInfo?: () => Promise<unknown>;
   quit?: () => Promise<unknown>;
+  widgetPrefs?: () => Promise<unknown>;
+  setWidgetPrefs?: (changes: WidgetPrefsChange) => Promise<unknown>;
+  showWidget?: (shown: boolean) => Promise<unknown>;
+  dismissWidget?: () => Promise<unknown>;
+  openHouse?: () => Promise<unknown>;
+  fitWidget?: (height: number, handle: number[]) => Promise<unknown>;
 }
 
 interface PywebviewBridge {
@@ -61,6 +69,15 @@ export interface NativeHelpers {
   appInfo: (() => Promise<AppInfo | null>) | null;
   /** Quit the app, which also stops the assistant it started. */
   quit: (() => Promise<void>) | null;
+  /** The widget and the global shortcuts: the shell's own preferences (shell-prefs.ts). */
+  widgetPrefs: (() => Promise<WidgetPrefs | null>) | null;
+  setWidgetPrefs: ((changes: WidgetPrefsChange) => Promise<WidgetPrefs | null>) | null;
+  showWidget: ((shown: boolean) => Promise<void>) | null;
+  /** The keyboard goes back to the app in front; the widget stays if it is on. */
+  dismissWidget: (() => Promise<void>) | null;
+  openHouse: (() => Promise<void>) | null;
+  /** The widget page's height, and its drag handle as [x, y, width, height] from its top left. */
+  fitWidget: ((height: number, handle: number[]) => Promise<void>) | null;
 }
 
 const MIC: ReadonlySet<string> = new Set<MicStatus>(["granted", "denied", "restricted", "undetermined"]);
@@ -80,6 +97,7 @@ export function nativeHelpers(): NativeHelpers {
   const api = window.pywebview?.api;
   if (!api) return withNone();
   const { chooseFolder, micStatus, requestMic, openSystemSettings, loginItemEnabled, setLoginItem, restartDaemon, appInfo, quit } = api;
+  const { widgetPrefs, setWidgetPrefs, showWidget, dismissWidget, openHouse, fitWidget } = api;
   return {
     chooseFolder: chooseFolder
       ? async () => {
@@ -95,6 +113,12 @@ export function nativeHelpers(): NativeHelpers {
     restartDaemon: restartDaemon ? async () => void (await restartDaemon.call(api)) : null,
     appInfo: appInfo ? async () => asAppInfo(await appInfo.call(api)) : null,
     quit: quit ? async () => void (await quit.call(api)) : null,
+    widgetPrefs: widgetPrefs ? async () => asWidgetPrefs(await widgetPrefs.call(api)) : null,
+    setWidgetPrefs: setWidgetPrefs ? async (changes) => asWidgetPrefs(await setWidgetPrefs.call(api, changes)) : null,
+    showWidget: showWidget ? async (shown) => void (await showWidget.call(api, shown)) : null,
+    dismissWidget: dismissWidget ? async () => void (await dismissWidget.call(api)) : null,
+    openHouse: openHouse ? async () => void (await openHouse.call(api)) : null,
+    fitWidget: fitWidget ? async (height, handle) => void (await fitWidget.call(api, height, handle)) : null,
   };
 }
 
@@ -109,5 +133,11 @@ function withNone(): NativeHelpers {
     restartDaemon: null,
     appInfo: null,
     quit: null,
+    widgetPrefs: null,
+    setWidgetPrefs: null,
+    showWidget: null,
+    dismissWidget: null,
+    openHouse: null,
+    fitWidget: null,
   };
 }

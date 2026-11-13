@@ -1,4 +1,4 @@
-"""Notifications out, each behind its switch, and approvals with buttons."""
+"""Notifications out, each by its choice, and approvals with buttons."""
 
 from __future__ import annotations
 
@@ -28,23 +28,23 @@ def request(tool: str = "open_url", detail: str = "https://example.org", rid: st
     return GateRequest(id=rid, tool=tool, summary="Open a link", detail=detail, expires_at=time.time() + 60)
 
 
-async def test_automation_results_follow_their_switch() -> None:
+async def test_automation_results_follow_their_choice() -> None:
     r = rig()
     done = AutomationFinished(id="a1", name="Morning", status="ok", reply="Rain until ten.")
     await r.channel.notifier.handle(done)
     assert r.transport.sent == [(CHAT, "Automation “Morning” ran.\n\nRain until ten.")]
-    r.state.notify_automations = False
-    await r.channel.notifier.handle(done)
+    r.state.notify_automations = "never"
+    await r.channel.notifier.handle(AutomationFinished(id="a2", name="Evening", status="ok", reply="Dry."))
     assert len(r.transport.sent) == 1
 
 
-async def test_only_warnings_and_errors_follow_their_switch() -> None:
+async def test_only_warnings_and_errors_follow_their_choice() -> None:
     r = rig()
     await r.channel.notifier.handle(Notice(level="info", text="Hello."))
     await r.channel.notifier.handle(Notice(level="warn", text="Voice is off."))
     await r.channel.notifier.handle(Notice(level="error", text="No brain could answer."))
     assert r.transport.texts() == ["Warning: Voice is off.", "Error: No brain could answer."]
-    r.state.notify_warnings = False
+    r.state.notify_warnings = "never"
     await r.channel.notifier.handle(Notice(level="error", text="Again."))
     assert len(r.transport.sent) == 2
 
@@ -57,9 +57,9 @@ async def test_nothing_is_sent_before_pairing() -> None:
     assert r.transport.sent == [] and r.transport.buttons == []
 
 
-async def test_requests_follow_their_switch() -> None:
+async def test_requests_follow_their_choice() -> None:
     r = rig()
-    r.state.notify_approvals = False
+    r.state.notify_approvals = "never"
     await r.channel.notifier.handle(request())
     assert r.transport.buttons == [] and r.transport.sent == []
 

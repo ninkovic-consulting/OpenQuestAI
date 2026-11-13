@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from vision.core import effort
 from vision.core.config import Config
 from vision.house import grid
 from vision.house.folders import room_folders
@@ -33,7 +34,7 @@ from vision.house.tools import check_tool_ids, with_built_ins
 
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 TOP_KEYS = {"agents", "rooms"}
-AGENT_KEYS = {"name", "persona", "model", "heavy_model", "tools"}
+AGENT_KEYS = {"name", "persona", "model", "heavy_model", "effort", "heavy_effort", "tools"}
 ROOM_KEYS = {
     "id",
     "name",
@@ -99,10 +100,35 @@ def _agent(agent_id: str, table: dict[str, Any], config: Config) -> Agent:
     tools = check_tool_ids(table["tools"], where) if "tools" in table else ()
     if is_host:
         tools = with_built_ins(tools)
+    talk, careful = _efforts(table, where, is_host, config)
+    for level, runs_on in ((talk, model), (careful, heavy or model)):
+        said = effort.problem(runs_on, level)
+        if said is not None:
+            raise HouseError(f"{where}: {said}")
     assert persona is not None
     return Agent(
-        id=agent_id, name=name, persona=persona, model=model, heavy_model=heavy, tools=tools
+        id=agent_id,
+        name=name,
+        persona=persona,
+        model=model,
+        heavy_model=heavy,
+        effort=talk,
+        heavy_effort=careful,
+        tools=tools,
     )
+
+
+def _efforts(table: dict[str, Any], where: str, is_host: bool, config: Config) -> tuple[str, str]:
+    """The agent's thinking effort and its heavy one. The host's follow `[brain]`."""
+    if is_host:
+        if "effort" in table or "heavy_effort" in table:
+            raise HouseError(
+                f"{where}: the host's effort follows [brain] talk_effort and heavy_effort in config.toml."
+            )
+        return config.brain.talk_effort, config.brain.heavy_effort
+    talk = _text(table, "effort", where, required=False) or effort.RESIDENT
+    careful = _text(table, "heavy_effort", where, required=False) or effort.CAREFUL
+    return talk, careful
 
 
 def _build_rooms(

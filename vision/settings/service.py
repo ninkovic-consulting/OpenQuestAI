@@ -15,12 +15,15 @@ from typing import TYPE_CHECKING, Any
 
 from keyring.errors import KeyringError
 
+from vision.core import effort
 from vision.core.config import Config, load_config
-from vision.gate.policy import ALWAYS_ASK
+from vision.gate.policy import FREE_AT_THE_MAC_ONLY, NEVER_FREE
 from vision.house import HouseError, store
 from vision.house.tools import load_catalog
+from vision.memory import profile
 from vision.settings import live, values
 from vision.settings.downloads import Downloads
+from vision.settings.local_models import LocalModels
 from vision.settings.models_list import ModelCatalog, Verdict
 from vision.settings.outside import MacOutside, Outside
 from vision.settings.reset import Resetter
@@ -48,6 +51,7 @@ class SettingsService:
         self.models = ModelCatalog(lambda: self.outside)
         self.voice = VoiceControl(daemon, lambda: self.outside)
         self.downloads = Downloads(self.saved, lambda: self.outside)
+        self.local = LocalModels(daemon, self.saved, lambda: self.outside)
         self.resetter = Resetter(daemon, lambda: self.outside)
         self._window: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
@@ -86,11 +90,15 @@ class SettingsService:
         saved, local, voice, source = await asyncio.to_thread(self._disk_state)
         completed = getattr(c.assistant, "setup_completed", False) is True
         plan = self.daemon.components.house.plan()
+        owner = await asyncio.to_thread(profile.read, c.paths.house)
         return {
             "assistant": {"name": c.assistant.name},
+            "owner": owner.as_dict(),
             "models": {
                 "talk": saved.brain.talk_model,
                 "heavy": saved.brain.heavy_model,
+                "talk_effort": saved.brain.talk_effort,
+                "heavy_effort": saved.brain.heavy_effort,
                 "local": local,
             },
             "budget": {
@@ -123,6 +131,9 @@ class SettingsService:
             "model": brain.local_model,
             "downloaded": size is not None or brain.local_backend != "mlx",
             "size_bytes": size,
+            "server": brain.local_base_url,
+            "tools": self.daemon.local.known_tools(),
+            "offline": brain.offline,
         }
         return saved, local, self.voice.state(), self.outside.key_source()
 
@@ -141,7 +152,8 @@ class SettingsService:
                 for t in ids
             ],
             "tiers": {t: tiers.get(t, self.config.gate.default_tier) for t in ids},
-            "never_free": sorted(ALWAYS_ASK),
+            "never_free": sorted(NEVER_FREE),
+            "free_at_the_mac_only": sorted(FREE_AT_THE_MAC_ONLY),
         }
 
     # ------------------------------------------------------------ PATCH /api/settings
@@ -165,6 +177,9 @@ class SettingsService:
                 raise values.Invalid(
                     [{"field": "", "message": f"config.toml has a problem: {exc}"}]
                 ) from None
+            problems = await self.local.check(fresh, saved) + _effort_problems(fresh)
+            if problems:
+                raise values.Invalid(problems)
             if agent_changes:
                 if not isinstance(house, live.EditableHouse):
                     raise values.Invalid(
@@ -176,7 +191,12 @@ class SettingsService:
                     raise values.Invalid([{"field": "agents", "message": str(exc)}]) from None
             if doc != original:
                 await asyncio.to_thread(store.write_toml, path, doc)
+            owner = {f.removeprefix("owner."): v for f, v in change if f.startswith("owner.") and f in changed}
+            if owner:
+                await asyncio.to_thread(profile.update, self.config.paths.house, owner)
             await live.apply(self.daemon, fresh)
+            if any(f.startswith("voice.") for f in changed):
+                self.voice.forget()
             restart = [f for f in changed if f in values.RESTART_FIELDS]
             applied = [f for f in changed if f not in restart]
         return {
@@ -187,6 +207,8 @@ class SettingsService:
         }
 
     def _current(self, field: str, saved: Config) -> Any:
+        if field.startswith("owner."):
+            return getattr(profile.read(self.config.paths.house), field.removeprefix("owner."))
         if field.startswith("gate.tiers."):
             return saved.gate.tiers.get(field.removeprefix("gate.tiers."))
         if field.startswith("agents."):
@@ -257,6 +279,20 @@ class SettingsService:
             self.daemon.notice(
                 "warn", "The window could not be built. Run `cd web && npm ci && npm run build`."
             )
+
+
+def _effort_problems(fresh: Config) -> list[dict[str, str]]:
+    """The host's efforts must be ones its talk and heavy models take."""
+    brain = fresh.brain
+    out = []
+    for field, model, level in (
+        ("models.talk_effort", brain.talk_model, brain.talk_effort),
+        ("models.heavy_effort", brain.heavy_model, brain.heavy_effort),
+    ):
+        said = effort.problem(model, level)
+        if said is not None:
+            out.append({"field": field, "message": said})
+    return out
 
 
 def _agent_changes(change: values.Change) -> dict[str, dict[str, Any]]:

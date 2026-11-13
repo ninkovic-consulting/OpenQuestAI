@@ -4,9 +4,12 @@ import { defineConfig } from "vitest/config";
 // daemon refuses foreign origins, so the proxy presents the daemon's own.
 const daemon = process.env["VISION_DAEMON"] ?? "http://127.0.0.1:7341";
 
+// Two pages share the modules: the house, and the Mac app's floating widget.
+const pages = { main: "index.html", widget: "widget.html" };
+
 export default defineConfig({
   base: "./",
-  build: { outDir: "dist", emptyOutDir: true, chunkSizeWarningLimit: 1200 },
+  build: { outDir: "dist", emptyOutDir: true, chunkSizeWarningLimit: 1200, rolldownOptions: { input: pages } },
   server: {
     proxy: {
       "/api": { target: daemon, headers: { origin: daemon } },

@@ -147,32 +147,51 @@ select {
 }
 
 .resident {
-  display: grid;
-  grid-template-columns: 20px 112px minmax(0, 1fr);
-  align-items: center;
-  padding: clamp(9px, 1.6vh, 14px) 0;
   border-bottom: 1px solid var(--hairline);
 }
 
-.resident .dot {
-  color: var(--muted);
+/* The row is a button: it opens the agent's rooms under it. */
+.resident-row {
+  display: grid;
+  grid-template-columns: 20px 112px minmax(0, 1fr);
+  align-items: center;
+  width: 100%;
+  padding: clamp(9px, 1.6vh, 14px) 0;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
 }
 
-.resident.is-tower .dot {
-  color: var(--alert);
-}
-
-.resident.is-awake .dot,
-.resident.is-working .dot {
+.resident-row:hover .name,
+.resident-row[aria-expanded="true"] .name {
   color: var(--mustard);
 }
 
-.resident.is-waiting .dot {
+.resident-row:focus-visible {
+  outline: 1px solid var(--mustard);
+  outline-offset: -1px;
+}
+
+.resident-row .dot {
+  color: var(--muted);
+}
+
+.resident.is-tower .resident-row .dot {
   color: var(--alert);
 }
 
-.resident.is-working .dot,
-.resident.is-waiting .dot {
+.resident.is-awake .resident-row .dot,
+.resident.is-working .resident-row .dot {
+  color: var(--mustard);
+}
+
+.resident.is-waiting .resident-row .dot {
+  color: var(--alert);
+}
+
+.resident.is-working .resident-row .dot,
+.resident.is-waiting .resident-row .dot {
   animation: breathe 2.4s ease-in-out infinite;
 }
 
@@ -209,7 +228,7 @@ select {
 
 /* A narrow panel stacks each resident's room under the name. */
 @container (max-width: 280px) {
-  .resident {
+  .resident-row {
     grid-template-columns: 18px minmax(0, 1fr);
     padding: clamp(7px, 1.2vh, 12px) 0;
     line-height: 1.35;
@@ -821,123 +840,6 @@ select {
 
 .build-form .tool-note {
   margin: 8px 0 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--muted);
-}
-
-/* ---------------------------------------------------------------- room card */
-
-.room-card {
-  position: absolute;
-  top: 64px;
-  left: clamp(16px, 2vw, 28px);
-  width: min(300px, calc(100% - 32px));
-  max-height: calc(100% - 80px);
-  overflow-y: auto;
-  padding: 20px 22px 18px;
-  background: var(--ground);
-  border: 1px solid var(--hairline-strong);
-  z-index: 3;
-  animation: rise 0.3s ease-out;
-}
-
-.room-card[hidden] {
-  display: none;
-}
-
-.room-card .kicker {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.room-card h2 {
-  margin: 4px 0 14px;
-  font-family: var(--serif);
-  font-weight: 500;
-  font-size: 24px;
-}
-
-.room-card dl {
-  margin: 0 0 18px;
-}
-
-.room-card .row {
-  display: grid;
-  grid-template-columns: 76px 1fr;
-  align-items: baseline;
-  padding: 7px 0;
-  border-top: 1px solid var(--hairline);
-}
-
-.room-card dt {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.room-card dd {
-  margin: 0;
-  font-size: 14px;
-  color: var(--muted-light);
-  overflow-wrap: anywhere;
-}
-
-.room-card dd .path {
-  display: block;
-  padding: 1px 0;
-  font: 12px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
-}
-
-.room-card dd.is-muted {
-  color: var(--muted);
-}
-
-.card-tools {
-  list-style: none;
-  margin: 6px 0 0;
-  padding: 0;
-}
-
-.card-tools li {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 6px 0;
-  font-size: 14px;
-  color: var(--muted-light);
-}
-
-.card-tools .dot {
-  width: 6px;
-  height: 6px;
-}
-
-.card-tools .tag {
-  margin-left: auto;
-}
-
-.card-tools .is-runs .dot {
-  color: var(--mustard);
-}
-
-.card-tools .is-waits .dot {
-  color: var(--muted-light);
-}
-
-.card-tools .is-missing {
-  color: var(--muted);
-}
-
-.card-tools .is-missing .dot {
-  color: var(--alert);
-}
-
-.card-tools .is-empty {
-  color: var(--muted);
-}
-
-.room-card .note {
-  margin: 14px 0 0;
   font-size: 12px;
   line-height: 1.45;
   color: var(--muted);

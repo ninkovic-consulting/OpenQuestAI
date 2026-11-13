@@ -2,7 +2,7 @@
 
 Lists the audio devices, records a few seconds, prints what Whisper heard and
 says it back. Uses the devices and models from `[voice]` in config.toml.
-The first run downloads the models.
+The models must be downloaded first (Settings, Voice, or `vision setup`).
 """
 
 from __future__ import annotations
@@ -50,9 +50,9 @@ async def check(seconds: float) -> None:
         print(f"\nModels ready in {time.perf_counter() - started:.1f} s "
               f"({settings.stt_model}, {type(synth).__name__}).")
 
-        mic = Microphone(settings.input_device)
+        mic = Microphone(settings.input_device, on_missing=print)
         await mic.open()
-        print(f"Recording {seconds:g} seconds. Say something...")
+        print(f"Recording {seconds:g} seconds from {mic.name}. Say something...")
         try:
             audio = await _record(mic, seconds)
         finally:
@@ -62,7 +62,7 @@ async def check(seconds: float) -> None:
         text = await worker.run(lambda: stt.transcribe(audio))
         print(f"Heard ({time.perf_counter() - started:.2f} s): {text or '(nothing)'}")
 
-        sink = SpeakerOutput(settings.output_device)
+        sink = SpeakerOutput(settings.output_device, on_missing=print)
         sink.open()
         speaker = TtsSpeaker(Bus(), sink, worker.run)
         speaker.use(synth)

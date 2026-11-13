@@ -7,6 +7,7 @@ import time
 from collections.abc import Callable
 from typing import Any, Literal
 
+from vision.core import effort
 from vision.core.config import BudgetConfig, Config
 from vision.settings.outside import KeyRefused, ModelRow, Outside, Unreachable
 
@@ -78,6 +79,7 @@ def _answer(
                 "max_input_tokens": r.max_input_tokens,
                 "max_tokens": r.max_tokens,
                 "retires_at": r.retires_at,
+                "efforts": list(effort.accepted(r.id)),
                 "price": (
                     {
                         "input_per_mtok": prices[r.id].input_per_mtok,

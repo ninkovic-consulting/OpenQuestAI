@@ -148,12 +148,12 @@ async def test_settings_change_and_refuse(daemon: Daemon, fake: FakeDiscord) -> 
         view = (await http.get("/api/phone")).json()
         assert view["connection"] == "no_token" and "shell" not in view["phone_tools"]
         assert view["mac_only"] == ["shell"]
-        changed = (await http.patch("/api/phone", json={"notify": {"warnings": False}, "speak_on_mac": True, "phone_tools": ["remember"]})).json()
+        changed = (await http.patch("/api/phone", json={"notify": {"warnings": "never"}, "speak_on_mac": True, "phone_tools": ["remember"]})).json()
         shell = await http.patch("/api/phone", json={"phone_tools": ["shell"]})
         odd = await http.patch("/api/phone", json={"volume": 11})
         off = (await http.patch("/api/phone", json={"enabled": False})).json()
         paired_code = await http.delete("/api/phone/pairing")
-    assert changed["notify"]["warnings"] is False and changed["speak_on_mac"] is True and changed["phone_tools"] == ["remember"]
+    assert changed["notify"]["warnings"] == "never" and changed["speak_on_mac"] is True and changed["phone_tools"] == ["remember"]
     assert shell.status_code == 400 and "only ever approved at the Mac" in shell.json()["detail"]
     assert odd.status_code == 400
     assert off["connection"] == "off" and paired_code.json()["paired"] is None

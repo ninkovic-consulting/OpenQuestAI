@@ -1,30 +1,47 @@
-"""Notifications to the paired owner, each with its own switch in Settings, Phone:
+"""What is sent to the paired owner unasked, each kind by its choice in Settings, Phone
+(`vision.remote.rules`: always, only when the owner is away from the Mac, or never):
 
 - automation results (`automation.finished`);
-- notices of level warn or error (`notice`);
+- notices of level warn or error (`notice`), except those about the phone
+  channel itself, which could not arrive anyway;
 - requests that need a yes (`gate.request`), handed to `Approvals`, which
   also edits each one when it ends (`gate.resolved`);
-- the host's report of a job that was handed off from a phone turn
-  (`job_result`, called by the daemon's job reporter, not from the bus).
+- the host's report of every finished job, wherever it was handed off from
+  (`job_result`, called by the daemon's job reporter, not from the bus); a
+  job handed off from the phone reports there unless job results are never.
 
-Nothing is sent before pairing. A message that cannot be sent (the service
-is unreachable) is logged and dropped, never retried into a flood later.
+These are what the assistant does by itself, so by default every kind is
+always sent, to the phone as well as the app. A reply to something typed or
+said at the Mac is never sent: it is answered at the Mac. (A reply to the
+phone goes back by the channel itself, `PhoneChannel`.) Presence matters only
+for a kind the owner sets to `away`; it is read fresh for that decision
+(`Host.presence`). Nothing is sent before
+pairing; messages go through the `Outbox`, which sends each one once and
+retries one that did not arrive a few times before dropping it. The result
+of a turn in which `send_to_phone` already messaged the phone is not sent
+again.
 """
 
 from __future__ import annotations
 
 import logging
 
-from vision.core.events import AutomationFinished, Event, GateRequest, GateResolved, Notice
+from vision.core.events import AutomationFinished, AutomationStarted, Event, GateRequest, GateResolved, Notice
 from vision.remote.approvals import Approvals
 from vision.remote.link import Link
+from vision.remote.outbox import DROPPED, Outbox
+from vision.remote.rules import FIELDS, Kind
 from vision.remote.text import clip
 from vision.remote.transport import Unreachable
 
 log = logging.getLogger(__name__)
 
-TYPES = frozenset({AutomationFinished.TYPE, Notice.TYPE, GateRequest.TYPE, GateResolved.TYPE})
+TYPES = frozenset(
+    {AutomationStarted.TYPE, AutomationFinished.TYPE, Notice.TYPE, GateRequest.TYPE, GateResolved.TYPE}
+)
 REPLY_ROOM = 1500
+APP_ONLY = (DROPPED, "The phone channel stopped")
+"""Notices about the channel itself stay in the app."""
 
 _RESULT = {
     "ok": "ran",
@@ -45,9 +62,12 @@ def notice_line(event: Notice) -> str:
 
 
 class Notifier:
-    def __init__(self, link: Link, approvals: Approvals) -> None:
+    def __init__(self, link: Link, approvals: Approvals, outbox: Outbox) -> None:
         self._link = link
         self._approvals = approvals
+        self._outbox = outbox
+        self._started: dict[str, float] = {}
+        """When each automation running now began, so its result knows what happened during it."""
 
     async def run(self) -> None:
         """Follow the bus until cancelled."""
@@ -60,24 +80,34 @@ class Notifier:
                 except Exception:
                     log.exception("phone notification failed (%s)", event.TYPE)
 
-    async def job_result(self, text: str) -> None:
-        """The host's words about a finished job, when paired and `notify_jobs` is on."""
+    def wants(self, kind: Kind) -> bool:
+        """Paired, and this kind's choice allows it with the owner where they are now."""
         state = self._link.state()
-        if not (state.paired and state.notify_jobs and text.strip()):
-            return
-        try:
-            await self._link.transport.send(state.chat_id, clip(text.strip(), REPLY_ROOM))
-        except Unreachable as exc:
-            log.info("job report not sent to the phone: %s", exc)
+        if not state.paired:
+            return False
+        choice = getattr(state, FIELDS[kind])
+        return choice == "always" or (choice == "away" and self._link.host.presence().away)  # read only when it matters
 
     async def handle(self, event: Event) -> None:
-        state = self._link.state()
         match event:
-            case GateRequest():
+            case GateRequest() if self.wants("approvals"):
                 await self._approvals.request(event)
             case GateResolved():
                 await self._approvals.resolved(event)
-            case AutomationFinished() if state.paired and state.notify_automations:
-                await self._link.transport.send(state.chat_id, automation_line(event))
-            case Notice(level="warn" | "error") if state.paired and state.notify_warnings:
-                await self._link.transport.send(state.chat_id, notice_line(event))
+            case AutomationStarted():
+                self._started[event.id] = event.ts
+            case AutomationFinished():
+                started = self._started.pop(event.id, event.ts)
+                if self.wants("automations") and not self._outbox.pinged_since(started):
+                    await self._outbox.send(f"automation:{event.id}:{started}", automation_line(event))
+            case Notice(level="warn" | "error") if not event.text.startswith(APP_ONLY) and self.wants("warnings"):
+                await self._outbox.send(f"notice:{event.ts}:{event.text}", notice_line(event))
+
+    async def job_result(self, job_id: str, text: str, *, from_phone: bool, started_at: float) -> None:
+        """The host's words about a finished job; `started_at` is when the report's turn began."""
+        state = self._link.state()
+        if not text.strip() or state.notify_jobs == "never":
+            return
+        if not (from_phone or self.wants("jobs")) or self._outbox.pinged_since(started_at):
+            return
+        await self._outbox.send(f"job:{job_id}", text)

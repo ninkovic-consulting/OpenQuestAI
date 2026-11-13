@@ -17,6 +17,9 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from vision.voice.on_disk import local_path
+from vision.voice.settings import VAD_PART
+
 SAMPLE_RATE = 16_000
 FRAME = 512
 FRAME_MS = 1000 * FRAME / SAMPLE_RATE
@@ -33,7 +36,7 @@ class SpeechDetector(Protocol):
 
 
 class SileroVad:
-    """Silero VAD v5 running on MLX through `mlx-audio`. Load with `load()`."""
+    """Silero VAD v5 running on MLX through `mlx-audio`. Load with `load()`, from the disk only."""
 
     def __init__(self, repo: str) -> None:
         self.repo = repo
@@ -43,7 +46,7 @@ class SileroVad:
     def load(self) -> None:
         from mlx_audio.vad import load
 
-        self._model = load(self.repo)
+        self._model = load(str(local_path(self.repo, VAD_PART)))
         self.reset()
 
     def reset(self) -> None:

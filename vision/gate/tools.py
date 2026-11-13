@@ -219,8 +219,12 @@ def build_tools(config: Config, memory: Memory, *, runner: Runner = run_command)
         Tool(
             ToolSpec(
                 "open_url",
-                "Open a web link in the default browser. Call this when the user asks to open "
-                "a website or link. Only http and https links work.",
+                "Open a web link in the default browser on the Mac's screen, for the owner to "
+                "look at there. You cannot see or read the page it opens. Use it only when the "
+                "owner asks to open something on the Mac. Never use it to look something up or "
+                "to take a look at a site: hand that to the scout with hand_off. In a turn from "
+                "the phone, use it only if the owner asked for it to be opened on the Mac. Only "
+                "http and https links work.",
                 _schema("url", "The full http or https URL."),
             ),
             open_url,
@@ -230,9 +234,10 @@ def build_tools(config: Config, memory: Memory, *, runner: Runner = run_command)
         Tool(
             ToolSpec(
                 "shell",
-                "Run a shell command on this Mac and return its output. The user must approve "
-                "every command first. Call this only when the user asks you to run a command "
-                "or when no other tool can do what they asked.",
+                "Run a shell command on this Mac and return its output. The user approves each "
+                "command first, unless they have set shell to run freely for what they type or "
+                "say at the Mac; it can run anything, so call this only when the user asks you "
+                "to run a command or when no other tool can do what they asked.",
                 _schema("command", "The command line to run with /bin/sh."),
             ),
             shell,

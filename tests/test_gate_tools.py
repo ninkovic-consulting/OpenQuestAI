@@ -78,6 +78,24 @@ async def test_open_url(config: Config, memory: FakeMemory, runner: FakeRunner) 
     assert runner.calls[0][0] == ["open", "https://example.com/a?b=1"]
 
 
+def test_open_url_tells_the_model_it_only_shows_a_page_on_the_mac(
+    config: Config, memory: FakeMemory, runner: FakeRunner
+) -> None:
+    tool = tools_by_name(config, memory, runner)["open_url"]
+    text = tool.spec.description
+    assert "on the Mac's screen" in text and "You cannot see or read the page" in text
+    assert "Never use it to look something up" in text and "hand_off" in text
+    assert "In a turn from the phone" in text
+    assert tool.summary == "Open a link"
+
+
+def test_shell_tells_the_model_it_asks_unless_made_free(
+    config: Config, memory: FakeMemory, runner: FakeRunner
+) -> None:
+    text = tools_by_name(config, memory, runner)["shell"].spec.description
+    assert "approves each command first, unless they have set shell to run freely" in text
+
+
 async def test_shell_runs_with_limits(config: Config, memory: FakeMemory, runner: FakeRunner) -> None:
     config.gate.shell_timeout_s = 7  # type: ignore[attr-defined]
     runner.result = CommandResult(0, "hello\n", False)

@@ -28,6 +28,11 @@ DEFAULT_VAD_MODEL = "mlx-community/silero-vad"
 SPACY_REPO = "spacy/en_core_web_sm"
 """spaCy's English tagger, which Kokoro's G2P needs; fetched without its wheel."""
 
+STT_PART = "speech recognition"
+TTS_PART = "the speaking voice"
+VAD_PART = "voice detection"
+TAGGER_PART = "the speaking voice's English tagger"
+
 
 @dataclass(frozen=True, slots=True)
 class VoiceSettings:
@@ -68,6 +73,22 @@ class VoiceSettings:
             say_voice=str(extra.get("say_voice", "")),
         )
 
+    def parts(self) -> dict[str, str]:
+        """Every model voice needs, by the name a message gives it. Downloaded only on request."""
+        return {
+            STT_PART: self.stt_model,
+            TTS_PART: self.tts_model,
+            VAD_PART: self.vad_model,
+            TAGGER_PART: SPACY_REPO,
+        }
+
+    def speech_parts(self) -> dict[str, str]:
+        """The models the speaking voice alone needs: Kokoro and spaCy's tagger for its G2P."""
+        return {TTS_PART: self.tts_model, TAGGER_PART: SPACY_REPO}
+
     def model_repos(self) -> tuple[str, ...]:
-        """Every Hugging Face repo the voice downloads on first start."""
-        return (self.stt_model, self.tts_model, self.vad_model, SPACY_REPO)
+        """Every Hugging Face repo voice needs; the speech-models download fetches them."""
+        return tuple(self.parts().values())
+
+    def speech_repos(self) -> tuple[str, ...]:
+        return tuple(self.speech_parts().values())

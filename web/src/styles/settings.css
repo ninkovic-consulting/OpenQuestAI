@@ -634,11 +634,6 @@
   text-transform: none;
 }
 
-.room-card .edit-room {
-  margin-top: 16px;
-  padding: 8px 14px 7px;
-}
-
 /* ---------------------------------------------------------------- the settings screen */
 
 .settings {
@@ -1045,6 +1040,14 @@
   grid-area: error;
 }
 
+.tier-confirm {
+  grid-column: 1 / -1;
+}
+
+.tier-confirm:not(:empty) {
+  margin-top: 12px;
+}
+
 .key-form {
   max-width: 520px;
 }
@@ -1075,6 +1078,31 @@
 
 .voice-test {
   margin-top: 10px;
+}
+
+.devices-head {
+  margin-top: 0;
+}
+
+.devices-head .field-note {
+  margin: 0;
+}
+
+.speak-test .row-actions {
+  margin-top: 18px;
+}
+
+.speak-test .row-actions .field-note {
+  flex: 1 1 260px;
+  margin: 0;
+}
+
+.silent-mic {
+  flex-basis: 100%;
+}
+
+.silent-mic > .field-note:empty {
+  display: none;
 }
 
 .test-result {
@@ -1562,4 +1590,13 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
+}
+
+/* Phone: the away time, a short number beside its unit. */
+.settings .away-time {
+  margin-top: 0;
+}
+
+.settings .away-time .away-minutes {
+  width: 90px;
 }

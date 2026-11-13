@@ -5,7 +5,8 @@
 import "../../styles/chat.css";
 import type { Store } from "../../net/store";
 import { el } from "../dom";
-import { emptyThread, fromCaption, gateResolved, sent, type Thread, withHistory } from "./entries";
+import { looking } from "./attention";
+import { emptyThread, fromCaption, gateResolved, markAway, seenAway, sent, type Thread, withHistory } from "./entries";
 import { asTurns, type HistoryLoader } from "./history";
 
 export type ThreadListener = (thread: Thread, previous: Thread) => void;
@@ -21,6 +22,7 @@ export class ChatDock {
     store.subscribe((s, prev) => {
       let next = fromCaption(this.thread, prev.caption, s.caption);
       if (s.gates.length < prev.gates.length) next = gateResolved(next);
+      if (!looking(document, s.presence)) next = markAway(this.thread, next);
       this.set(next);
     });
   }
@@ -36,6 +38,11 @@ export class ChatDock {
   /** A message typed here, shown before the daemon echoes it. */
   sent(text: string): void {
     this.set(sent(this.thread, text, this.store.get().gates.length > 0));
+  }
+
+  /** What arrived while away has been seen. */
+  seen(): void {
+    this.set(seenAway(this.thread));
   }
 
   async load(history: HistoryLoader): Promise<void> {

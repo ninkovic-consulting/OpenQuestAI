@@ -23,6 +23,16 @@ export function textInput(ctx: SettingsContext, field: string, attrs: Partial<Pi
   return input;
 }
 
+/** A few lines of text; Enter adds a line. */
+export function textArea(ctx: SettingsContext, field: string, attrs: Partial<Pick<HTMLTextAreaElement, "maxLength" | "placeholder" | "rows">> = {}): HTMLTextAreaElement {
+  const area = el("textarea");
+  area.rows = 3;
+  Object.assign(area, attrs);
+  area.value = ctx.draft[field] ?? "";
+  area.addEventListener("input", () => ctx.edit(field, area.value));
+  return area;
+}
+
 export function selectInput(ctx: SettingsContext, field: string, choices: readonly Choice[]): HTMLSelectElement {
   const select = el("select");
   const value = ctx.draft[field] ?? "";

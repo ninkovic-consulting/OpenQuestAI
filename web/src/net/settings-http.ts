@@ -2,6 +2,7 @@
 // secret goes in a URL: the key travels in a POST body only.
 
 import type { Api } from "./api";
+import { asDeleteAnswer, asLocalListing, asServerTest } from "./brain-guards";
 import { ok, refused, type Result, type SettingsApi } from "./settings-api";
 import {
   asBackups,
@@ -15,12 +16,13 @@ import {
   asResetAnswer,
   asRestoreAnswer,
   asSettings,
+  asSpeakTest,
   asVerdict,
   asVoiceDevices,
   asVoiceState,
   asVoiceTest,
 } from "./settings-guards";
-import type { DownloadWhat, ResetLevel, RoomPatch, SettingsPatch } from "./settings-types";
+import type { DownloadWhat, ResetLevel, RoomPatch, SettingsPatch, SpeakChoice } from "./settings-types";
 
 const SHAPE = "The answer was not in the expected shape.";
 
@@ -49,8 +51,13 @@ export class HttpSettings implements SettingsApi {
   voiceDevices = () => this.ask("GET", "/api/voice/devices", asVoiceDevices);
   setVoice = (enabled: boolean) => this.ask("POST", "/api/voice", asVoiceState, { enabled });
   voiceTest = () => this.ask("POST", "/api/voice/test", asVoiceTest);
+  speakTest = (choice: SpeakChoice) => this.ask("POST", "/api/voice/speak", asSpeakTest, choice);
   downloads = () => this.ask("GET", "/api/downloads", asDownloads);
   startDownload = (what: DownloadWhat) => this.ask("POST", "/api/downloads", asDownloads, { what });
+  localModels = () => this.ask("GET", "/api/local-models", asLocalListing);
+  downloadLocal = (repo: string) => this.ask("POST", "/api/local-models/download", asLocalListing, { repo });
+  deleteLocal = (repo: string) => this.ask("POST", "/api/local-models/delete", asDeleteAnswer, { repo });
+  testServer = (server?: string) => this.ask("POST", "/api/local-models/server/test", asServerTest, server === undefined ? {} : { server });
   doctor = () => this.ask("GET", "/api/doctor", asDoctor);
   fix = (id: string) => this.ask("POST", "/api/doctor/fix", asFixAnswer, { id });
   reset = (level: ResetLevel, removeKey: boolean) => this.ask("POST", "/api/reset", asResetAnswer, { level, remove_key: removeKey });

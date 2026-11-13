@@ -28,6 +28,7 @@ from vision.core.interfaces import (
     TurnDone,
     TurnRecord,
 )
+from vision.presence.reader import Reading
 
 DEFAULT_REPLY = (
     "I am running on the fake brain. Nothing I say here costs anything. "
@@ -313,9 +314,15 @@ class FakeHouse:
                     "name": self.assistant,
                     "model": "claude-haiku-5-5",
                     "heavy_model": "claude-opus-5-5",
+                    "effort": "low",
+                    "heavy_effort": "high",
                     "persona": "agents/host.md",
                 }
             ],
+            "effort_levels": {
+                "claude-haiku-5-5": ["low", "medium", "high", "xhigh", "max"],
+                "claude-opus-5-5": ["low", "medium", "high", "xhigh", "max"],
+            },
             "rooms": [
                 {
                     "id": "hall",
@@ -342,3 +349,14 @@ class FakeHouse:
     @property
     def router(self) -> APIRouter | None:
         return None
+
+
+class FakePresenceReader:
+    """`vision.presence.Reader` with the owner's idle time, lock and display set by hand;
+    `None` everywhere reads as a Mac that will not say."""
+
+    def __init__(self, idle_s: float | None = 0.0, locked: bool | None = False, asleep: bool | None = False) -> None:
+        self.idle_s, self.locked, self.asleep = idle_s, locked, asleep
+
+    def read(self) -> Reading:
+        return Reading(self.idle_s, self.locked, self.asleep)

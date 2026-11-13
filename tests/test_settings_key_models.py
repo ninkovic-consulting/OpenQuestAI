@@ -128,6 +128,7 @@ async def test_models_from_the_api_then_the_cache(daemon: Daemon) -> None:
         "max_input_tokens": 200_000,
         "max_tokens": 64_000,
         "retires_at": None,
+        "efforts": ["low", "medium", "high", "xhigh", "max"],
         "price": None,
     }
     assert first["models"][0]["price"] == {"input_per_mtok": 4.0, "output_per_mtok": 20.0}

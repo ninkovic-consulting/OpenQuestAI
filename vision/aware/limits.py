@@ -1,6 +1,7 @@
 """What the house can and cannot do in this build, in one place.
 
 Every resident (each agent but the host) can take work through `hand_off`.
+In offline mode everyone runs on the local model (`offline_line`).
 What each may use at work is `vision.residents.abilities`; this file turns
 that into the plain words the host is told, so the context summary, the
 house tools and the status tool say the same thing.
@@ -49,10 +50,28 @@ def limits_line(project_tools: bool) -> str:
     )
     return (
         "The residents can take work: hand it off with hand_off and a complete brief, and you are "
-        "told the result later in a turn of its own. A resident can work in any room but the Hall: "
+        "told the result later in a turn of its own. When the owner asks to look at, check, read or "
+        "research a website, a link or anything that needs the web, hand it to the scout at once (it "
+        "loads pages itself) and say it is under way; hand tests and reviews to the checker and code "
+        "to the maker the same way. Do not ask whether to and do not offer it as an option. A resident can work in any room but the Hall: "
         "send it to the room whose project the work is about (the checker to the Workshop to test "
         f"the maker's project, say). {tools} Only you open apps and links, run the "
         "shell, change automations and hand out work; residents never talk to the owner, and the "
         "envoy cannot send or read mail or messages yet. Say so plainly when asked for something "
         "nobody here can do; do not pretend."
     )
+
+
+def offline_line(model: str, tools: bool | None) -> str:
+    """The truth of offline mode, for the model: what runs where and what does not work."""
+    said = (
+        f"Offline mode is on: you and the residents run on the local model {model} on this Mac, and "
+        "nothing is sent to Anthropic. Web search and loading web pages are not available, so the scout "
+        "cannot search the web or read a site."
+    )
+    if tools is False:
+        said += (
+            " This model cannot use tools: you cannot hand off work, remember, look anything up or "
+            "open anything, and must say so plainly when asked."
+        )
+    return said

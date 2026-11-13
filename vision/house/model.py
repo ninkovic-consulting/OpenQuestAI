@@ -59,6 +59,10 @@ class Agent:
     persona: str
     model: str
     heavy_model: str | None
+    effort: str = "medium"
+    """Claude's thinking effort at work (`vision.core.effort`); the host's follows `[brain]`."""
+    heavy_effort: str = "high"
+    """The effort of a careful job (on the heavy model when there is one)."""
     tools: tuple[str, ...] = ()
     """Tool ids for the agent's rooms that list none of their own."""
 

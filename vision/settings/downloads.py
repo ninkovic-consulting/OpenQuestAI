@@ -106,7 +106,7 @@ class Downloads:
         try:
             job.total = await asyncio.to_thread(outside.download_size, repos)
             if what == "local_model":
-                await asyncio.to_thread(outside.download_local_model, config)
+                await asyncio.to_thread(outside.download_local, config.brain.local_model)
             else:
                 await asyncio.to_thread(outside.download, repos)
         except Exception as exc:

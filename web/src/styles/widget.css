@@ -1,0 +1,266 @@
+/* ---------------------------------------------------------------- the widget
+   The Mac app's floating window onto the assistant, 380 points wide. The
+   message field and hold to talk are the house's (chat.css), made smaller;
+   the gate card is the house's (hud.css), made smaller. A dot and the 1px
+   border carry the state: mustard while it listens, thinks or speaks, red
+   while it is offline. */
+
+html:has(body.widget-page),
+body.widget-page {
+  height: auto;
+  background: var(--ground);
+}
+
+.widget {
+  --w-tone: var(--muted-light);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px 14px;
+  background: var(--ground);
+  border: 1px solid var(--hairline-strong);
+  color: var(--text);
+  transition: border-color 0.25s;
+}
+
+.widget[data-state="listening"],
+.widget[data-state="thinking"],
+.widget[data-state="speaking"] {
+  --w-tone: var(--mustard);
+  border-color: var(--mustard);
+}
+
+.widget[data-state="offline"],
+.widget[data-state="connecting"] {
+  --w-tone: var(--alert);
+  border-color: rgba(224, 80, 58, 0.7);
+}
+
+/* ---------------------------------------------------------------- name, state and the two buttons */
+
+.w-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The panel is dragged by this part; the shell is told where it is. */
+.w-id {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--w-tone);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.w-id .dot {
+  align-self: center;
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+.widget[data-state="idle"] .w-id .dot {
+  animation: none;
+}
+
+.w-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 300;
+  font-size: 13px;
+  letter-spacing: 0.32em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.w-state {
+  flex: none;
+  color: var(--w-tone);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+}
+
+.w-actions {
+  flex: none;
+  display: flex;
+  gap: 6px;
+}
+
+.w-actions button {
+  padding: 5px 8px 4px;
+  background: none;
+  border: 1px solid var(--hairline-strong);
+  color: var(--muted-light);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+
+.w-actions button:hover,
+.w-actions button:focus-visible {
+  border-color: var(--mustard);
+  color: var(--text);
+  outline: none;
+}
+
+.w-actions button[hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- a request waiting for a yes */
+
+.w-gate:empty {
+  display: none;
+}
+
+.w-gate .gate {
+  padding: 12px 14px 14px;
+}
+
+.w-gate .gate-head {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+}
+
+.w-gate .gate-who {
+  margin-top: 8px;
+  font-size: 10px;
+}
+
+.w-gate .gate-summary {
+  margin-top: 8px;
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.w-gate .gate-detail {
+  margin-top: 8px;
+  font-size: 12px;
+  max-height: 72px;
+}
+
+.w-gate .gate-actions {
+  margin-top: 12px;
+  gap: 8px;
+}
+
+.w-gate .gate-actions button {
+  padding: 8px 16px 7px;
+  font-size: 11px;
+}
+
+.w-gate .gate-queue {
+  margin-top: 10px;
+  padding-top: 8px;
+}
+
+/* ---------------------------------------------------------------- the latest exchange */
+
+.w-exchange {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.w-exchange[hidden],
+.w-exchange [hidden] {
+  display: none;
+}
+
+.w-who {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+}
+
+.w-user {
+  display: -webkit-box;
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--muted-light);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+/* Read from its first word: a long reply scrolls inside, it is never cut at the top. */
+.w-reply {
+  margin-top: 8px;
+  max-height: 216px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.42;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-strong) transparent;
+}
+
+.w-reply.has-more {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
+}
+
+.w-reply:focus-visible {
+  outline: 1px solid var(--hairline-strong);
+  outline-offset: 2px;
+}
+
+.w-status {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+}
+
+/* ---------------------------------------------------------------- the field and hold to talk, smaller */
+
+.widget .compose-row {
+  gap: 8px;
+}
+
+.widget .composer {
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--scene);
+}
+
+.widget .composer > .dot {
+  margin-top: 7px;
+}
+
+.widget .composer .message-field {
+  font-size: 14px;
+  max-height: calc(1.45em * 4);
+}
+
+.widget .send-hint {
+  display: none !important;
+}
+
+/* One width for "Hold to talk" and "Listening", so the field does not jump. */
+.widget .talk {
+  flex: none;
+  width: 136px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 12px;
+  gap: 8px;
+  background: var(--scene);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+}

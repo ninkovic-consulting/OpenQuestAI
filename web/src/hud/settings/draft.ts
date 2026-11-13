@@ -11,13 +11,17 @@ export type Draft = Record<string, string>;
 const NUMERIC: ReadonlySet<string> = new Set(["budget.cap_usd", "voice.followup_s"]);
 
 /** Fields that only a restart applies; the screen marks them. */
-export const RESTART_FIELDS: ReadonlySet<string> = new Set(["models.talk", "models.heavy", "models.local"]);
+export const RESTART_FIELDS: ReadonlySet<string> = new Set(["models.talk", "models.heavy"]);
 
 const LABELS: Record<string, string> = {
   "assistant.name": "assistant's name",
+  "owner.name": "what to call you",
+  "owner.business": "your business",
+  "owner.notes": "what to keep in mind",
   "models.talk": "talk model",
   "models.heavy": "heavy model",
-  "models.local": "local model",
+  "models.talk_effort": "talk thinking level",
+  "models.heavy_effort": "heavy thinking level",
   "budget.cap_usd": "monthly cap",
   "voice.input_device": "microphone",
   "voice.output_device": "speakers",
@@ -31,9 +35,13 @@ const LABELS: Record<string, string> = {
 export function draftFrom(s: Settings): Draft {
   const d: Draft = {
     "assistant.name": s.assistant.name,
+    "owner.name": s.owner.name,
+    "owner.business": s.owner.business,
+    "owner.notes": s.owner.notes,
     "models.talk": s.models.talk,
     "models.heavy": s.models.heavy,
-    "models.local": s.models.local.model,
+    "models.talk_effort": s.models.talk_effort,
+    "models.heavy_effort": s.models.heavy_effort,
     "budget.cap_usd": String(s.budget.cap_usd),
     "voice.input_device": s.voice.input_device,
     "voice.output_device": s.voice.output_device,
@@ -44,6 +52,8 @@ export function draftFrom(s: Settings): Draft {
     if (a.is_host) continue;
     d[`agents.${a.id}.name`] = a.name;
     d[`agents.${a.id}.model`] = a.model;
+    d[`agents.${a.id}.effort`] = a.effort;
+    d[`agents.${a.id}.heavy_effort`] = a.heavy_effort;
   }
   for (const [tool, tier] of Object.entries(s.gate.tiers)) d[`gate.tiers.${tool}`] = tier;
   return d;
@@ -118,10 +128,10 @@ export function placeErrors(errors: readonly FieldError[], shown: readonly strin
 export function fieldLabel(field: string, s: Settings): string {
   const known = LABELS[field];
   if (known) return known;
-  const agent = /^agents\.([^.]+)\.(name|model)$/.exec(field);
+  const agent = /^agents\.([^.]+)\.(name|model|effort|heavy_effort)$/.exec(field);
   if (agent) {
     const name = s.agents.find((a) => a.id === agent[1])?.name ?? agent[1];
-    return `${name}'s ${agent[2]}`;
+    return `${name}'s ${agent[2] === "effort" ? "thinking level" : agent[2] === "heavy_effort" ? "thinking level for careful work" : agent[2]}`;
   }
   const tier = /^gate\.tiers\.(.+)$/.exec(field);
   if (tier) return `asking first for ${s.gate.tools.find((t) => t.id === tier[1])?.title ?? tier[1]}`;

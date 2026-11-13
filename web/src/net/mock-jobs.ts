@@ -4,6 +4,7 @@
 
 import { hostAgentId } from "./plan";
 import { isOpen, type AgentStatus, type Job, type JobDetails, type JobList, type JobStep, type NewJob, type Started } from "./job-types";
+import { HAIKU, LOCAL_MODEL, OPUS } from "./mock-settings-data";
 import { ok, refused, type Result } from "./settings-api";
 import type { JobsApi } from "./jobs-api";
 import type { OutboundData, OutboundType, Plan } from "./types";
@@ -16,6 +17,8 @@ const GATE_S = 120;
 export interface MockBoardHost {
   emit<K extends OutboundType>(type: K, data: OutboundData[K]): void;
   plan(): Plan;
+  /** The local model while offline mode is on, else null: jobs that start now run on it. */
+  localModel(): string | null;
   /** A top-level job ended: the host reports it in a turn of its own. */
   report(job: JobDetails): void;
 }
@@ -177,6 +180,10 @@ export class MockJobs implements JobsApi {
     const room = plan.rooms.find((r) => r.id === job.room)?.name;
     job.status = "working";
     job.started_at = now();
+    const offline = this.host.localModel();
+    const agent = plan.agents.find((a) => a.id === job.agent);
+    job.model = offline ?? (job.careful ? (agent?.heavy_model ?? agent?.model) : agent?.model) ?? "";
+    job.local = offline !== null;
     this.step(job, "started", `${name} started${room ? ` in the ${room}` : ""}.`);
     this.setAgent(job.agent, "working", job.id);
     if (job.room) this.host.emit("room.state", { room: job.room, state: "active" });
@@ -277,8 +284,8 @@ const no = <T>(message: string): Promise<Result<T>> => Promise.resolve(refused(m
 
 /** The `job.changed` shape of a job. */
 function summary(j: JobDetails): Job {
-  const { id, title, agent, room, status, asked_by, parent, created_at, started_at, ended_at, needed_approval, last_step } = j;
-  return { id, title, agent, room, status, asked_by, parent, created_at, started_at, ended_at, needed_approval, last_step };
+  const { id, title, agent, room, status, asked_by, parent, created_at, started_at, ended_at, needed_approval, model, local, last_step } = j;
+  return { id, title, agent, room, status, asked_by, parent, created_at, started_at, ended_at, needed_approval, ...(model === undefined ? {} : { model }), ...(local === undefined ? {} : { local }), last_step };
 }
 
 function genericScript(brief: string): Script {
@@ -306,6 +313,8 @@ function seed(t: number): JobDetails[] {
       result: "",
       error: "",
       cost_usd: 0,
+      model: j.started_at === null || j.started_at === undefined ? "" : j.agent === "maker" ? OPUS : HAIKU,
+      local: false,
       ...j,
       steps,
       last_step: steps.at(-1) ?? null,
@@ -385,6 +394,51 @@ function seed(t: number): JobDetails[] {
       brief: "How much notice must a landlord give before a boiler service visit? Answer with the rule and where it comes from.",
       cost_usd: 0.0031,
       steps: [step(4 * min, "started", "Rook started in the Comms Room."), step(2 * min, "tool", "Searched the web: landlord notice period boiler service visit")],
+    }),
+    job({
+      id: "5d83b0f2",
+      title: "Rewrite the date parser so every import uses it",
+      agent: "maker",
+      room: "workshop",
+      status: "done",
+      created_at: t - 5 * 60 * min,
+      started_at: t - 5 * 60 * min + 30,
+      ended_at: t - 4 * 60 * min - 20 * min,
+      brief: "Rewrite the engine's date parser so every import goes through one function.",
+      result: "The parser is one function now and the three copies are gone. All 214 tests pass.",
+      cost_usd: 0.0792,
+      steps: [step(5 * 60 * min - 30, "started", "Tink started in the Workshop."), step(4 * 60 * min + 40 * min, "tool", "Edited src/dates.ts"), step(4 * 60 * min + 20 * min, "finished", "Finished.")],
+    }),
+    job({
+      id: "6a17c4e5",
+      title: "Run the engine's tests after the parser change",
+      agent: "checker",
+      room: "workshop",
+      status: "failed",
+      created_at: t - 3 * 60 * min,
+      started_at: t - 3 * 60 * min + 20,
+      ended_at: t - 2 * 60 * min - 30 * min,
+      needed_approval: true,
+      brief: "Run the engine's test suite and report anything that fails.",
+      error: "A program needed a yes and nobody answered, so the tests could not run.",
+      cost_usd: 0.0114,
+      steps: [step(3 * 60 * min - 20, "started", "Tock started in the Workshop."), step(2 * 60 * min + 30 * min, "finished", "Failed: A program needed a yes and nobody answered, so the tests could not run.")],
+    }),
+    job({
+      id: "9b30d1a7",
+      title: "Check the CSV export against the spec",
+      agent: "maker",
+      room: "workshop",
+      status: "done",
+      created_at: t - 70 * min,
+      started_at: t - 69 * min,
+      ended_at: t - 52 * min,
+      model: LOCAL_MODEL,
+      local: true,
+      brief: "Compare the CSV export with the spec and list the differences.",
+      result: "The export matches the spec except the header row, which is missing the unit column.",
+      cost_usd: 0.0287,
+      steps: [step(69 * min, "started", "Tink started in the Workshop."), step(60 * min, "tool", "Read docs/export-spec.md"), step(52 * min, "finished", "Finished.")],
     }),
     job({
       id: "e1c5a7d9",

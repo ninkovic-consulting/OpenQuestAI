@@ -14,6 +14,8 @@ house's host persona; then memory, the house, the automations, the brain and
 voice start, the budget is published, the Hall's light starts following the
 conversation, and once the session runs, so do the scheduler's runner and
 the phone channel (`vision.remote`), which stops first on the way down.
+Presence (`vision.presence`) follows the owner from the start: what reaches
+the phone depends on whether they are at the Mac.
 The job board (`vision.jobs`) starts with them: residents' work runs as
 their own sessions (`vision.residents`), and a finished job is reported to
 the owner as a host turn of its own.
@@ -39,11 +41,12 @@ from pathlib import Path
 
 import uvicorn
 
-from vision import aware, brains, gate, house, jobs, memory, remote, residents, scheduler, voice
+from vision import aware, brains, gate, house, jobs, memory, presence, remote, residents, scheduler, voice
 from vision.core.bus import Bus, Subscription
 from vision.core.config import Config
 from vision.core.events import BudgetUpdate, Notice, NoticeLevel, RoomLight, RoomState, StateChanged
 from vision.core.interfaces import Brain, Budget, House, Memory, ToolHost, TurnRecord, Voice
+from vision.jobs.model import Job
 from vision.core.server import create_app
 from vision.core.session import Session
 from vision.core.snapshot import Snapshot
@@ -80,27 +83,36 @@ def build_components(
     automations: scheduler.Automations | None = None,
     awareness: aware.Awareness | None = None,
     board: jobs.Board | None = None,
+    engine: brains.LocalEngine | None = None,
+    phone: remote.Phone | None = None,
     fake_brain: bool = False,
     voice_factory: VoiceFactory | None = None,
 ) -> tuple[Components, list[Notice]]:
     """Call every package's factory. `voice_factory` replaces `vision.voice.make_voice`;
     `automations`, `awareness` and `board` put the scheduler's, the read-only awareness
-    and the job tools behind the gate."""
+    and the job tools behind the gate, and `phone` the host's `send_to_phone`; `engine` is
+    the local model the residents share.
+    The owner's profile and library tools always come first among the extra tools."""
     notices: list[Notice] = []
     mem = memory.make_memory(config)
     budget = brains.make_budget(config, bus)
-    extra = scheduler.build_tools(automations) if automations is not None else []
+    extra = memory.build_tools(config.paths.house)
+    if automations is not None:
+        extra += scheduler.build_tools(automations)
     if awareness is not None:
         extra += aware.build_tools(awareness)
     if board is not None:
         extra += jobs.build_tools(board)
+    if phone is not None:
+        extra += remote.build_tools(phone)
     tools = gate.make_tool_host(config, bus, mem, extra)
     brain: Brain
     if fake_brain:
         notices.append(Notice(level="info", text="Running on the fake brain (--fake-brain)."))
         brain = FakeBrain()
     else:
-        brain = brains.make_brain(config, bus, tools, mem, budget)
+        local = engine or brains.make_engine(config, bus)
+        brain = brains.make_brain(config, bus, tools, mem, budget, local)
     vox = (voice_factory or voice.make_voice)(config, bus)
     home = house.make_house(config, bus)
     return Components(brain, tools, mem, budget, vox, home), notices
@@ -139,13 +151,17 @@ class Daemon:
         self.bus = Bus()
         self.token = ensure_token(config.paths.token)
         self.automations = scheduler.Automations(config, self.bus)
+        self.presence = presence.make_presence(config, self.bus)
+        """Whether the owner is at the Mac; it decides what goes to the phone."""
         self.phone = remote.make_phone(self)
         self.awareness = aware.Awareness(self)
+        self.local = brains.make_engine(config, self.bus)
+        """The local model, shared by the host's local brain and the residents' local jobs."""
         self.board = jobs.Board(
             config,
             self.bus,
             plan=lambda: self.components.house.plan(),
-            exhausted=lambda: self.components.budget.exhausted(),
+            refusal=lambda: self.residents.refusal(),
             light=lambda room, light: self.components.house.set_room_state(room, light),
         )
         if components is None:
@@ -155,6 +171,8 @@ class Daemon:
                 automations=self.automations,
                 awareness=self.awareness,
                 board=self.board,
+                engine=self.local,
+                phone=self.phone,
                 fake_brain=fake_brain,
                 voice_factory=voice,
             )
@@ -170,6 +188,7 @@ class Daemon:
             scope=self._job_gate,
             host_tools=self._lent_tools(),
             project_tools=residents.load_project_tools(),
+            local=self.local,
         )
         self._voice_factory = voice
         self._voice_lock = asyncio.Lock()
@@ -183,6 +202,7 @@ class Daemon:
         self._lights_task: asyncio.Task[None] | None = None
         self._runner_task: asyncio.Task[None] | None = None
         self._reports_task: asyncio.Task[None] | None = None
+        self._presence_task: asyncio.Task[None] | None = None
         self.app = create_app(self)
 
     def notice(self, level: NoticeLevel, text: str) -> None:
@@ -191,6 +211,7 @@ class Daemon:
 
     async def start(self) -> None:
         self.snapshot.start()
+        self._presence_task = asyncio.create_task(self.presence.run())
         for n in self._notices:
             self.notice(n.level, n.text)
         c = self.components
@@ -212,7 +233,7 @@ class Daemon:
         states = self.bus.subscribe({StateChanged.TYPE})
         self._lights_task = asyncio.create_task(self._light_the_hall(states))
         self.session = Session(
-            self.bus, c.brain, c.voice.speaker, c.memory, c.tools, surroundings=self.awareness.summary
+            self.bus, c.brain, c.voice.speaker, c.memory, c.tools, surroundings=self.surroundings
         )
         self._session_task = asyncio.create_task(self.session.run())
         runner = scheduler.Runner(self.config, self.automations, self._run_automation, self.busy)
@@ -221,13 +242,17 @@ class Daemon:
             busy=self.busy,
             run_turn=self._report_job,
             speak=lambda: self.config.jobs.speak_results and self.voice_running,
-            to_phone=self.phone.send_job_result,
+            to_phone=self._job_to_phone,
             name=self.board.agent_name,
         )
         self.board.listeners.append(reporter)
         self._reports_task = asyncio.create_task(reporter.run())
         await self.board.start(self.residents)
         await self.phone.start()
+
+    def surroundings(self) -> str:
+        """The house's summary and who the owner is, for the start of the user's message."""
+        return f"{self.awareness.summary()}\n{memory.surroundings_line(self.config.paths.house)}"
 
     def busy(self) -> bool:
         """An automation or a phone message waits while a turn runs, someone speaks,
@@ -250,6 +275,11 @@ class Daemon:
         if isinstance(root, ToolGate):
             return root.scoped(tools, actor, hooks)
         return ToolGate(self.config, self.bus, self.components.memory, tools, actor=actor, hooks=hooks)
+
+    async def _job_to_phone(self, job: Job, record: TurnRecord) -> None:
+        await self.phone.send_job_result(
+            job.id, record.reply, from_phone=job.via == "phone", started_at=record.started_at
+        )
 
     async def _report_job(self, text: str, speak: bool) -> TurnRecord:
         if self.session is None:
@@ -310,7 +340,13 @@ class Daemon:
     async def stop(self) -> None:
         await self.phone.stop()
         await self.board.stop()
-        for task in (self._reports_task, self._runner_task, self._session_task, self._lights_task):
+        for task in (
+            self._reports_task,
+            self._runner_task,
+            self._session_task,
+            self._lights_task,
+            self._presence_task,
+        ):
             if task is not None:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
@@ -319,6 +355,7 @@ class Daemon:
             c.voice.stop,
             c.brain.close,
             self._resident_client.close,
+            self.local.close,
             c.house.close,
             c.memory.close,
             self.snapshot.stop,

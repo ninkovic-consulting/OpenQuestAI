@@ -41,6 +41,30 @@ export class Api {
     }
   }
 
+  /** A file as the whole body, its name URL-encoded in `X-File-Name`; the answer is JSON. */
+  async upload(path: string, name: string, data: Blob): Promise<Result<unknown>> {
+    let res: Response;
+    try {
+      res = await fetch(path, {
+        method: "POST",
+        headers: { authorization: `Bearer ${this.token}`, "content-type": "application/octet-stream", "x-file-name": encodeURIComponent(name) },
+        body: data,
+      });
+    } catch {
+      return refused(UNREACHABLE);
+    }
+    const text = await res.text();
+    if (!res.ok) {
+      const why = readRefusal(res.status, text);
+      return refused(why.message, why.errors);
+    }
+    try {
+      return ok(JSON.parse(text) as unknown);
+    } catch {
+      return refused("The answer was not JSON.");
+    }
+  }
+
   async proposeTools(folder: string): Promise<ProposeResult> {
     let res: Response;
     try {

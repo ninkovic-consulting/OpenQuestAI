@@ -12,7 +12,7 @@ import type { ModelSource } from "../../pickers/model-picker";
 import { button, statusLine } from "../fields";
 import { back, forward, skip, startFlow, stepCount, stepOf, STEPS, type Flow, type StepId } from "./flow";
 import type { StepView, WizardEnv } from "./step";
-import { doneStep, nameStep, roomStep } from "./steps-house";
+import { aboutStep, doneStep, nameStep, roomStep } from "./steps-house";
 import { downloadsStep, keyStep, microphoneStep, welcomeStep } from "./steps-setup";
 
 const VIEWS: Record<StepId, (env: WizardEnv) => StepView> = {
@@ -21,6 +21,7 @@ const VIEWS: Record<StepId, (env: WizardEnv) => StepView> = {
   downloads: downloadsStep,
   microphone: microphoneStep,
   name: nameStep,
+  about: aboutStep,
   room: roomStep,
   done: doneStep,
 };

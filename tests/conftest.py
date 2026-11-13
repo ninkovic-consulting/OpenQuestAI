@@ -1,5 +1,6 @@
 """Shared fixtures. Every test runs with a temp `VISION_HOME`, a temp `.env`
-path and no Keychain, so nothing touches the real home or the repo's `.env`.
+path, a temp Hugging Face cache and no Keychain, so nothing touches the real
+home, a real model or the repo's `.env`.
 
 No test opens the microphone or loads speech models unless it asks to: the
 daemon's voice factory gives a silent `FakeVoice` unless `VISION_TEST_VOICE=1`.
@@ -27,6 +28,7 @@ from vision.testing.fakes import (
     FakeBudget,
     FakeHouse,
     FakeMemory,
+    FakePresenceReader,
     FakeToolHost,
     FakeVoice,
 )
@@ -43,10 +45,19 @@ def stand_in_voice(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def stand_in_presence(monkeypatch: pytest.MonkeyPatch) -> FakePresenceReader:
+    """The daemon reads a fake idle time: the owner at the Mac, until a test says otherwise."""
+    reader = FakePresenceReader()
+    monkeypatch.setattr("vision.presence.default_reader", lambda: reader)
+    return reader
+
+
+@pytest.fixture(autouse=True)
 def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     home = tmp_path / "home"
     monkeypatch.setenv("VISION_HOME", str(home))
     monkeypatch.setenv("VISION_ENV_FILE", str(tmp_path / "missing.env"))
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hf-hub"))
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr("keyring.get_password", lambda service, account: None)
     yield home

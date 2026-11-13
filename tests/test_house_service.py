@@ -24,6 +24,7 @@ PLAN_KEYS = {
     "rooms",
     "doors",
     "free_slots",
+    "effort_levels",
 }
 ROOM_KEYS = {
     "id",
@@ -78,8 +79,11 @@ def test_plan_shape_and_first_use(config: Config) -> None:
         "name": "Vision",
         "model": "claude-haiku-5-5",
         "heavy_model": "claude-opus-5-5",
+        "effort": "low",
+        "heavy_effort": "high",
         "persona": "agents/host.md",
     }
+    assert plan["effort_levels"]["claude-haiku-5-5"] == ["low", "medium", "high", "xhigh", "max"]
     hall = plan["rooms"][0]
     assert set(hall) == ROOM_KEYS
     assert hall == {
@@ -116,6 +120,14 @@ def test_plan_shape_and_first_use(config: Config) -> None:
                 ("list_jobs", "List jobs"),
                 ("job_details", "Look at a job"),
                 ("cancel_job", "Cancel a job"),
+                ("update_profile", "Update what it knows about you"),
+                ("list_documents", "List documents"),
+                ("read_document", "Read a document"),
+                ("search_documents", "Search documents"),
+                ("add_document", "Save a document"),
+                ("update_document", "Change a document"),
+                ("remove_document", "Remove a document"),
+                ("send_to_phone", "Send a message to your phone"),
             ]
         ],
         "state": "idle",
@@ -201,7 +213,7 @@ async def test_update_room(house: GridHouse, config: Config) -> None:
         "wallpaper",
     )
     room = await house.update_room("garage", {"model": None})
-    assert room["model"] == "claude-haiku-5-5"
+    assert room["model"] == "claude-sonnet-5-5"  # the checker's own model again
     with pytest.raises(HouseError, match="not moved"):
         await house.update_room("garage", {"at": [5, 5]})
     with pytest.raises(HouseError, match="Nothing to change"):

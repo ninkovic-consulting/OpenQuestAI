@@ -18,6 +18,7 @@ from vision.core.bus import Bus
 from vision.core.config import Config, load_config
 from vision.house import GridHouse, HouseError, propose_tools
 from vision.house.tools import tool_refs
+from vision.memory import profile
 from vision.setup import checks, doctor
 from vision.setup.config_file import update_config
 from vision.setup.hf_cache import gigabytes
@@ -84,6 +85,7 @@ class Setup:
             ("The Mac app", self.mac_app),
             ("Start at login", self.start_at_login),
             ("Name and monthly cap", self.name_and_cap),
+            ("About you", self.about_you),
             ("Rooms and projects", self.rooms),
         )
         try:
@@ -269,6 +271,39 @@ class Setup:
                 self.io.say("Run `vision app build` and `vision app install` to rename the app.")
         else:
             self.io.say("Unchanged.")
+
+    def about_you(self) -> None:
+        """What to call the owner, their business and anything else, written to the vault's
+        `owner.md`; Enter keeps an answer as it is, and `-` clears it."""
+        name = self.config.assistant.name
+        root = self.config.paths.house
+        now = profile.read(root)
+        self.io.say(f"{name} keeps these in mind in every conversation. Enter keeps an answer; - clears it.")
+        questions = (
+            ("name", "What should I call you?"),
+            ("business", "What business are we running?"),
+            ("notes", "Anything else I should know?"),
+        )
+        changes: dict[str, str] = {}
+        for part, question in questions:
+            current = getattr(now, part)
+            shown = f" [{current if len(current) <= 40 else current[:39] + '…'}]" if current else ""
+            while True:
+                reply = self.answer(f"{question}{shown} ")
+                if not reply:
+                    break
+                value = "" if reply == "-" else reply
+                try:
+                    changes[part] = profile.clean(part, value)
+                except profile.BadProfile as exc:
+                    self.io.say(str(exc))
+                    continue
+                break
+        if not any(changes.get(k) != getattr(now, k) for k in changes):
+            self.io.say("Unchanged.")
+            return
+        profile.update(root, changes)
+        self.io.say(f"Saved in {profile.path_in(root)}. A running assistant uses it from the next turn.")
 
     def rooms(self) -> None:
         if not self.confirm("Attach a project folder to a room?"):

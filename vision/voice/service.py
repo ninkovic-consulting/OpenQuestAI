@@ -20,6 +20,7 @@ from vision.core.events import Notice
 from vision.voice.audio_io import AudioSink, AudioSource
 from vision.voice.errors import VoiceUnavailable
 from vision.voice.loop import VoiceLoop
+from vision.voice.on_disk import ModelMissing, require
 from vision.voice.settings import VoiceSettings
 from vision.voice.stt import Transcriber, WhisperStt
 from vision.voice.tts import Synth, TtsSpeaker, load_synth
@@ -50,16 +51,21 @@ def _load(what: str, repo: str, model: _Loadable) -> None:
     started = time.perf_counter()
     try:
         model.load()
+    except ModelMissing:
+        raise
     except Exception as exc:
         raise VoiceUnavailable(
-            f"{what} could not load ({repo}: {exc}). The first start downloads it from "
-            f"Hugging Face, so check the network and the free disk space."
+            f"{what} could not load ({repo}: {exc}). Check the free disk space, or download "
+            f"the speech models again in Settings, Voice."
         ) from exc
     log.info("%s loaded in %.1f s", what, time.perf_counter() - started)
 
 
 def default_models(settings: VoiceSettings) -> ModelLoader:
+    """Loads the models from the disk only; a missing one fails before anything loads."""
+
     def load() -> Models:
+        require(settings.parts())
         detector = SileroVad(settings.vad_model)
         _load("Voice detection", settings.vad_model, detector)
         transcriber = WhisperStt(settings.stt_model)
@@ -102,7 +108,7 @@ class LocalVoice:
             raise VoiceUnavailable("Voice is turned off: [voice] enabled = false in config.toml.")
         try:
             models = await self._worker.run(self._models)
-            self.sink.open()
+            await asyncio.to_thread(self.sink.open)
             await self.source.open()
         except BaseException:
             self._worker.close()

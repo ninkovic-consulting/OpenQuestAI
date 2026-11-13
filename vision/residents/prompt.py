@@ -1,9 +1,9 @@
 """A resident's system prompt for one job, and the message that starts it.
 
 In order: its persona; the house, built from the plan so renames show; the
-rules of communication; its room and tools; the shared library; its own
-notes. Everything is read fresh for each job and stays fixed while the job
-runs, so the prompt is cached across the job's tool rounds. Nothing volatile
+rules of communication; its room and tools; the owner's profile and
+library (`vision.memory.resident_knowledge`); its own notes. Everything is
+read fresh for each job and stays fixed while the job runs, so the prompt is cached across the job's tool rounds. Nothing volatile
 (the time, the job) goes into it: that rides on the first message.
 """
 
@@ -18,9 +18,7 @@ from typing import Any
 from vision.aware.personas import Personas
 from vision.core.localtime import now_words
 from vision.jobs.model import Job
-from vision.memory.vault import Vault
 
-LIBRARY_CHARS = 6000
 NOTES_CHARS = 3000
 HOST = "host"
 
@@ -95,7 +93,16 @@ def room_part(setting: Setting, tools: Sequence[str]) -> str:
         lines.append(f"This job runs in the {room['name']}, one of your own rooms.")
     lines += folder_lines(setting.folders)
     lines.append(f"Your tools for this job: {', '.join(tools) or 'none'}.")
+    if "web_fetch" in tools:
+        lines.append(WEB_FETCH_RULE)
     return "\n".join(lines)
+
+
+WEB_FETCH_RULE = (
+    "When the job names a website or a link, load the page yourself with web_fetch and read it; "
+    "search only to find pages you were not given. If a page cannot be loaded, say plainly in your "
+    "result which page, why (the error you got), and what your findings rest on instead."
+)
 
 
 def folder_lines(folders: Sequence[Folder]) -> list[str]:
@@ -121,23 +128,6 @@ def folder_lines(folders: Sequence[Folder]) -> list[str]:
     if not usable:
         lines.append("None of the room's folders can be used, so there are no project tools.")
     return lines
-
-
-def library(vault_root: Path, room: int = LIBRARY_CHARS) -> str:
-    """The shared library, whole files in name order while they fit."""
-    blocks: list[str] = []
-    used = 0
-    for path in Vault(vault_root).library_paths():
-        try:
-            body = path.read_text(encoding="utf-8").strip()
-        except (OSError, UnicodeDecodeError):
-            continue
-        block = f"## {path.stem}\n\n{body}"
-        if not body or used + len(block) > room:
-            continue
-        blocks.append(block)
-        used += len(block) + 2
-    return "# The shared library\n\n" + "\n\n".join(blocks) if blocks else ""
 
 
 def system_prompt(

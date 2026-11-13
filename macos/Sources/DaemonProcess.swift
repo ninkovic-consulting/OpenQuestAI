@@ -41,6 +41,8 @@ final class DaemonProcess {
             environment["PYTHONDONTWRITEBYTECODE"] = "1"
         }
         environment["VISION_HOME"] = settings.home.path
+        // The daemon names the app, not a Python path, when it asks for the microphone permission.
+        environment["VISION_APP"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Vision"
         environment["PYTHONUNBUFFERED"] = "1"
         environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
 

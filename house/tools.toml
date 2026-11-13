@@ -35,7 +35,7 @@ built_in = true
 
 [tools.shell]
 title = "Shell"
-description = "Runs a shell command, always after asking you."
+description = "Runs a shell command on this Mac, after asking you unless you make it free."
 built_in = true
 
 [tools.create_automation]
@@ -108,6 +108,46 @@ title = "Cancel a job"
 description = "Stops a job and any request it made to another resident."
 built_in = true
 
+[tools.update_profile]
+title = "Update what it knows about you"
+description = "Changes what to call you, your business, or what to always keep in mind."
+built_in = true
+
+[tools.list_documents]
+title = "List documents"
+description = "Reads the list of documents in your library."
+built_in = true
+
+[tools.read_document]
+title = "Read a document"
+description = "Reads a document from your library, a part at a time."
+built_in = true
+
+[tools.search_documents]
+title = "Search documents"
+description = "Searches the text of the documents in your library."
+built_in = true
+
+[tools.add_document]
+title = "Save a document"
+description = "Saves what you dictate or paste as a new document in your library."
+built_in = true
+
+[tools.update_document]
+title = "Change a document"
+description = "Renames a document, or changes the text of one that was written rather than added from a file."
+built_in = true
+
+[tools.remove_document]
+title = "Remove a document"
+description = "Removes a document from your library, with the file it came from."
+built_in = true
+
+[tools.send_to_phone]
+title = "Send a message to your phone"
+description = "Messages your paired phone on Discord, when you ask or an automation should ping you."
+built_in = true
+
 [tools.note_progress]
 title = "Note progress"
 description = "A resident shows a short progress line on its job."
@@ -129,6 +169,12 @@ resident = true
 [tools.web_search]
 title = "Search the web"
 description = "The scout searches the web through Anthropic's search tool."
+built_in = true
+resident = true
+
+[tools.web_fetch]
+title = "Load a web page"
+description = "The scout loads a page it was given, or found, through Anthropic's fetch tool."
 built_in = true
 resident = true
 

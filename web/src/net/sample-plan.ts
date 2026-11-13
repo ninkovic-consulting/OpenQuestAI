@@ -2,6 +2,7 @@
 // (house/default.toml), in the exact shape of spec 4.8. Mock mode and the
 // tests use it, so mock mode looks like the real thing.
 
+import { EFFORTS } from "./brain-types";
 import type { Plan, Room, ToolRef } from "./types";
 
 const HAIKU = "claude-haiku-5-5";
@@ -43,13 +44,14 @@ export function samplePlan(): Plan {
     max_room_folders: 8,
     assistant: { name: "Vision" },
     agents: [
-      { id: "host", name: "Vision", model: HAIKU, heavy_model: OPUS },
-      { id: "steward", name: "Brass", model: HAIKU, heavy_model: null },
-      { id: "envoy", name: "Wren", model: HAIKU, heavy_model: null },
-      { id: "maker", name: "Tink", model: OPUS, heavy_model: null },
-      { id: "checker", name: "Tock", model: HAIKU, heavy_model: OPUS },
-      { id: "scout", name: "Rook", model: HAIKU, heavy_model: OPUS },
+      { id: "host", name: "Vision", model: HAIKU, heavy_model: OPUS, effort: "low", heavy_effort: "high" },
+      { id: "steward", name: "Brass", model: HAIKU, heavy_model: null, effort: "medium", heavy_effort: "high" },
+      { id: "envoy", name: "Wren", model: HAIKU, heavy_model: null, effort: "medium", heavy_effort: "high" },
+      { id: "maker", name: "Tink", model: OPUS, heavy_model: null, effort: "medium", heavy_effort: "high" },
+      { id: "checker", name: "Tock", model: HAIKU, heavy_model: OPUS, effort: "medium", heavy_effort: "high" },
+      { id: "scout", name: "Rook", model: HAIKU, heavy_model: OPUS, effort: "medium", heavy_effort: "high" },
     ],
+    effort_levels: { [HAIKU]: [...EFFORTS], [OPUS]: [...EFFORTS] },
     rooms: [
       room("hall", "Hall", [1, 1], [2, 2], "host", HAIKU, "red-carpet", "teal-panel", "idle"),
       room("library", "Library", [0, 0], [1, 1], "steward", HAIKU, "wood-floor", "wallpaper"),

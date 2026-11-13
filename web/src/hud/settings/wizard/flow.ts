@@ -1,7 +1,9 @@
 // The first-start wizard's steps and how Back, Skip and Continue move
 // through them, apart from the DOM.
 
-export const STEPS = ["welcome", "key", "downloads", "microphone", "name", "room", "done"] as const;
+import type { Owner } from "../../../net/owner";
+
+export const STEPS = ["welcome", "key", "downloads", "microphone", "name", "about", "room", "done"] as const;
 export type StepId = (typeof STEPS)[number];
 
 export const STEP_TITLES: Record<StepId, string> = {
@@ -10,6 +12,7 @@ export const STEP_TITLES: Record<StepId, string> = {
   downloads: "Downloads",
   microphone: "Microphone",
   name: "Name",
+  about: "About you",
   room: "A project room",
   done: "Done",
 };
@@ -65,4 +68,14 @@ export function back(flow: Flow): Flow {
 /** Each task with how it ended; a step never reached counts as skipped. */
 export function summary(flow: Flow): { id: StepId; title: string; outcome: Outcome }[] {
   return TASKS.map((id) => ({ id, title: STEP_TITLES[id], outcome: flow.outcomes[id] ?? { status: "skipped", text: "Not reached" } }));
+}
+
+/** How the About you step ended: what to call the owner and the business, in a line. */
+export function aboutOutcome(owner: Owner, changed: boolean): Outcome {
+  const business = (owner.business.split("\n")[0] ?? "").replace(/[.!?]+$/, "");
+  const short = business.length > 60 ? `${business.slice(0, 59).trimEnd()}…` : business;
+  const parts = [owner.name ? `Calls you ${owner.name}` : "", short ? `the business: ${short}` : ""].filter(Boolean);
+  if (parts.length === 0) return owner.notes ? { status: "done", text: "Something to keep in mind, no name or business." } : { status: "skipped", text: "Not told; fill it in under Settings, Assistant." };
+  const text = parts.join("; ") + (owner.notes ? "; and more to keep in mind." : ".");
+  return { status: "done", text: changed ? text : `Kept: ${text.charAt(0).toLowerCase()}${text.slice(1)}` };
 }

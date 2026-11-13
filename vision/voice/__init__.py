@@ -2,7 +2,9 @@
 
 Everything runs locally: Silero VAD, Whisper and Kokoro on MLX (`mlx-audio`),
 audio through `sounddevice`. Install with `uv sync --extra voice`. The models
-download from Hugging Face on the first `start()`.
+load from the disk only and are never fetched by themselves: the owner
+downloads them (Settings, Voice; the wizard; `vision setup`; the doctor's Fix),
+and `start()` fails with one plain message naming what is missing.
 
     voice = make_voice(config, bus)   # no I/O here
     await voice.start()               # loads models, opens the microphone
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 from vision.core.bus import Bus
 from vision.core.config import Config
+from vision.core.events import Notice
 from vision.core.interfaces import Speaker, Voice
 from vision.voice.errors import VoiceUnavailable
 
@@ -30,11 +33,15 @@ def make_voice(config: Config, bus: Bus) -> Voice:
         return _NotInstalled(exc)
 
     settings = VoiceSettings.from_config(config)
+
+    def missing(text: str) -> None:
+        bus.publish(Notice(level="warn", text=text))
+
     return LocalVoice(
         bus,
         settings,
-        source=Microphone(settings.input_device),
-        sink=SpeakerOutput(settings.output_device),
+        source=Microphone(settings.input_device, on_missing=missing),
+        sink=SpeakerOutput(settings.output_device, on_missing=missing),
         models=default_models(settings),
     )
 

@@ -40,6 +40,10 @@ class HouseView:
     """Residents whose job waits for the owner's yes."""
     project_tools: bool = False
     """Whether the workbench's project tools are installed."""
+    offline: bool = False
+    local_model: str = ""
+    local_tools: bool | None = None
+    """Whether the local model can call tools; None until known."""
 
     @property
     def name(self) -> str:
@@ -99,6 +103,8 @@ def summary(view: HouseView) -> str:
     if attached:
         lines.append(f"- Project folders: {'; '.join(attached)}.")
     lines.append(f"- {limits.limits_line(view.project_tools)}")
+    if view.offline:
+        lines.append(f"- {limits.offline_line(view.local_model, view.local_tools)}")
     return "\n".join(lines)
 
 
@@ -133,6 +139,8 @@ def overview(view: HouseView) -> str:
     for a in plan["agents"]:
         out.append(agent_block(view, a))
     out += ["", f"Limits: {limits.limits_line(view.project_tools)}"]
+    if view.offline:
+        out.append(limits.offline_line(view.local_model, view.local_tools))
     return "\n".join(out)
 
 
@@ -225,11 +233,11 @@ def room_details(view: HouseView, room: dict[str, Any], library: Sequence[Librar
 def library_words(entries: Sequence[LibraryEntry]) -> str:
     if not entries:
         return (
-            "The shared library is empty: no notes yet. The owner adds Markdown files to "
-            "house/library/ in the assistant's home. You read them yourself in every conversation, "
-            "and the residents read them when they work."
+            "The shared library is empty: no documents yet. The owner adds them in Settings, "
+            "Library (text, Markdown, PDF or Word), or asks you to save one. Short ones are in "
+            "your memory whole; longer ones you and the residents open with the document tools."
         )
-    lines = [f"The shared library holds {len(entries)} {'note' if len(entries) == 1 else 'notes'}:"]
+    lines = [f"The shared library holds {len(entries)} {'document' if len(entries) == 1 else 'documents'}:"]
     for e in entries:
         lines.append(f"- {e.title} ({e.path})" + (f": {e.gist}" if e.gist else ""))
     return "\n".join(lines)

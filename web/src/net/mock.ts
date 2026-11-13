@@ -9,6 +9,7 @@ import type { JobDetails } from "./job-types";
 import { MockAutomations } from "./mock-automations";
 import { folderRefusal } from "./mock-folders";
 import { MockJobs } from "./mock-jobs";
+import { MockLibrary } from "./mock-library";
 import { MockPhone } from "./mock-phone";
 import { MockSettings } from "./mock-settings";
 import { hostAgentId, hostRefusal, hostRoom } from "./plan";
@@ -67,9 +68,11 @@ export class MockDaemon implements Daemon {
     perform: (a) => this.runAutomation(a),
   });
   readonly phone = new MockPhone();
+  readonly library = new MockLibrary();
   readonly jobs = new MockJobs({
     emit: <K extends OutboundType>(type: K, data: OutboundData[K]) => this.emit(type, data),
     plan: () => this.plan,
+    localModel: () => (this.settings.mode().offline ? this.settings.mode().local_model : null),
     report: (job) => this.reportJob(job),
   });
   readonly settings = new MockSettings({
@@ -84,7 +87,7 @@ export class MockDaemon implements Daemon {
     tools: (ids, agent) => (ids ? ids.flatMap((id) => MOCK_CATALOG.filter((t) => t.id === id).map((t) => ({ ...t }))) : agentTools(agent)),
     forgetAutomations: () => this.automations.clear(),
     forgetPhone: (removeToken) => this.phone.reset(removeToken),
-  });
+  }, (mode) => this.emit("brain.mode", mode));
 
   constructor(private readonly store: Store) {}
 
@@ -97,6 +100,8 @@ export class MockDaemon implements Daemon {
       gate_pending: [],
       notices: [{ level: "info", text: "Mock mode: no daemon is connected." }],
       budget: { month: "2026-11", spent_usd: 18.42, cap_usd: 150 },
+      mode: this.settings.mode(),
+      presence: this.phone.presence(),
     };
     this.store.dispatch({ kind: "snapshot", snapshot, initial: true });
     this.store.dispatch({ kind: "plan", plan: structuredClone(this.plan) });
@@ -125,6 +130,7 @@ export class MockDaemon implements Daemon {
       }),
     );
     this.at(12_000, () => this.addScriptedRoom());
+    if (new URLSearchParams(location.search).get("away") === "1") this.playAway();
   }
 
   send(event: InboundEvent): void {
@@ -344,6 +350,19 @@ export class MockDaemon implements Daemon {
     this.finish();
   }
 
+  /** `?away=1`: the owner locks the Mac, an automation runs and a job reports, and the owner comes back. */
+  private playAway(): void {
+    const presence = (away: boolean): void => this.emit("presence", this.phone.setAway(away));
+    this.at(14_000, () => presence(true));
+    this.at(14_500, () =>
+      void this.automations
+        .create({ name: "Evening check", instruction: "Say whether the engine's tests are green.", schedule: { kind: "daily", time: "18:00" }, speak: false })
+        .then((r) => (r.ok ? this.automations.run(r.value.id) : r)),
+    );
+    this.at(15_000, () => this.jobs.handOffFromHost("maker", "workshop", "Fix the date format in the CSV export."));
+    this.at(45_000, () => presence(false));
+  }
+
   private addScriptedRoom(): void {
     const slot = this.plan.free_slots.find(([x, y]) => x === 4 && y === 1) ?? this.plan.free_slots[0];
     const scout = this.plan.agents.find((a) => a.id === "scout") ?? this.plan.agents[0];
@@ -404,7 +423,10 @@ export class MockDaemon implements Daemon {
 function mockPlan(): Plan {
   const plan = samplePlan();
   const workshop = plan.rooms.find((r) => r.id === "workshop");
-  if (workshop) workshop.folders = ["~/Projects/engine", "~/Projects/shop", "~/Notes/design"];
+  if (workshop) {
+    workshop.folders = ["~/Projects/engine", "~/Projects/shop", "~/Notes/design"];
+    workshop.tools = [HOST_TOOLS[4], ...MOCK_PROPOSAL].filter((t): t is ToolRef => t !== undefined).map((t) => ({ ...t }));
+  }
   return plan;
 }
 

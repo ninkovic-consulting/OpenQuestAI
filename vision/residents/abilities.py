@@ -17,7 +17,7 @@ ENVOY = "envoy"
 BASE = ("remember", "recall", "note_progress", "ask_resident")
 EXTRA: dict[str, tuple[str, ...]] = {
     STEWARD: ("machine_status", "assistant_status", "list_automations"),
-    SCOUT: ("web_search",),
+    SCOUT: ("web_search", "web_fetch"),
 }
 """Tools some residents have beyond the base set, by agent id."""
 
@@ -49,6 +49,7 @@ WORDS: dict[str, str] = {
     "assistant_status": "reads the assistant's own setup",
     "list_automations": "lists the automations",
     "web_search": "searches the web",
+    "web_fetch": "loads a web page it is given and reads it",
 }
 
 

@@ -3,8 +3,10 @@
 
 import type { Job, JobDetails } from "../../net/job-types";
 import { el } from "../dom";
+import { jobModelName } from "../mode";
 import { formatSpend } from "../money";
 import { block, button, statusLine } from "../settings/fields";
+import { chip } from "../settings/local-catalog";
 import { asker, cancellable, clock, STATUS_WORD, timeWords, type Names } from "./model";
 
 export interface DetailOptions {
@@ -56,6 +58,14 @@ export function jobDetail(o: DetailOptions): HTMLElement {
     facts.append(row);
   };
   fact("Resident", names.agent(job.agent));
+  const model = jobModelName(job);
+  if (model) {
+    const row = el("div");
+    const value = el("dd", "job-model", model);
+    if (job.local) value.append(chip("mark", "Local, on this Mac"));
+    row.append(el("dt", "caps", "Model"), value);
+    facts.append(row);
+  }
   fact("Room", names.room(job.room) ?? "None");
   fact("Asked by", `${asker(job, names, o.host)} · ${clock(job.created_at, o.now)}`);
   if (details) {

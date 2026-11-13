@@ -1,6 +1,7 @@
 """The gate: every tool call passes through here, and every call is audited.
 
-- `free` runs at once.
+- `free` runs at once (for `shell`, only in a turn the owner typed or said
+  at the Mac; see `policy`).
 - `ask` publishes `gate.request`, waits up to `[gate] timeout_s` for a
   matching `gate.decision`, then publishes `gate.resolved`. No answer is a
   deny, logged as `timeout`.
@@ -131,7 +132,11 @@ class ToolGate:
         return [tool.spec for tool in self._tools.values()]
 
     def tier(self, name: str) -> Tier:
-        return tier_for(self._gate, name)
+        """The tier in the turn this runs in. A resident's call is never the owner's own turn,
+        whichever turn handed the job off, so a tier free only at the Mac asks there."""
+        origin = current_origin()
+        source = origin.source if origin is not None and self._actor is None else None
+        return tier_for(self._gate, name, source)
 
     def line(self, name: str, args: dict[str, Any]) -> str:
         """One line saying what a call does, for a job's steps: "Run a program: pytest -q"."""
@@ -183,7 +188,7 @@ class ToolGate:
         return True
 
     async def call(self, name: str, args: dict[str, Any]) -> ToolResult:
-        tier = tier_for(self._gate, name)
+        tier = self.tier(name)
         tool = self._tools.get(name)
         if tool is None:
             await self._audit(name, args, tier, "deny", "unknown tool")

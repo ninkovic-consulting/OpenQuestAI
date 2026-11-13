@@ -1,0 +1,279 @@
+/* The Library group and the wizard's About you step, in the settings screen's
+   language: hairlines, caps labels, Fraunces titles, a dot and a 1px border for state. */
+
+.wizard textarea {
+  display: block;
+  width: 100%;
+  min-height: 56px;
+  padding: 9px 10px;
+  resize: vertical;
+  background: var(--scene);
+  border: 1px solid var(--hairline-strong);
+  color: var(--text);
+  font: 400 15px/1.45 var(--sans);
+  outline: none;
+}
+
+.wizard textarea:focus {
+  border-color: var(--mustard);
+}
+
+.wizard textarea::placeholder {
+  color: var(--muted);
+}
+
+.wizard-about .field-note {
+  margin-top: 16px;
+}
+
+/* ---------------------------------------------------------------- adding */
+
+.drop-zone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 14px;
+  padding: 22px 16px;
+  border: 1px dashed var(--hairline-strong);
+  color: var(--muted-light);
+  text-align: center;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.drop-zone .caps {
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+}
+
+.drop-or {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.library.is-dropping .drop-zone {
+  border-color: var(--mustard);
+  border-style: solid;
+  background: rgba(226, 166, 43, 0.06);
+  color: var(--mustard);
+}
+
+.upload-lines {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.upload-lines:empty {
+  display: none;
+}
+
+.upload-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-width: 0;
+}
+
+.upload-name {
+  color: var(--muted-light);
+  font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+.upload-line .status {
+  flex: 1 1 260px;
+}
+
+.library-paste .row-actions {
+  align-items: flex-start;
+}
+
+.status-slot {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.status-slot:empty {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- the list */
+
+.doc-list > .field-note:first-child {
+  margin: 0 0 10px;
+}
+
+.doc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 20px;
+  align-items: start;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.doc-list > .field-note + .doc-row {
+  border-top: 1px solid var(--hairline);
+}
+
+.doc-what {
+  min-width: 0;
+}
+
+.doc-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 18px;
+  line-height: 1.3;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.doc-meta {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  line-height: 1.6;
+}
+
+.doc-gist {
+  margin: 6px 0 0;
+  color: var(--muted-light);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.doc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.doc-actions[hidden] {
+  display: none;
+}
+
+.doc-actions .confirm {
+  display: contents;
+}
+
+.doc-actions .confirm-result:empty {
+  display: none;
+}
+
+.doc-actions .confirm-box {
+  flex-basis: 100%;
+  max-width: 420px;
+}
+
+.doc-row > .field-error {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.doc-rename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.doc-rename input {
+  flex: 1 1 220px;
+  width: auto;
+}
+
+/* ---------------------------------------------------------------- reading one */
+
+.doc-reader {
+  border-top: 1px solid var(--hairline);
+  padding-top: 14px;
+}
+
+.doc-reader-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 20px;
+}
+
+.doc-reader-head > div {
+  min-width: 0;
+  flex: 1 1 260px;
+}
+
+.doc-text {
+  margin: 14px 0 0;
+  max-height: min(56vh, 620px);
+  overflow: auto;
+  padding: 16px 18px;
+  background: var(--scene);
+  border: 1px solid var(--hairline);
+  color: var(--text);
+  font: 400 14px/1.6 var(--sans);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-strong) transparent;
+  outline: none;
+}
+
+.doc-text:focus-visible {
+  border-color: var(--mustard);
+}
+
+.library-path {
+  display: block;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  color: var(--muted-light);
+  font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+@container (max-width: 560px) {
+  .doc-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .doc-actions {
+    justify-content: flex-start;
+  }
+}
+
+.drop-zone input[type="file"] {
+  display: none;
+}
+
+.library-paste {
+  margin-top: 16px;
+  padding-top: 4px;
+}
+
+.library-paste[hidden] {
+  display: none;
+}
+
+.doc-actions {
+  align-items: flex-start;
+}
+
+/* While a removal is being confirmed, the question takes the row's full width below the title. */
+.doc-row:has(.confirm-box) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.doc-row:has(.confirm-box) .doc-actions {
+  justify-content: flex-start;
+}

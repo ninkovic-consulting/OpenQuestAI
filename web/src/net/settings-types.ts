@@ -1,10 +1,13 @@
 // The settings routes' shapes (the settings contract). The daemon is the
 // source of truth; settings-guards.ts narrows its JSON to these.
 
+import type { Owner } from "./owner";
+
 export type Tier = "free" | "ask" | "never";
 export type KeySource = "keychain" | "env_file" | "environment";
 export type Verdict = "accepted" | "refused" | "unreachable" | "none";
-export type DaemonMic = "granted" | "denied" | "unknown";
+/** What the daemon learnt when it last opened the microphone; `silent` is the device sending only zeros. */
+export type DaemonMic = "granted" | "denied" | "silent" | "unknown";
 export type DownloadWhat = "local_model" | "speech_models";
 export type ResetLevel = "settings" | "house" | "everything";
 
@@ -13,6 +16,9 @@ export interface SettingsAgent {
   name: string;
   model: string;
   heavy_model: string | null;
+  /** The thinking level for the model and for careful work; the host's follow the talk and heavy levels. */
+  effort: string;
+  heavy_effort: string;
   is_host: boolean;
 }
 
@@ -38,15 +44,21 @@ export interface GateTool {
 
 export interface Settings {
   assistant: { name: string };
+  /** The owner's profile, kept in the memory vault rather than config.toml. */
+  owner: Owner;
   models: {
     talk: string;
     heavy: string;
-    local: { backend: string; model: string; downloaded: boolean; size_bytes: number | null };
+    talk_effort: string;
+    heavy_effort: string;
+    /** `tools` is whether the local model can call tools, null until it has loaded. */
+    local: { backend: string; model: string; downloaded: boolean; size_bytes: number | null; server: string; tools: boolean | null; offline: boolean };
   };
   budget: { month: string; spent_usd: number; cap_usd: number; warn_fraction: number };
   agents: SettingsAgent[];
   voice: VoiceState;
-  gate: { tools: GateTool[]; tiers: Record<string, Tier>; never_free: string[] };
+  /** `free_at_the_mac_only`: free holds only for what the owner types or says at the Mac. */
+  gate: { tools: GateTool[]; tiers: Record<string, Tier>; never_free: string[]; free_at_the_mac_only: string[] };
   key: { stored: boolean; source: KeySource | null };
   setup: { completed: boolean; first_run: boolean };
   restart_pending: string[];
@@ -82,6 +94,8 @@ export interface ModelInfo {
   max_tokens: number | null;
   retires_at: string | null;
   price: ModelPrice | null;
+  /** The thinking levels the model takes, lowest first; none for a model without the setting. */
+  efforts: string[];
 }
 
 export interface ModelListing {
@@ -112,6 +126,18 @@ export interface VoiceTest {
   ok: boolean;
   heard: string;
   message: string;
+}
+
+/** `POST /api/voice/speak`: one sentence through the speakers. */
+export interface SpeakTest {
+  ok: boolean;
+  message: string;
+}
+
+/** The unsaved choices the speaker test may try; left out, the saved ones. */
+export interface SpeakChoice {
+  tts_voice?: string;
+  output_device?: string;
 }
 
 export interface Download {

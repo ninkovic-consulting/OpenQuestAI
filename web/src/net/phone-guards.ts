@@ -1,6 +1,6 @@
 // Narrowing `/api/phone` JSON to its types, or null when the shape is wrong.
 
-import type { PairingCode, PhoneConnection, PhoneView, TokenAnswer, TokenVerdict, VerifyAnswer } from "./phone-types";
+import type { NotifyChoice, NotifyKind, PairingCode, PhoneConnection, PhoneView, TokenAnswer, TokenVerdict, VerifyAnswer } from "./phone-types";
 
 type Obj = Record<string, unknown>;
 
@@ -13,6 +13,20 @@ const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every(isStr
 
 const CONNECTIONS: readonly PhoneConnection[] = ["off", "no_token", "connecting", "online", "offline", "refused"];
 const VERDICTS: readonly TokenVerdict[] = ["accepted", "refused", "unreachable", "none"];
+const CHOICES: readonly NotifyChoice[] = ["always", "away", "never"];
+export const NOTIFY_KINDS: readonly NotifyKind[] = ["automations", "warnings", "approvals", "jobs", "assistant"];
+const REASONS: readonly string[] = ["idle", "locked", "asleep"];
+
+function presenceOk(v: unknown): boolean {
+  return (
+    isObj(v) &&
+    isBool(v["away"]) &&
+    isBool(v["known"]) &&
+    (v["reason"] === null || isIn(REASONS, v["reason"])) &&
+    isNum(v["since"]) &&
+    isNum(v["away_after_s"])
+  );
+}
 
 export function asPairingCode(v: unknown): PairingCode | null {
   return isObj(v) && isStr(v["code"]) && isNum(v["expires_at"]) ? (v as unknown as PairingCode) : null;
@@ -37,10 +51,8 @@ export function asPhoneView(v: unknown): PhoneView | null {
     (paired === null || (isObj(paired) && isStr(paired["name"]) && isNum(paired["since"]))) &&
     (v["pairing"] === null || asPairingCode(v["pairing"]) !== null) &&
     isObj(notify) &&
-    isBool(notify["automations"]) &&
-    isBool(notify["warnings"]) &&
-    isBool(notify["approvals"]) &&
-    isBool(notify["jobs"]) &&
+    NOTIFY_KINDS.every((k) => isIn(CHOICES, notify[k])) &&
+    presenceOk(v["presence"]) &&
     isBool(v["speak_on_mac"]) &&
     isBool(v["voice_replies"]) &&
     Array.isArray(v["tools"]) &&

@@ -10,6 +10,7 @@ from vision.core.bus import Bus
 from vision.core.config import Config
 from vision.core.events import RoomLight
 from vision.jobs import Board, Desk, Job, Outcome
+from vision.residents import BUDGET_USED
 
 AGENTS = [
     ("host", "Vision"),
@@ -85,11 +86,13 @@ class Scripted:
 
 
 class Spend:
+    """The residents' refusal: the budget's words once `out` is set."""
+
     def __init__(self) -> None:
         self.out = False
 
-    def __call__(self) -> bool:
-        return self.out
+    async def __call__(self) -> str | None:
+        return BUDGET_USED if self.out else None
 
 
 async def make_board(config: Config, bus: Bus | None = None, folders: Sequence[str] = ()) -> tuple[Board, Scripted, Spend, dict[str, RoomLight]]:
@@ -99,7 +102,7 @@ async def make_board(config: Config, bus: Bus | None = None, folders: Sequence[s
         config,
         bus or Bus(),
         plan=lambda: plan(folders),
-        exhausted=spend,
+        refusal=spend,
         light=lambda room, light: lights.__setitem__(room, light),
     )
     work = Scripted()

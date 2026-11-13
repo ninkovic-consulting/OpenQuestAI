@@ -1,13 +1,14 @@
 import type { NativeHelpers } from "../../../net/native";
 import type { Doctor, DoctorCheck } from "../../../net/settings-types";
 import { el } from "../../dom";
+import { widgetBlock } from "../../widget/settings-block";
 import { RESTART_HELP, type Group, type SettingsContext } from "../context";
 import { block, button, confirmButton, note, segmented, statusLine, type Tone } from "../fields";
 
 export const macGroup: Group = {
   id: "mac",
   title: "This Mac",
-  blurb: "Starting at login, the doctor's checklist of what this Mac has, and restarting the assistant.",
+  blurb: "Starting at login, the widget and its shortcuts, the doctor's checklist of what this Mac has, and restarting the assistant.",
   prefixes: [],
   render(ctx) {
     const root = el("div", "group-body");
@@ -25,6 +26,7 @@ export const macGroup: Group = {
 
     root.append(
       block("Start at login", login),
+      ...widgetBlock(ctx.native),
       block("Restart", restartControl(ctx), version),
       ...quitBlock(ctx.native),
       block("Setup", el("p", "field-note", "The first-start steps: key, downloads, microphone, name and a project room."), setup),

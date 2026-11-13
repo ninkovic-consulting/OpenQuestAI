@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from vision.brains import make_brain
+from vision.brains import make_brain, make_engine
 from vision.brains.router import LOCAL_LINE, Router
 from vision.core.bus import Bus
 from vision.core.config import Config
@@ -65,9 +65,25 @@ async def run(router: Router, text: str = "hi") -> tuple[str, list[Any]]:
 
 
 def test_factory_returns_a_router_without_io(config: Config) -> None:
-    brain = make_brain(config, Bus(), FakeToolHost(), FakeMemory(), FakeBudget())
+    bus = Bus()
+    brain = make_brain(config, bus, FakeToolHost(), FakeMemory(), FakeBudget(), make_engine(config, bus))
     assert isinstance(brain, Router) and isinstance(brain, Brain)
     assert brain.name == "claude"
+
+
+async def test_offline_sends_nothing_to_claude(config: Config) -> None:
+    router, claude, local, _, _, sub = build(config, ["From Claude."])
+    await router.start()
+    config.brain.offline = True
+    assert router.name == "local"
+    said, events = await run(router)
+    assert said == "Local answer." and isinstance(events[-1], TurnDone)  # no spoken switch line
+    assert claude.sent == [] and local.sent == [("hi", False)]
+    assert not any(isinstance(e, BrainFallback) for e in events_of(sub))
+    config.brain.offline = False
+    assert router.name == "claude"
+    said, _ = await run(router)
+    assert said == "From Claude." and claude.sent == [("hi", False)]
 
 
 async def test_claude_answers_when_healthy(config: Config) -> None:

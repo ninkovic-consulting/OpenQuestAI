@@ -2,7 +2,8 @@
 
 Built from what the settings screen already computes (`SettingsService.settings`:
 models, spend, voice and microphone, the gate's tiers, whether a key is
-stored), plus the automations, the phone channel and the daemon's paths.
+stored), plus the automations, the phone channel, whether the owner is at
+the Mac, and the daemon's paths.
 Nothing secret is read: the API key only as "stored or not".
 """
 
@@ -10,7 +11,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from vision import __version__
+from vision import display_version
+from vision.memory import profile
 from vision.scheduler.words import when
 
 if TYPE_CHECKING:
@@ -31,7 +33,13 @@ def brain_words(brain: str, models: dict[str, Any]) -> str:
         return f"Claude, talk model {models['talk']} (heavy model {models['heavy']} when asked to think something through)"
     if brain == "local":
         local = models["local"]
-        return f"the local fallback model {local['model']} on this Mac, because Claude is unavailable or the monthly cap is reached"
+        tools = {True: "; it can use tools", False: "; it cannot use tools"}.get(local.get("tools"), "")
+        if local.get("offline"):
+            return (
+                f"the local model {local['model']} on this Mac, because offline mode is on "
+                f"(nothing is sent to Anthropic, and web search is not available){tools}"
+            )
+        return f"the local fallback model {local['model']} on this Mac, because Claude is unavailable or the monthly cap is reached{tools}"
     return "the scripted fake brain (a developer setting; nothing real answers)"
 
 
@@ -57,7 +65,8 @@ def status_text(d: Daemon, settings: dict[str, Any]) -> str:
     paused = sum(1 for a in automations if a.paused)
     phone = d.phone.state
     lines = [
-        f"Name: {settings['assistant']['name']}. App version {__version__}.",
+        f"Name: {settings['assistant']['name']}. App version {display_version()}.",
+        f"The owner: {profile.owner_words(profile.Profile(**settings['owner']))}.",
         f"Answering now: {brain_words(d.components.brain.name, settings['models'])}.",
         f"API key: {'stored' if settings['key']['stored'] else 'not stored'}.",
         f"Spend this month ({budget['month']}): ${budget['spent_usd']:.2f} of the ${budget['cap_usd']:.2f} cap; "
@@ -69,6 +78,7 @@ def status_text(d: Daemon, settings: dict[str, Any]) -> str:
         _jobs_line(d),
         f"Phone channel (Discord): {_PHONE.get(d.phone.connection, d.phone.connection)}; "
         + (f"paired with {phone.owner_name}." if phone.paired else "not paired."),
+        presence_line(d),
         f"Tools that ask first: {', '.join(asks) or 'none'}." + (f" Never allowed: {', '.join(never)}." if never else ""),
         f"Data lives in {c.paths.home}: memory vault {c.paths.house}, log {c.paths.log_db}, house file {c.paths.house_file}.",
     ]
@@ -79,12 +89,34 @@ def status_text(d: Daemon, settings: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+_AWAY = {
+    "idle": "no keyboard, mouse or voice at the Mac for {minutes}",
+    "locked": "the screen is locked",
+    "asleep": "the display is asleep",
+}
+
+
+def presence_line(d: Daemon) -> str:
+    seen = d.presence.check()
+    minutes = f"{d.config.presence.away_after_s / 60:g} minutes"
+    if not seen.known:
+        return "The owner counts as at the Mac: this Mac does not say whether anyone is using it."
+    if seen.away and seen.reason is not None:
+        return f"The owner is away from the Mac ({_AWAY[seen.reason].format(minutes=minutes)})."
+    return f"The owner is at the Mac (away after {minutes} without keyboard, mouse or voice, or when the screen locks)."
+
+
 def _jobs_line(d: Daemon) -> str:
     open_jobs = d.board.open_jobs()
     working = sum(1 for j in open_jobs if j.status == "working")
     queued = len(open_jobs) - working
     limits = d.config.jobs
+    where = (
+        f" They run on the local model {d.local.model} in offline mode, one model call at a time, yours first."
+        if d.config.brain.offline
+        else ""
+    )
     return (
         f"Residents' jobs: {working} at work, {queued} waiting (at most {limits.max_running} at once, "
-        f"{limits.max_steps} steps, {limits.job_timeout_s / 60:g} minutes and ${limits.max_job_usd:.2f} each)."
+        f"{limits.max_steps} steps, {limits.job_timeout_s / 60:g} minutes and ${limits.max_job_usd:.2f} each).{where}"
     )

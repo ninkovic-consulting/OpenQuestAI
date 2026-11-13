@@ -12,6 +12,7 @@ import numpy as np
 from vision.core.bus import Bus
 from vision.core.events import GateRequest
 from vision.core.interfaces import AuditRecord, TurnRecord
+from vision.presence import Seen
 from vision.remote.channel import PhoneChannel
 from vision.remote.host import Status, TurnsBusy
 from vision.remote.link import Link
@@ -93,7 +94,25 @@ class FakeHost:
     running: int = 0
     most_at_once: int = 0
     interrupts: int = 0
+    seen: Seen = field(default_factory=lambda: Seen(False, True, None, 0.0, 1.0))
+    away_after: float = 300.0
     _gate: asyncio.Event = field(default_factory=asyncio.Event)
+
+    def leave(self, since: float, reason: str = "locked") -> None:
+        """The owner left the Mac at `since`."""
+        self.seen = Seen(True, True, reason, since, 600.0)  # type: ignore[arg-type]
+
+    def come_back(self) -> None:
+        self.seen = Seen(False, True, None, time.time(), 0.0)
+
+    def presence(self) -> Seen:
+        return self.seen
+
+    def away_after_s(self) -> float:
+        return self.away_after
+
+    async def set_away_after(self, seconds: float) -> None:
+        self.away_after = seconds
 
     def busy(self) -> bool:
         return self.is_busy or self.running > 0
@@ -201,6 +220,7 @@ class Rig:
     state: PhoneState
     pairing: Pairing
     saves: list[PhoneState]
+    link: Link
 
 
 def rig(
@@ -224,7 +244,7 @@ def rig(
     pairing = Pairing(clock=lambda: times[0])
     link = Link(host, pairing, lambda: state, save, lambda: transport)  # type: ignore[arg-type]
     channel = PhoneChannel(link, the_ears, decoders if decoders is not None else [FakeDecoder()], clock=lambda: times[0])  # type: ignore[arg-type]
-    return Rig(channel, transport, host, the_ears, state, pairing, saves)
+    return Rig(channel, transport, host, the_ears, state, pairing, saves, link)
 
 
 def dm(text: str, user: str = OWNER, *, direct: bool = True, attachments: tuple[Attachment, ...] = ()) -> Incoming:

@@ -1,5 +1,6 @@
 // One small store that the HUD and the scene both read. `reduce` is pure.
 
+import type { BrainMode } from "./brain-types";
 import { isOpen, type AgentStatus, type Job, type JobList } from "./job-types";
 import type {
   AssistantState,
@@ -9,6 +10,7 @@ import type {
   OutboundData,
   OutboundEvent,
   Plan,
+  Presence,
   RoomLight,
   RunningAutomation,
   StateSnapshot,
@@ -37,6 +39,8 @@ export interface ViewState {
   connection: Connection;
   assistant: AssistantState;
   brain: BrainName | null;
+  /** Offline mode and the local model: `GET /api/state` seeds it and `brain.mode` keeps it current. */
+  mode: BrainMode | null;
   budget: OutboundData["budget"] | null;
   plan: Plan | null;
   /** Latest revision announced by `house.changed`; above `plan.revision` means a reload is due. */
@@ -60,6 +64,8 @@ export interface ViewState {
   reports: string[];
   /** A turn was announced (an utterance, an automation, a job report) and has not closed. */
   turnOpen: boolean;
+  /** Whether the owner is at the Mac, as the daemon reads it; null until it says. */
+  presence: Presence | null;
 }
 
 export type Action =
@@ -82,6 +88,7 @@ export function initialState(): ViewState {
     connection: "connecting",
     assistant: "idle",
     brain: null,
+    mode: null,
     budget: null,
     plan: null,
     houseRevision: -1,
@@ -97,6 +104,7 @@ export function initialState(): ViewState {
     agents: {},
     reports: [],
     turnOpen: false,
+    presence: null,
   };
 }
 
@@ -183,6 +191,8 @@ function reduceEvent(s: ViewState, e: OutboundEvent): ViewState {
         "warn",
         `Switched from ${e.data.from} to ${e.data.to}: ${e.data.reason}`,
       );
+    case "brain.mode":
+      return { ...s, mode: e.data };
     case "automation.changed":
       return { ...s, automationsRevision: s.automationsRevision + 1 };
     case "automation.started":
@@ -198,6 +208,8 @@ function reduceEvent(s: ViewState, e: OutboundEvent): ViewState {
       return jobChanged(s, e.data);
     case "agent.state":
       return { ...s, agents: { ...s.agents, [e.data.agent]: { state: e.data.state, job: e.data.job } } };
+    case "presence":
+      return { ...s, presence: e.data };
     case "notice":
       return addToast(s, e.data.level, e.data.text);
   }
@@ -214,9 +226,11 @@ function reduceSnapshot(s: ViewState, snap: StateSnapshot, initial: boolean): Vi
     ...s,
     assistant: snap.state,
     brain: snap.brain,
+    mode: snap.mode ?? s.mode,
     budget: snap.budget,
     gates: [],
     automation: snap.automation ?? null,
+    presence: snap.presence ?? s.presence,
   };
   for (const gate of snap.gate_pending) next = addGate(next, gate);
   if (initial) for (const notice of snap.notices) next = addToast(next, notice.level, notice.text);

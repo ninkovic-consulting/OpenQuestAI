@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import json
 import stat
+from pathlib import Path
 
 import httpx
 import pytest
@@ -153,3 +154,25 @@ async def test_window_closing_its_socket_is_not_an_error(
             await ws.recv()
     await asyncio.sleep(0.3)
     assert "Exception in ASGI application" not in caplog.text
+
+
+async def test_widget_page_is_served_beside_the_house(
+    config: Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Mac app's floating widget loads `/widget.html` from the same origin as the house."""
+    from vision.core import server
+
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text('<html lang="en">house</html>')
+    (dist / "widget.html").write_text('<html lang="en">widget</html>')
+    monkeypatch.setattr(server, "WEB_DIST", dist)
+    d = Daemon(config, port=7398, components=all_fakes)
+    transport = httpx.ASGITransport(app=d.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:7398") as client:
+        house = await client.get("/")
+        widget = await client.get("/widget.html")
+        assert house.status_code == widget.status_code == 200
+        assert "house" in house.text and "widget" in widget.text
+        foreign = await client.get("/widget.html", headers={"Origin": "http://evil.example"})
+        assert foreign.status_code == 403

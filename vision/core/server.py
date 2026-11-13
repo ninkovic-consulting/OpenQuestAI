@@ -128,12 +128,17 @@ def create_app(daemon: Daemon) -> FastAPI:
 
     @app.get("/api/state", dependencies=auth)
     async def state() -> dict[str, Any]:
+        # Imported here: `vision.brains` reads the house, whose routes import this module.
+        from vision import brains
+
         return {
             **daemon.snapshot.as_dict(),
             "brain": daemon.components.brain.name,
+            "mode": brains.mode(daemon.config, daemon.components.brain.name, daemon.local).data(),
             "budget": dataclasses.asdict(daemon.components.budget.status()),
             "jobs": [j.summary() for j in daemon.board.open_jobs()],
             "agents": daemon.board.agent_states(),
+            "presence": daemon.presence.view(),
         }
 
     @app.get("/api/history", dependencies=auth)

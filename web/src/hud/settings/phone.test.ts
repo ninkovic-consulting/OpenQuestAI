@@ -4,7 +4,20 @@ import { asPairingCode, asPhoneView, asTokenAnswer } from "../../net/phone-guard
 import type { PhoneView } from "../../net/phone-types";
 import { initialState, reduce } from "../../net/store";
 import { whoSaid } from "../caption";
-import { codeLine, connectionLine, pairedLine, spacedCode, toggledTools, verdictLine, voiceNotesLine } from "./phone-parts";
+import {
+  awayWords,
+  choiceSaid,
+  codeLine,
+  connectionLine,
+  NOTIFY_ROWS,
+  pairedLine,
+  parseAwayMinutes,
+  presenceLine,
+  spacedCode,
+  toggledTools,
+  verdictLine,
+  voiceNotesLine,
+} from "./phone-parts";
 
 const TOKEN = "fake-bot-token-for-tests-1.abcdef.fake-bot-token-for-tests-only-1";
 
@@ -130,5 +143,43 @@ describe("the Phone group's words", () => {
     expect(whoSaid("phone")).toBe("You, from the phone");
     expect(whoSaid("text")).toBe("You");
     expect(whoSaid("automation")).toBe("Automation");
+  });
+});
+
+describe("what goes to the phone, and when", () => {
+  it("starts with the defaults of a new pairing and checks choices like the daemon", async () => {
+    const phone = new MockPhone(0);
+    const v = await view(phone);
+    expect(v.notify).toEqual({ automations: "always", warnings: "always", approvals: "always", jobs: "always", assistant: "always" });
+    expect(asPhoneView({ ...v, notify: { ...v.notify, jobs: true } })).toBeNull();
+    expect(asPhoneView({ ...v, presence: { ...v.presence, reason: "napping" } })).toBeNull();
+    const changed = await phone.update({ notify: { jobs: "always", assistant: "never" } });
+    expect(changed.ok && changed.value.notify.jobs).toBe("always");
+    const odd = await phone.update({ notify: { jobs: "sometimes" as never } });
+    expect(odd.ok ? "" : odd.message).toBe("Send jobs as one of always, away, never.");
+  });
+
+  it("takes the away time within its range", async () => {
+    const phone = new MockPhone(0);
+    expect((await phone.update({ away_after_s: 30 })).ok).toBe(false);
+    const r = await phone.update({ away_after_s: 600 });
+    expect(r.ok && r.value.presence.away_after_s).toBe(600);
+    expect(parseAwayMinutes("10")).toBe(600);
+    expect(parseAwayMinutes("0")).toBe("Type a whole number of minutes from 1 to 120.");
+    expect(parseAwayMinutes("2.5")).toBe("Type a whole number of minutes from 1 to 120.");
+  });
+
+  it("says where the owner is and what that means", async () => {
+    const phone = new MockPhone(0);
+    const here = (await view(phone)).presence;
+    expect(presenceLine(here, () => "").text).toContain("You are at the Mac");
+    const gone = phone.setAway(true);
+    expect(presenceLine(gone, () => "18:02")).toEqual({ tone: "idle", text: "You are away (the screen is locked) since 18:02. Anything set to when away goes to the phone." });
+    expect(presenceLine({ ...gone, reason: "idle" }, () => "18:02").text).toContain("no keyboard, mouse or voice for 5 minutes");
+    expect(presenceLine({ ...here, known: false }, () => "").tone).toBe("warn");
+    expect(awayWords(90)).toBe("90 seconds");
+    expect(awayWords(5400)).toBe("1 hour 30 minutes");
+    expect(choiceSaid("Results of jobs", "away")).toBe("Results of jobs: sent to the phone only while you are away from the Mac.");
+    expect(NOTIFY_ROWS.map((r) => r.kind)).toEqual(["automations", "warnings", "approvals", "jobs", "assistant"]);
   });
 });

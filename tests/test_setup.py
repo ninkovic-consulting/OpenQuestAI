@@ -17,6 +17,7 @@ from vision.core import cli
 from vision.core.config import Config, load_config
 from vision.setup import checks, doctor, run_checks
 from vision.macapp import LoginState
+from vision.memory import profile
 from vision.setup.system import KeyVerdict
 from vision.setup.wizard import TOOLS_NOTE, run_setup
 from vision.voice.settings import VoiceSettings
@@ -427,6 +428,9 @@ def test_setup_walks_through_and_fixes(config: Config, tmp_path: Path) -> None:
             "Ada",  # name
             "lots",  # cap, refused
             "40",  # cap
+            "Sam",  # what to call you
+            "A two-person bakery in Graz.",  # the business
+            "",  # anything else: left empty
             "y",  # attach a project
             "workshop",
             str(folder),
@@ -461,6 +465,8 @@ def test_setup_walks_through_and_fixes(config: Config, tmp_path: Path) -> None:
     assert TOOLS_NOTE.format(name="Ada") in io.text
     assert "OpenQuestAI doctor, for Ada" in io.text
     assert "monthly cap $40" in io.text
+    assert profile.read(config.paths.house) == profile.Profile("Sam", "A two-person bakery in Graz.", "")
+    assert any(p.startswith("What should I call you?") for p in io.prompts)
 
 
 def test_setup_twice_changes_nothing(config: Config) -> None:

@@ -6,7 +6,7 @@ the ordinary build:
     python/     the relocatable Python this project runs on (uv's build), with
                 every locked dependency, all extras, and the `vision` package
     house/      the default house, the tool catalog and the agents' personas
-    web/dist/   the built window
+    web/dist/   the built window: the house and the widget
 
 Run-time leftovers are stripped (caches, tests, headers, entry-point scripts,
 Tk, pip), fresh bytecode is compiled so nothing is ever written into the
@@ -61,6 +61,8 @@ PRUNE_FILES = ("*.h", "*.hpp", "*.c", "*.cpp", "*.pyx", "*.pxd", "*.a", "direct_
 """Removed from site-packages. `direct_url.json` would name the build folder."""
 KEEP_HEADERS = ("mlx",)
 """Packages whose headers are read at run time (MLX compiles Metal kernels from them)."""
+WEB_PAGES = ("index.html", "widget.html")
+"""The pages `npm run build` writes into `web/dist`: the house and the floating widget."""
 MACHO_MAGIC = {
     bytes.fromhex(m) for m in ("cffaedfe", "cefaedfe", "feedfacf", "feedface", "cafebabe", "bebafeca")
 }
@@ -95,7 +97,7 @@ def stage(
 ) -> Path:
     """Fill `stage_dir` with the payload; return it. Everything in it is signed."""
     web = project / "web" / "dist"
-    if not (web / "index.html").is_file():
+    if not all((web / page).is_file() for page in WEB_PAGES):
         raise AppBuildError(
             "The window is not built; run `cd web && npm ci && npm run build` first."
         )

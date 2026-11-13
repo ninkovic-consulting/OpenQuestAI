@@ -10,6 +10,10 @@ function isToolRef(v: unknown): v is ToolRef {
   return typeof t["id"] === "string" && typeof t["title"] === "string" && typeof t["available"] === "boolean" && typeof t["built_in"] === "boolean";
 }
 
+function isLevels(v: unknown): boolean {
+  return typeof v === "object" && v !== null && Object.values(v).every((l) => Array.isArray(l) && l.every((x) => typeof x === "string"));
+}
+
 function isRoom(v: unknown): v is Room {
   if (typeof v !== "object" || v === null) return false;
   const r = v as Record<string, unknown>;
@@ -42,6 +46,7 @@ export function asPlan(raw: unknown): Plan | null {
     typeof p["cell_m"] === "number" &&
     typeof p["wall_height_m"] === "number" &&
     typeof p["max_room_folders"] === "number" &&
+    isLevels(p["effort_levels"]) &&
     Array.isArray(p["agents"]) &&
     Array.isArray(p["rooms"]) &&
     p["rooms"].every(isRoom) &&

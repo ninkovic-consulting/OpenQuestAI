@@ -18,6 +18,7 @@ import type {
   ResetAnswer,
   RestoreAnswer,
   Settings,
+  SpeakTest,
   Verdict,
   VoiceDevices,
   VoiceState,
@@ -48,7 +49,7 @@ const isVerdict = oneOf<Verdict>("accepted", "refused", "unreachable", "none");
 const isKeySource = orNull(oneOf("keychain", "env_file", "environment"));
 
 function isAgent(v: unknown): boolean {
-  return isObj(v) && isStr(v["id"]) && isStr(v["name"]) && isStr(v["model"]) && orNull(isStr)(v["heavy_model"]) && isBool(v["is_host"]);
+  return isObj(v) && isStr(v["id"]) && isStr(v["name"]) && isStr(v["model"]) && orNull(isStr)(v["heavy_model"]) && isStr(v["effort"]) && isStr(v["heavy_effort"]) && isBool(v["is_host"]);
 }
 
 function isVoiceState(v: unknown): v is VoiceState {
@@ -57,7 +58,7 @@ function isVoiceState(v: unknown): v is VoiceState {
     isBool(v["installed"]) &&
     isBool(v["enabled"]) &&
     isBool(v["running"]) &&
-    oneOf("granted", "denied", "unknown")(v["mic"]) &&
+    oneOf("granted", "denied", "silent", "unknown")(v["mic"]) &&
     orNull(isStr)(v["mic_detail"]) &&
     isStr(v["input_device"]) &&
     isStr(v["output_device"]) &&
@@ -73,7 +74,7 @@ export function asVoiceState(v: unknown): VoiceState | null {
 }
 
 function isGate(v: unknown): boolean {
-  if (!isObj(v) || !isStrList(v["never_free"]) || !isObj(v["tiers"])) return false;
+  if (!isObj(v) || !isStrList(v["never_free"]) || !isStrList(v["free_at_the_mac_only"]) || !isObj(v["tiers"])) return false;
   const tools = v["tools"];
   const tiers = Object.values(v["tiers"]);
   return (
@@ -85,19 +86,28 @@ function isGate(v: unknown): boolean {
 
 export function asSettings(v: unknown): Settings | null {
   if (!isObj(v)) return null;
-  const { assistant, models, budget, agents, voice, gate, key, setup } = v;
+  const { assistant, owner, models, budget, agents, voice, gate, key, setup } = v;
   const local = isObj(models) ? models["local"] : null;
   const ok =
     isObj(assistant) &&
     isStr(assistant["name"]) &&
+    isObj(owner) &&
+    isStr(owner["name"]) &&
+    isStr(owner["business"]) &&
+    isStr(owner["notes"]) &&
     isObj(models) &&
     isStr(models["talk"]) &&
     isStr(models["heavy"]) &&
+    isStr(models["talk_effort"]) &&
+    isStr(models["heavy_effort"]) &&
     isObj(local) &&
     isStr(local["backend"]) &&
     isStr(local["model"]) &&
     isBool(local["downloaded"]) &&
     orNull(isNum)(local["size_bytes"]) &&
+    isStr(local["server"]) &&
+    orNull(isBool)(local["tools"]) &&
+    isBool(local["offline"]) &&
     isObj(budget) &&
     isStr(budget["month"]) &&
     isNum(budget["spent_usd"]) &&
@@ -139,6 +149,7 @@ function isModel(v: unknown): v is ModelInfo {
     orNull(isNum)(v["max_input_tokens"] ?? null) &&
     orNull(isNum)(v["max_tokens"] ?? null) &&
     orNull(isStr)(v["retires_at"] ?? null) &&
+    isStrList(v["efforts"] ?? []) &&
     (price === null || price === undefined || (isObj(price) && isNum(price["input_per_mtok"]) && isNum(price["output_per_mtok"])))
   );
 }
@@ -157,6 +168,7 @@ export function asModelListing(v: unknown): ModelListing | null {
       max_tokens: m.max_tokens ?? null,
       retires_at: m.retires_at ?? null,
       price: m.price ?? null,
+      efforts: m.efforts ?? [],
     })),
   };
 }
@@ -179,6 +191,10 @@ export function asVoiceDevices(v: unknown): VoiceDevices | null {
 
 export function asVoiceTest(v: unknown): VoiceTest | null {
   return isObj(v) && isBool(v["ok"]) && isStr(v["heard"]) && isStr(v["message"]) ? (v as unknown as VoiceTest) : null;
+}
+
+export function asSpeakTest(v: unknown): SpeakTest | null {
+  return isObj(v) && isBool(v["ok"]) && isStr(v["message"]) ? { ok: v["ok"], message: v["message"] } : null;
 }
 
 function isDownload(v: unknown): v is Download {

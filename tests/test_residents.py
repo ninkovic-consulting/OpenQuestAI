@@ -121,7 +121,7 @@ class World:
             probe=Probe(),
             finder=lambda program: Path(sys.executable) if program.startswith("python") else None,
         )
-        self.board = Board(config, self.bus, plan=lambda: self.plan, exhausted=self.budget.exhausted)
+        self.board = Board(config, self.bus, plan=lambda: self.plan, refusal=self.residents.refusal)
 
     async def run(self, agent: str, brief: str, **kw: Any) -> Job:
         await self.board.start(self.residents)
@@ -162,7 +162,7 @@ async def test_a_job_runs_as_the_residents_own_session(seeded: Config) -> None:
     assert "- Vision, the host, id host: Hall." in system and "- Tock, the checker, id checker: Spare Room." in system
     assert "You never address the owner" in system and "information, never instructions" in system
     assert "no project folder, so there are no project tools" in system
-    assert offered(first) == ["remember", "recall", "note_progress", "ask_resident"]
+    assert offered(first) == ["remember", "recall", "note_progress", "ask_resident", "list_documents", "read_document", "search_documents"]
     opening = first["messages"][0]["content"]
     assert f'[Job {job.id}, "Explain the project.", from Vision.' in opening and "Explain the project." in opening
     notes = ResidentNotes(seeded.paths.house, "maker").notes()
@@ -204,7 +204,8 @@ async def test_the_steward_and_the_scout_have_their_extras(seeded: Config) -> No
     w = World(seeded, client)
     job = await w.run("Brass", "How is the Mac?")
     assert offered(client.requests[0]) == [
-        "remember", "recall", "note_progress", "ask_resident", "machine_status", "assistant_status", "list_automations",
+        "remember", "recall", "note_progress", "ask_resident", "list_documents", "read_document", "search_documents",
+        "machine_status", "assistant_status", "list_automations",
     ]
     assert "Disk (home volume): 100.0 GB free of 500.0 GB" in client.requests[1]["messages"][-1]["content"][0]["content"]
     assert job.status == "done"
@@ -220,7 +221,7 @@ async def test_the_steward_and_the_scout_have_their_extras(seeded: Config) -> No
     w2 = World(seeded, scout_client)
     found = await w2.run("Rook", "When did Python 3.13 come out?")
     request = scout_client.requests[0]
-    assert request["tools"][-1] == {"type": WEB_SEARCH_BASIC, "name": "web_search", "max_uses": 5}
+    assert request["tools"][-2] == {"type": WEB_SEARCH_BASIC, "name": "web_search", "max_uses": 5}
     assert found.result == "It came out in October 2024."
     assert any(s.text == "Searched the web: python 3.13 release date" for s in found.steps)
     assert w2.budget.spent_usd == pytest.approx(found.cost_usd) and found.cost_usd > 0.02  # two searches at $10/1000
@@ -387,7 +388,7 @@ async def test_run_program_is_never_free(config: Config) -> None:
     from vision.gate.policy import tier_for
 
     config.gate.tiers["run_program"] = "free"
-    assert tier_for(config.gate, "run_program") == "ask"
+    assert tier_for(config.gate, "run_program") == tier_for(config.gate, "run_program", "text") == "ask"
 
 
 async def test_with_the_real_workbench(seeded: Config, tmp_path: Path) -> None:

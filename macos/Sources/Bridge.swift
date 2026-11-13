@@ -15,6 +15,8 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
     private let settings: Settings
     private let supervisor: Supervisor
     weak var webView: WKWebView?
+    /// The widget, the shortcuts and their preferences; the methods for them answer only while it is set.
+    weak var shell: Background?
 
     init(settings: Settings, supervisor: Supervisor) {
         self.settings = settings
@@ -40,6 +42,13 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
             restartDaemon: () => call("restartDaemon"),
             appInfo: () => call("appInfo"),
             quit: () => call("quit"),
+            widgetPrefs: () => call("widgetPrefs"),
+            setWidgetPrefs: (changes) => call("setWidgetPrefs", [JSON.parse(JSON.stringify(changes ?? {}))]),
+            showWidget: (shown) => call("showWidget", [Boolean(shown)]),
+            dismissWidget: () => call("dismissWidget"),
+            openHouse: () => call("openHouse"),
+            fitWidget: (height, handle) =>
+              call("fitWidget", [Number(height), Array.isArray(handle) ? handle.map(Number) : []]),
           });
           Object.defineProperty(window, "pywebview", { value: Object.freeze({ api }) });
         })();
@@ -97,9 +106,32 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
             // Answer first, then quit on a later turn of the run loop, so the page's call does not hang.
             NSApp.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0.1)
             return true
+        case "widgetPrefs":
+            return try background().prefsAnswer()
+        case "setWidgetPrefs":
+            return try background().update(args.first as? [String: Any] ?? [:])
+        case "showWidget":
+            try background().setWidgetShown(args.first as? Bool ?? true)
+            return true
+        case "dismissWidget":
+            try background().dismiss()
+            return true
+        case "openHouse":
+            try background().openHouse()
+            return true
+        case "fitWidget":
+            let height = (args.first as? NSNumber)?.doubleValue ?? 0
+            let handle = (args.dropFirst().first as? [NSNumber] ?? []).map(\.doubleValue)
+            try background().fit(height: height, handle: handle)
+            return true
         default:
             throw ShellError("unknown method \(method)")
         }
+    }
+
+    private func background() throws -> Background {
+        guard let shell else { throw ShellError("the widget is not available here") }
+        return shell
     }
 
     /// The app's microphone permission: granted, denied, restricted or undetermined.

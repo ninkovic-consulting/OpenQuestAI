@@ -10,8 +10,10 @@ job's own scoped gate, and the resident's final words out as the result.
 Each model call is a step. The job stops, failed, with what was done so far
 when it has made `[jobs] max_steps` calls (the last call may use no tools,
 so the resident sums up), when its own cost passes `[jobs] max_job_usd`, when
-the month's budget is used up, or when the model declines. Server-side web
-searches (the scout's) are shown as steps, audited, and charged per search.
+the month's budget is used up, when offline mode is turned on (nothing more
+goes to Anthropic), or when the model declines. Server-side web
+searches and page fetches (the scout's) are shown as steps and audited;
+searches are charged per search, fetches only by the tokens they read.
 
 Text is not streamed to anyone, so each call waits for the whole message;
 streaming still keeps long calls clear of HTTP timeouts. Tool input is not
@@ -24,7 +26,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from vision.brains.claude import FALLBACK_BETA, charge, echo_content, supports_fallbacks
@@ -39,8 +41,6 @@ log = logging.getLogger(__name__)
 ClientSource = Callable[[], Awaitable[Any | None]]
 """The SDK client for residents, or None when no API key is stored."""
 
-NORMAL_EFFORT = "medium"
-CAREFUL_EFFORT = "high"
 NORMAL_MAX_TOKENS = 8192
 CAREFUL_MAX_TOKENS = 16000
 RETRY_AFTER_S = 2.0
@@ -59,12 +59,22 @@ _DYNAMIC_SEARCH_MODELS = (
     "claude-sonnet-5",
     "claude-sonnet-4-6",
 )
-"""Models documented for the dynamic-filtering web search; the rest take the basic one."""
+"""Models documented for the dynamic-filtering web search and web fetch; the rest take the
+basic ones."""
+WEB_FETCH_DYNAMIC = "web_fetch_20260209"
+WEB_FETCH_BASIC = "web_fetch_20250910"
 
 
 def web_search_tool(model: str, max_uses: int) -> dict[str, Any]:
     kind = WEB_SEARCH_DYNAMIC if model.startswith(_DYNAMIC_SEARCH_MODELS) else WEB_SEARCH_BASIC
     return {"type": kind, "name": "web_search", "max_uses": max_uses}
+
+
+def web_fetch_tool(model: str, max_uses: int) -> dict[str, Any]:
+    """Anthropic's server-side page fetch. It fetches only URLs already in the conversation
+    (the brief or a search result); it costs the tokens of what it reads, no fee per use."""
+    kind = WEB_FETCH_DYNAMIC if model.startswith(_DYNAMIC_SEARCH_MODELS) else WEB_FETCH_BASIC
+    return {"type": kind, "name": "web_fetch", "max_uses": max_uses}
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +88,14 @@ class Session:
     server_tools: list[dict[str, Any]]
     max_steps: int
     max_job_usd: float
+    effort: str | None = None
+    """The thinking effort to send (the agent's, or its heavy one when careful), already
+    fitted to the model; None sends none (a model that takes no effort)."""
+    offline: Callable[[], bool] = field(default=lambda: False)
+    """True once offline mode is on: the job then stops before its next call to Claude."""
+
+
+OFFLINE_STOPPED = "Offline mode was turned on, so it stopped before its next call to Claude."
 
 
 async def work(client: Any, gate: ToolGate, desk: Desk, budget: Budget, s: Session) -> Outcome:
@@ -88,6 +106,8 @@ async def work(client: Any, gate: ToolGate, desk: Desk, budget: Budget, s: Sessi
         {"name": t.name, "description": t.description, "input_schema": t.input_schema} for t in gate.specs()
     ] + s.server_tools
     for step in range(s.max_steps):
+        if s.offline():
+            return Outcome("failed", desk.partial, OFFLINE_STOPPED)
         if budget.exhausted():
             return Outcome("failed", desk.partial, "This month's API budget ran out during the work.")
         last = step == s.max_steps - 1
@@ -131,9 +151,10 @@ def _request(s: Session, messages: list[dict[str, Any]], tools: list[dict[str, A
         "max_tokens": CAREFUL_MAX_TOKENS if s.careful else NORMAL_MAX_TOKENS,
         "system": [{"type": "text", "text": s.system, "cache_control": {"type": "ephemeral"}}],
         "messages": messages,
-        "output_config": {"effort": CAREFUL_EFFORT if s.careful else NORMAL_EFFORT},
         "cache_control": {"type": "ephemeral"},
     }
+    if s.effort is not None:
+        kwargs["output_config"] = {"effort": s.effort}
     if tools:
         kwargs["tools"] = tools
         if last:
@@ -166,11 +187,31 @@ async def _call(client: Any, kwargs: dict[str, Any], budget: Budget, desk: Desk)
 
 
 async def _searches(content: list[dict[str, Any]], gate: ToolGate, desk: Desk) -> None:
+    """Each server-side search and fetch becomes a step and an audit row; a page that could
+    not be loaded says why."""
+    failed = {
+        str(b.get("tool_use_id")): str(b["content"].get("error_code") or "error")
+        for b in content
+        if b.get("type") == "web_fetch_tool_result"
+        and isinstance(b.get("content"), dict)
+        and "error_code" in b["content"]
+    }
     for block in content:
-        if block.get("type") == "server_tool_use" and block.get("name") == "web_search":
-            query = str((block.get("input") or {}).get("query", ""))
+        if block.get("type") != "server_tool_use":
+            continue
+        given = block.get("input") or {}
+        if block.get("name") == "web_search":
+            query = str(given.get("query", ""))
             desk.step("tool", f"Searched the web: {clip(query, 120)}")
             await gate.record("web_search", {"query": query}, "searched")
+        elif block.get("name") == "web_fetch":
+            url = str(given.get("url", ""))
+            error = failed.get(str(block.get("id")))
+            if error is None:
+                desk.step("tool", f"Fetched a page: {clip(url, 160)}")
+            else:
+                desk.step("tool", f"Could not load {clip(url, 140)} ({error})")
+            await gate.record("web_fetch", {"url": url}, "fetched" if error is None else f"failed: {error}")
 
 
 async def _run_tool(gate: ToolGate, desk: Desk, block: dict[str, Any]) -> dict[str, Any]:

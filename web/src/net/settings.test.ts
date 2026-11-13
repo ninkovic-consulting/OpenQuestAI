@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readRefusal } from "./api";
 import { flatten, MockSettings, mockFolders } from "./mock-settings";
 import { samplePlan } from "./sample-plan";
-import { asDownloads, asFieldErrors, asModelListing, asSettings, asVoiceState } from "./settings-guards";
+import { asDownloads, asFieldErrors, asModelListing, asSettings, asSpeakTest, asVoiceState } from "./settings-guards";
 import { foldersQuery } from "./settings-http";
 import type { Plan } from "./types";
 
@@ -22,11 +22,15 @@ describe("type guards", () => {
     expect(asSettings({ ...r.value, key: { stored: "yes", source: null } })).toBeNull();
     expect(asSettings({ ...r.value, gate: { ...r.value.gate, tiers: { shell: "sometimes" } } })).toBeNull();
     expect(asVoiceState({ ...r.value.voice, mic: "maybe" })).toBeNull();
+    expect(asVoiceState({ ...r.value.voice, mic: "silent" })).not.toBeNull();
+    expect(asSettings({ ...r.value, gate: { ...r.value.gate, free_at_the_mac_only: undefined } })).toBeNull();
+    expect(asSpeakTest({ ok: true, message: "Said." })).toEqual({ ok: true, message: "Said." });
+    expect(asSpeakTest({ ok: "yes", message: "Said." })).toBeNull();
   });
 
   it("fill in what a model listing leaves out", () => {
     const listing = asModelListing({ source: "built_in", models: [{ id: "claude-x", display_name: "Claude X" }] });
-    expect(listing?.models[0]).toEqual({ id: "claude-x", display_name: "Claude X", max_input_tokens: null, max_tokens: null, retires_at: null, price: null });
+    expect(listing?.models[0]).toEqual({ id: "claude-x", display_name: "Claude X", max_input_tokens: null, max_tokens: null, retires_at: null, price: null, efforts: [] });
     expect(asModelListing({ source: "somewhere", models: [] })).toBeNull();
   });
 
@@ -78,13 +82,43 @@ describe("the mock's settings answers", () => {
     expect(r.ok && r.value.setup.first_run).toBe(true);
   });
 
-  it("refuse shell as free and the host's name, field by field, all or nothing", async () => {
+  it("refuse the host's name and a bad tier, field by field, all or nothing", async () => {
     const m = mock();
-    const r = await m.patchSettings({ gate: { tiers: { shell: "free" } }, agents: { host: { name: "X" } }, assistant: { name: "Juniper" } });
+    const r = await m.patchSettings({ gate: { tiers: { shell: "sometimes" } }, agents: { host: { name: "X" } }, assistant: { name: "Juniper" } });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.errors.map((e) => e.field)).toEqual(["gate.tiers.shell", "agents.host.name"]);
     const after = await m.settings();
     expect(after.ok && after.value.assistant.name).toBe("Vision");
+  });
+
+  it("let shell be free, for what the owner types or says at the Mac", async () => {
+    const m = mock();
+    const r = await m.patchSettings({ gate: { tiers: { shell: "free" } } });
+    expect(r.ok && r.value.settings.gate.tiers["shell"]).toBe("free");
+    expect(r.ok && r.value.settings.gate.free_at_the_mac_only).toEqual(["shell"]);
+  });
+
+  it("report a silent microphone, and try again when another is chosen", async () => {
+    vi.useFakeTimers();
+    const m = mock();
+    await m.patchSettings({ voice: { input_device: "Insta360 Link 2C" } });
+    const on = m.setVoice(true);
+    await vi.advanceTimersByTimeAsync(500);
+    const silent = await on;
+    expect(silent.ok && [silent.value.running, silent.value.mic]).toEqual([false, "silent"]);
+    expect(silent.ok && silent.value.mic_detail).toContain("“Insta360 Link 2C” sends only silence");
+    const r = await m.patchSettings({ voice: { input_device: "MacBook Pro Microphone" } });
+    expect(r.ok && [r.value.settings.voice.running, r.value.settings.voice.mic]).toEqual([true, "granted"]);
+  });
+
+  it("say a test sentence, or what is missing for it", async () => {
+    vi.useFakeTimers();
+    const m = mock();
+    const said = m.speakTest({ tts_voice: "bm_george" });
+    await vi.advanceTimersByTimeAsync(2000);
+    const r = await said;
+    expect(r.ok && r.value).toEqual({ ok: true, message: "Said: “Hello, I am Vision. This is how I sound.”" });
+    expect((await m.speakTest({ tts_voice: "nobody" })).ok).toBe(false);
   });
 
   it("apply a name at once and keep a model change for the restart", async () => {

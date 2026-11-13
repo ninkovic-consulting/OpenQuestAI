@@ -1,6 +1,8 @@
 // The phone channel as `/api/phone` serves it. Mirrors vision/remote/;
 // the daemon is the source of truth. The bot token never comes back.
 
+import type { Presence } from "./types";
+
 export type PhoneConnection = "off" | "no_token" | "connecting" | "online" | "offline" | "refused";
 export type TokenVerdict = "accepted" | "refused" | "unreachable" | "none";
 
@@ -9,13 +11,20 @@ export interface PhoneTool {
   title: string;
 }
 
+/** When a kind of message goes to the phone: always, only while the owner is away from the Mac, or never. */
+export type NotifyChoice = "always" | "away" | "never";
+
 export interface PhoneNotify {
-  automations: boolean;
-  warnings: boolean;
-  approvals: boolean;
-  /** What a resident's job came to, when it was handed off from the phone. */
-  jobs: boolean;
+  automations: NotifyChoice;
+  warnings: NotifyChoice;
+  approvals: NotifyChoice;
+  /** What every reported job came to; one handed off from the phone goes there unless never. */
+  jobs: NotifyChoice;
+  /** `send_to_phone`: what the assistant sends on purpose. */
+  assistant: NotifyChoice;
 }
+
+export type NotifyKind = keyof PhoneNotify;
 
 export interface PhoneView {
   service: "discord";
@@ -29,6 +38,8 @@ export interface PhoneView {
   /** The live one-time code, while there is one. */
   pairing: PairingCode | null;
   notify: PhoneNotify;
+  /** Whether the owner is at the Mac now, with the away time. */
+  presence: Presence;
   speak_on_mac: boolean;
   voice_replies: boolean;
   /** Every tool behind the gate. */
@@ -64,4 +75,6 @@ export interface PhonePatch {
   voice_replies?: boolean;
   notify?: Partial<PhoneNotify>;
   phone_tools?: string[];
+  /** Seconds without keyboard, mouse or voice at the Mac that count as away. */
+  away_after_s?: number;
 }

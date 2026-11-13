@@ -34,7 +34,7 @@ async def test_start_list_look_and_refuse(daemon: Daemon) -> None:
         assert job["agent"] == "checker" and job["room"] == "spare-room" and job["asked_by"] == "owner"
         assert set(job) == {
             "id", "title", "agent", "room", "status", "asked_by", "parent", "created_at", "started_at",
-            "ended_at", "needed_approval", "last_step",
+            "ended_at", "needed_approval", "model", "local", "last_step",
         }
         await until(lambda: daemon.board.get(job["id"]).status == "failed", timeout=5)  # type: ignore[union-attr]
         listing = (await http.get("/api/jobs?limit=5")).json()
@@ -58,7 +58,7 @@ async def test_budget_refusal(daemon: Daemon) -> None:
     daemon.components.budget.set_cap(0.0)
     async with client(daemon) as http:
         refused = await http.post("/api/jobs", json={"agent": "Tink", "brief": "Build it."})
-    assert refused.status_code == 400 and "no local model" in refused.json()["detail"]
+    assert refused.status_code == 400 and "local model cannot take the work" in refused.json()["detail"]
 
 
 async def test_state_shows_open_jobs_and_agents(daemon: Daemon) -> None:
@@ -101,17 +101,17 @@ async def test_the_host_hands_off_and_hears_the_result_in_a_turn_of_its_own(daem
     assert not refused.ok and "takes none" in refused.content
 
 
-async def test_the_reporter_waits_for_quiet_and_tells_the_phone() -> None:
+async def test_the_reporter_waits_for_quiet_and_offers_every_job_to_the_phone() -> None:
     busy = [True]
     turns: list[tuple[str, bool]] = []
-    phoned: list[str] = []
+    phoned: list[tuple[str, str]] = []
 
     async def run_turn(text: str, speak: bool) -> TurnRecord:
         turns.append((text, speak))
         return TurnRecord("t", 0, 0, "job", text, "Tock says the tests pass.", "ok", "fake", "fake")
 
-    async def to_phone(text: str) -> None:
-        phoned.append(text)
+    async def to_phone(job: Job, record: TurnRecord) -> None:
+        phoned.append((job.id, record.reply))
 
     reporter = Reporter(busy=lambda: busy[0], run_turn=run_turn, speak=lambda: False, to_phone=to_phone, name=str.title, poll_s=0.01)
     task = asyncio.create_task(reporter.run())
@@ -122,10 +122,10 @@ async def test_the_reporter_waits_for_quiet_and_tells_the_phone() -> None:
     busy[0] = False
     await until(lambda: bool(phoned))
     assert 'Checker finished job j1, "Tests".' in turns[0][0] and "All pass." in turns[0][0]
-    assert turns[0][1] is False and phoned == ["Tock says the tests pass."]
+    assert turns[0][1] is False and phoned == [("j1", "Tock says the tests pass.")]
     reporter(Job("j2", "Other", "x", "maker", None, "done", "host", None, False, 0.0, via="text", result="ok"))
-    await until(lambda: len(turns) == 2)
-    assert phoned == ["Tock says the tests pass."]
+    await until(lambda: len(phoned) == 2)
+    assert phoned[1] == ("j2", "Tock says the tests pass.")  # every job is offered; the phone decides
     task.cancel()
 
 

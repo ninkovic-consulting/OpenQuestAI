@@ -1,6 +1,8 @@
 """The phone channel's settings and pairing, `$VISION_HOME/phone.json`, private (0600).
 
 The bot token is never here: it lives in the Keychain (`vision.remote.token`).
+A file from before the three-way choices keeps working: each old true or
+false switch is read as always or never.
 Written whole through a temporary file and a rename. A file that cannot be
 read is moved aside (`phone.json.broken`) and the defaults are used, which
 means unpaired. Blocking; callers use `asyncio.to_thread`.
@@ -14,8 +16,11 @@ import os
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
+from vision.remote.rules import DEFAULTS, FIELDS, Choice, read_choice
+
 FILE_NAME = "phone.json"
-VERSION = 1
+VERSION = 2
+"""2: each `notify_*` is a choice (`vision.remote.rules`); version 1 held true or false."""
 
 log = logging.getLogger(__name__)
 
@@ -33,11 +38,13 @@ class PhoneState:
     bot_id: str = ""
     bot_name: str = ""
     """The bot's id and name when the token was last checked."""
-    notify_automations: bool = True
-    notify_warnings: bool = True
-    notify_approvals: bool = True
-    notify_jobs: bool = True
-    """Send the host's report of a job that was handed off from the phone."""
+    notify_automations: Choice = DEFAULTS["automations"]
+    notify_warnings: Choice = DEFAULTS["warnings"]
+    notify_approvals: Choice = DEFAULTS["approvals"]
+    notify_jobs: Choice = DEFAULTS["jobs"]
+    """The host's report of every job; one handed off from the phone goes unless never."""
+    notify_assistant: Choice = DEFAULTS["assistant"]
+    """`send_to_phone`, the assistant's messages on purpose."""
     speak_on_mac: bool = False
     """Speak replies to the phone on the Mac too."""
     voice_replies: bool = False
@@ -68,7 +75,11 @@ def load(path: Path) -> PhoneState:
         return PhoneState()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        state = PhoneState(**{k: v for k, v in data["phone"].items() if k in _KNOWN})
+        kept = {k: v for k, v in data["phone"].items() if k in _KNOWN}
+        for name in FIELDS.values():
+            if name in kept:
+                kept[name] = read_choice(kept[name])
+        state = PhoneState(**kept)
         _check(state)
         return state
     except (OSError, ValueError, KeyError, TypeError) as exc:

@@ -92,7 +92,7 @@ def build_tools(aware: Awareness) -> list[Tool]:
                 "Your own setup and status: your name, which brain and model is answering now and whether "
                 "it is the local fallback, this month's API spend and cap, whether voice is on and the "
                 "microphone allowed, the automations and the next one due, whether the phone channel is "
-                "connected and paired, which tools ask first, where your data lives, and the app version. "
+                "connected and paired, whether the owner is at the Mac or away, which tools ask first, where your data lives, and the app version. "
                 "Use it whenever the user asks how you are set up, what model you run on, what has been "
                 "spent, or anything about your own state.",
                 _NO_ARGS,

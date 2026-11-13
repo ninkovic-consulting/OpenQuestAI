@@ -14,6 +14,7 @@ from vision.core.bus import Bus
 from vision.core.events import GateRequest, State
 from vision.core.interfaces import AuditRecord, TurnRecord
 from vision.house.tools import load_catalog
+from vision.presence import Seen
 
 if TYPE_CHECKING:
     import numpy as np
@@ -68,6 +69,18 @@ class Host(Protocol):
         """The running voice's models, or None when voice is not running."""
         ...
 
+    def presence(self) -> Seen:
+        """Whether the owner is at the Mac, read now."""
+        ...
+
+    def away_after_s(self) -> float:
+        """How long without input counts as away (`[presence] away_after_s`)."""
+        ...
+
+    async def set_away_after(self, seconds: float) -> None:
+        """Write and apply a new away time, as Settings does."""
+        ...
+
 
 class LocalSpeech(Protocol):
     async def transcribe(self, audio: np.ndarray) -> str: ...
@@ -115,6 +128,15 @@ class DaemonHost:
         names = [spec.name for spec in self._d.components.tools.specs()]
         names += [t.id for t in catalog.values() if t.resident and t.id not in names]
         return [(n, catalog[n].title if n in catalog else n.replace("_", " ")) for n in names]
+
+    def presence(self) -> Seen:
+        return self._d.presence.check()
+
+    def away_after_s(self) -> float:
+        return self._d.config.presence.away_after_s
+
+    async def set_away_after(self, seconds: float) -> None:
+        await self._d.app.state.settings.patch({"presence": {"away_after_s": seconds}})
 
     def local_voice(self) -> LocalSpeech | None:
         if not self._d.voice_running:

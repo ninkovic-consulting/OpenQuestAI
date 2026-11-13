@@ -8,6 +8,9 @@
   local model from the start, with a `notice` that says why.
 - The first local reply after a switch begins with a short spoken line saying
   so, and `name` always reports the backend answering now.
+- Offline mode (`[brain] offline`, switched in Settings while running) sends
+  every turn to the local model and nothing to Anthropic, with no spoken line
+  (the owner chose it). Turning it off sends the next turn to Claude again.
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ class Router:
         *,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        self._config = config
         self._name = config.assistant.name
         self._cooldown = config.brain.retry_claude_after_s
         self._bus = bus
@@ -52,7 +56,9 @@ class Router:
 
     @property
     def name(self) -> BrainName:
-        """The backend that will answer: already `local` once the monthly cap is reached."""
+        """The backend that will answer: `local` in offline mode or once the monthly cap is reached."""
+        if self._config.brain.offline:
+            return "local"
         if self._current == "claude" and self._budget.exhausted():
             return "local"
         return self._current
@@ -75,6 +81,11 @@ class Router:
         await self._local.close()
 
     async def send(self, text: str, *, heavy: bool = False) -> AsyncIterator[BrainEvent]:
+        if self._config.brain.offline:
+            async with aclosing(self._local.send(text, heavy=heavy)) as events:
+                async for event in events:
+                    yield event
+            return
         if await self._use_claude():
             failure: BrainError | None = None
             for attempt in range(2):

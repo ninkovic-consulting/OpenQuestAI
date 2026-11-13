@@ -36,6 +36,9 @@ class Awareness:
             jobs=d.board.open_jobs(),
             waiting=frozenset(a for a, s in states.items() if s["state"] == "waiting"),
             project_tools=d.residents.has_project_tools,
+            offline=d.config.brain.offline,
+            local_model=d.local.model,
+            local_tools=d.local.known_tools(),
         )
 
     def summary(self) -> str:

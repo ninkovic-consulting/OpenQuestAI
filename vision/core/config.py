@@ -19,6 +19,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from vision.core.effort import Effort
+
 Tier = Literal["free", "ask", "never"]
 
 
@@ -39,6 +41,10 @@ class ServerConfig(_Section):
 class BrainConfig(_Section):
     talk_model: str = "claude-haiku-5-5"
     heavy_model: str = "claude-opus-5-5"
+    talk_effort: Effort = "low"
+    heavy_effort: Effort = "high"
+    """Claude's thinking effort for talk and for heavy turns (`vision.core.effort`); a higher
+    level is slower and spends more tokens. Local models ignore it."""
     local_backend: Literal["mlx", "openai"] = "mlx"
     """`mlx` runs `local_model` inside the daemon (Apple Silicon, `uv sync --extra local`);
     `openai` streams from an OpenAI-compatible server at `local_base_url`."""
@@ -54,6 +60,9 @@ class BrainConfig(_Section):
     request_timeout_s: float = 30.0
     retry_claude_after_s: float = 300.0
     """Cool-down before the router tries Claude again after falling back."""
+    offline: bool = False
+    """Offline mode: the host and the residents run on the local model and nothing is sent
+    to Anthropic. Changed in Settings while the daemon runs."""
 
 
 class Price(_Section):
@@ -152,6 +161,13 @@ class GateConfig(_Section):
             "house_overview": "free",
             "room_details": "free",
             "assistant_status": "free",
+            "update_profile": "free",
+            "list_documents": "free",
+            "read_document": "free",
+            "search_documents": "free",
+            "add_document": "free",
+            "update_document": "free",
+            "remove_document": "ask",
             "hand_off": "free",
             "list_jobs": "free",
             "job_details": "free",
@@ -160,12 +176,14 @@ class GateConfig(_Section):
             "ask_resident": "free",
             "machine_status": "free",
             "web_search": "free",
+            "web_fetch": "free",
             "list_files": "free",
             "read_file": "free",
             "search_files": "free",
             "write_file": "ask",
             "edit_file": "ask",
             "run_program": "ask",
+            "send_to_phone": "free",
         }
     )
 
@@ -191,6 +209,20 @@ class JobsConfig(_Section):
     """The host says a finished job's outcome aloud (when voice is on)."""
     web_search_max_uses: int = Field(default=5, ge=1, le=50)
     """Web searches the scout may run in one request to the model."""
+    web_fetch_max_uses: int = Field(default=5, ge=1, le=50)
+    """Web pages the scout may load in one request to the model."""
+
+
+MIN_AWAY_S = 60.0
+MAX_AWAY_S = 7200.0
+
+
+class PresenceConfig(_Section):
+    """Whether the owner is at the Mac (`vision.presence`), which decides what reaches the phone."""
+
+    away_after_s: float = Field(default=300.0, ge=MIN_AWAY_S, le=MAX_AWAY_S)
+    """No keyboard, mouse or speech at the Mac for this long counts as away; so does a
+    locked screen or a sleeping display, at once."""
 
 
 class PathsConfig(_Section):
@@ -231,6 +263,7 @@ class Config(BaseModel):
     gate: GateConfig = Field(default_factory=GateConfig)
     automations: AutomationsConfig = Field(default_factory=AutomationsConfig)
     jobs: JobsConfig = Field(default_factory=JobsConfig)
+    presence: PresenceConfig = Field(default_factory=PresenceConfig)
     paths: PathsConfig
     agents: dict[str, Any] = Field(default_factory=dict)
     """Free-form; interpreted by `vision.house`, not validated here."""

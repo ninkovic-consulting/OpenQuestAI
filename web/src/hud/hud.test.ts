@@ -4,7 +4,6 @@ import { HOST_TOOLS, samplePlan } from "../net/sample-plan";
 import type { ToolRef } from "../net/types";
 import { replySize } from "./caption";
 import { formatSpend } from "./money";
-import { roomCardModel } from "./room-card";
 import { agentChoices, carriedOn, fromProposal, newRoom, type RoomFields, toggle, unionTools } from "./room-form";
 
 const tool = (id: string, available: boolean): ToolRef => ({ id, title: id.toUpperCase(), available, built_in: false });
@@ -108,33 +107,6 @@ describe("plans carry tools", () => {
     expect(asToolRefs([...HOST_TOOLS])).toHaveLength(5);
     expect(asToolRefs([{ id: "git" }])).toBeNull();
     expect(asToolRefs("git")).toBeNull();
-  });
-});
-
-describe("room card", () => {
-  it("shows the agent, model, folders and what each tool can do today", () => {
-    const plan = samplePlan();
-    plan.rooms.push({
-      ...plan.rooms.find((r) => r.id === "garage")!,
-      id: "den",
-      name: "Den",
-      kind: "extra",
-      folders: ["~/Projects/shop", "~/Notes/a-very-long-folder-name/with/more/parts"],
-      tools: [...HOST_TOOLS.slice(4), tool("git", true), tool("docker", false)],
-    });
-    const card = roomCardModel(plan, "den");
-    expect(card).toMatchObject({ name: "Den", agent: "Tink", model: "claude-opus-5-5", folders: ["~/Projects/shop", "~/Notes/a-very-long-folder-name/with/more/parts"] });
-    expect(card?.tools).toEqual([
-      { title: "Shell", state: "runs" },
-      { title: "GIT", state: "runs" },
-      { title: "DOCKER", state: "missing" },
-    ]);
-    expect(card?.note).toContain("Writing files and running these programs ask you first");
-    const bare = roomCardModel({ ...plan, rooms: plan.rooms.map((r) => (r.id === "den" ? { ...r, folders: [] } : r)) }, "den");
-    expect(bare?.tools[1]).toEqual({ title: "GIT", state: "waits" });
-    expect(bare?.folders).toEqual([]);
-    expect(bare?.note).toContain("Attach a project folder");
-    expect(roomCardModel(plan, "nowhere")).toBeNull();
   });
 });
 

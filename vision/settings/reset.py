@@ -3,7 +3,8 @@
 - `settings`: config.toml removed (defaults). Applied at once; a restart is
   asked for only when something a restart applies changed (the models, say).
 - `house`: house.toml back to the default house; the house reloads at once.
-- `everything`: both, plus the memory vault, `log.db`, `budget.json`, the
+- `everything`: both, plus the memory vault (with the owner's profile and
+  the library's documents and their files), `log.db`, `budget.json`, the
   automations, the job board (work in progress is cancelled first) and the
   phone channel's settings and pairing (`phone.json`);
   setup counts as not completed again. Memory is closed while its files move
@@ -53,7 +54,8 @@ MESSAGES: dict[Level, str] = {
     "settings": "Settings are back to their defaults.",
     "house": "The house is back to the default house.",
     "everything": (
-        "Everything is back to a fresh start: settings, house, memory, log, budget, automations, "
+        "Everything is back to a fresh start: settings, house, memory (with what it knew about you "
+        "and your library's documents), log, budget, automations, "
         "jobs and the phone's pairing."
     ),
 }

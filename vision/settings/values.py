@@ -15,8 +15,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from vision.core.config import Config, PathsConfig
-from vision.gate.policy import ALWAYS_ASK
+from vision.core import effort
+from vision.core.config import MAX_AWAY_S, MIN_AWAY_S, Config, PathsConfig
+from vision.gate.policy import NEVER_FREE
+from vision.memory import profile
 
 KOKORO_VOICES = (
     "af_heart",
@@ -35,6 +37,8 @@ TIERS = ("free", "ask", "never")
 NAME_MAX = 40
 MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,99}$")
 HF_REPO = re.compile(r"^[A-Za-z0-9][\w.-]{0,95}/[\w.-]{1,95}$")
+SERVER_URL = re.compile(r"^https?://[A-Za-z0-9.\-\[\]:]+(/[\w./-]*)?$")
+LOCAL_BACKENDS = ("mlx", "openai")
 MAX_CAP_USD = 1_000_000.0
 MAX_FOLLOWUP_S = 300.0
 DEVICE_MAX = 200
@@ -46,7 +50,12 @@ CONFIG_KEYS: dict[str, tuple[str, str]] = {
     "assistant.name": ("assistant", "name"),
     "models.talk": ("brain", "talk_model"),
     "models.heavy": ("brain", "heavy_model"),
+    "models.talk_effort": ("brain", "talk_effort"),
+    "models.heavy_effort": ("brain", "heavy_effort"),
     "models.local": ("brain", "local_model"),
+    "models.offline": ("brain", "offline"),
+    "models.local_backend": ("brain", "local_backend"),
+    "models.local_server": ("brain", "local_base_url"),
     "budget.cap_usd": ("budget", "monthly_cap_usd"),
     "voice.input_device": ("voice", "input_device"),
     "voice.output_device": ("voice", "output_device"),
@@ -58,10 +67,11 @@ CONFIG_KEYS: dict[str, tuple[str, str]] = {
     "jobs.timeout_s": ("jobs", "job_timeout_s"),
     "jobs.max_job_usd": ("jobs", "max_job_usd"),
     "jobs.speak_results": ("jobs", "speak_results"),
+    "presence.away_after_s": ("presence", "away_after_s"),
 }
 """Dotted field -> (section, key) in config.toml. Gate tiers go to `[gate.tiers]`."""
 
-RESTART_FIELDS = frozenset({"models.talk", "models.heavy", "models.local"})
+RESTART_FIELDS = frozenset({"models.talk", "models.heavy"})
 
 Change = list[tuple[str, Any]]
 
@@ -102,12 +112,26 @@ def _model(value: Any) -> str:
 
 
 def _local(value: Any) -> str:
-    if not isinstance(value, str) or not HF_REPO.match(value.strip()):
+    """A Hugging Face repo for MLX, or a server's model name; the service checks which."""
+    if not isinstance(value, str) or not MODEL_ID.match(value.strip()):
         raise _Bad(
-            "The local model must be a Hugging Face repo, like "
-            "mlx-community/Qwen3-4B-Instruct-2507-4bit."
+            "The local model is a Hugging Face repo, like mlx-community/Qwen3-4B-Instruct-2507-4bit, "
+            "or the server's name for it."
         )
     return value.strip()
+
+
+def _backend(value: Any) -> str:
+    if value not in LOCAL_BACKENDS:
+        raise _Bad("The local backend is mlx (on this Mac) or openai (a local server).")
+    return str(value)
+
+
+def _server(value: Any) -> str:
+    text = value.strip() if isinstance(value, str) else ""
+    if not SERVER_URL.match(text):
+        raise _Bad("The server address is an http:// or https:// address, like http://127.0.0.1:1234/v1.")
+    return text.rstrip("/")
 
 
 def _cap(value: Any) -> float:
@@ -160,15 +184,48 @@ def _job_cost(value: Any) -> float:
     return float(value)
 
 
+def _away_after(value: Any) -> float:
+    if not _is_number(value) or not MIN_AWAY_S <= value <= MAX_AWAY_S:
+        raise _Bad(f"The away time must be a number of seconds from {MIN_AWAY_S:g} to {MAX_AWAY_S:g}.")
+    return float(value)
+
+
 def _flag(value: Any) -> bool:
     if not isinstance(value, bool):
         raise _Bad("Send true or false.")
     return value
 
 
+def _owner(part: str) -> Callable[[Any], str]:
+    """One part of the owner's profile (`vision.memory.profile`), which lives in the vault."""
+
+    def check(value: Any) -> str:
+        try:
+            return profile.clean(part, value)
+        except profile.BadProfile as exc:
+            raise _Bad(str(exc)) from None
+
+    return check
+
+
+def _effort(value: Any) -> str:
+    if value not in effort.LEVELS:
+        raise _Bad(f"An effort level is one of {', '.join(effort.LEVELS)}.")
+    return str(value)
+
+
 SECTIONS: dict[str, dict[str, Callable[[Any], Any]]] = {
     "assistant": {"name": _name("The assistant's name")},
-    "models": {"talk": _model, "heavy": _model, "local": _local},
+    "models": {
+        "talk": _model,
+        "heavy": _model,
+        "local": _local,
+        "talk_effort": _effort,
+        "heavy_effort": _effort,
+        "offline": _flag,
+        "local_backend": _backend,
+        "local_server": _server,
+    },
     "budget": {"cap_usd": _cap},
     "voice": {
         "input_device": _device,
@@ -177,6 +234,7 @@ SECTIONS: dict[str, dict[str, Callable[[Any], Any]]] = {
         "followup_s": _followup,
     },
     "setup": {"completed": _flag},
+    "owner": {part: _owner(part) for part in profile.FIELDS},
     "jobs": {
         "max_running": _whole("Jobs at once", 1, 6),
         "max_steps": _whole("Steps per job", 1, 200),
@@ -184,6 +242,7 @@ SECTIONS: dict[str, dict[str, Callable[[Any], Any]]] = {
         "max_job_usd": _job_cost,
         "speak_results": _flag,
     },
+    "presence": {"away_after_s": _away_after},
 }
 
 
@@ -242,15 +301,31 @@ def _agents(
             continue
         for key, value in fields.items():
             field = f"{where}.{key}"
-            if key not in ("name", "model"):
-                errors.append({"field": field, "message": "An agent has a name and a model."})
+            if key not in AGENT_FIELDS:
+                errors.append(
+                    {"field": field, "message": "An agent has a name, a model, an effort and a heavy_effort."}
+                )
             elif agent_id == "host":
-                follows = "the assistant's name" if key == "name" else "the talk model"
+                follows = HOST_FOLLOWS[key]
                 errors.append(
                     {"field": field, "message": f"The host's {key} follows {follows}; change that."}
                 )
             else:
-                check(field, _name("An agent's name") if key == "name" else _model, value)
+                check(field, AGENT_FIELDS[key], value)
+
+
+AGENT_FIELDS: dict[str, Callable[[Any], Any]] = {
+    "name": _name("An agent's name"),
+    "model": _model,
+    "effort": _effort,
+    "heavy_effort": _effort,
+}
+HOST_FOLLOWS = {
+    "name": "the assistant's name",
+    "model": "the talk model",
+    "effort": "models.talk_effort",
+    "heavy_effort": "models.heavy_effort",
+}
 
 
 def _gate(
@@ -267,7 +342,7 @@ def _gate(
             field = f"gate.tiers.{tool}"
             if tool not in tools:
                 errors.append({"field": field, "message": f"There is no tool called {tool!r}."})
-            elif tool in ALWAYS_ASK and tier == "free":
+            elif tool in NEVER_FREE and tier == "free":
                 errors.append(
                     {
                         "field": field,

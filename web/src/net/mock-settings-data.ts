@@ -1,12 +1,12 @@
 // Mock mode's made-up answers for the settings screen: models with prices,
 // audio devices, a folder tree, the doctor's checks and two old backups.
 
+import { mockLevels } from "./mock-effort";
 import type { Backup, DoctorCheck, ModelInfo, VoiceState } from "./settings-types";
 
 export const HAIKU = "claude-haiku-5-5";
 export const OPUS = "claude-opus-5-5";
-export const LOCAL_MODEL = "mlx-community/Qwen3-4B-Instruct-2507-4bit";
-export const LOCAL_BYTES = 2_100_000_000;
+export { DEFAULT_REPO as LOCAL_MODEL } from "./mock-local-data";
 export const SPEECH_BYTES = 1_960_000_000;
 
 const model = (id: string, display_name: string, price: [number, number] | null, retires_at: string | null = null): ModelInfo => ({
@@ -16,6 +16,7 @@ const model = (id: string, display_name: string, price: [number, number] | null,
   max_tokens: 128_000,
   retires_at,
   price: price ? { input_per_mtok: price[0], output_per_mtok: price[1] } : null,
+  efforts: mockLevels(id),
 });
 
 export const MOCK_MODELS: readonly ModelInfo[] = [
@@ -23,7 +24,9 @@ export const MOCK_MODELS: readonly ModelInfo[] = [
   model("claude-sonnet-5-5", "Claude Sonnet 5.5", [2, 10]),
   model(HAIKU, "Claude Haiku 5.5", [0.1, 0.5]),
   model("claude-fable-5-2", "Claude Fable 5.2", [8, 40]),
+  model("claude-opus-4-6", "Claude Opus 4.6", [5, 25]),
   model("claude-sonnet-4-5", "Claude Sonnet 4.5", null, "2026-11-30"),
+  model("claude-haiku-4-5", "Claude Haiku 4.5", [1, 5]),
 ];
 
 export const VOICES = ["af_heart", "af_bella", "af_nicole", "af_sarah", "af_sky", "am_adam", "am_michael", "bf_emma", "bf_isabella", "bm_george", "bm_lewis"];
@@ -31,7 +34,10 @@ export const VOICES = ["af_heart", "af_bella", "af_nicole", "af_sarah", "af_sky"
 export const INPUTS = [
   { name: "MacBook Pro Microphone", default: true },
   { name: "USB Audio Interface", default: false },
+  { name: "Insta360 Link 2C", default: false },
 ];
+/** A webcam in privacy mode: it opens, but sends only silence. */
+export const SILENT_INPUT = "Insta360 Link 2C";
 export const OUTPUTS = [
   { name: "MacBook Pro Speakers", default: true },
   { name: "Studio Headphones", default: false },

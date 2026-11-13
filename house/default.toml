@@ -37,6 +37,8 @@ tools = [
     "resume_automation", "run_automation", "delete_automation",
     "house_overview", "room_details", "assistant_status",
     "hand_off", "list_jobs", "job_details", "cancel_job",
+    "update_profile", "list_documents", "read_document", "search_documents",
+    "add_document", "update_document", "remove_document",
 ]
 
 [agents.steward]
@@ -57,7 +59,7 @@ model = "claude-opus-5-5"
 [agents.checker]
 name = "Tock"
 persona = "agents/checker.md"
-model = "claude-haiku-5-5"
+model = "claude-sonnet-5-5"
 heavy_model = "claude-opus-5-5"
 
 [agents.scout]

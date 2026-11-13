@@ -8,18 +8,32 @@ import { residenceOf } from "../scene/residence";
 import { el, setText } from "./dom";
 import { runningCount } from "./jobs/model";
 import { formatSpend } from "./money";
+import { offlineMark, offlineTitle } from "./mode";
 import { makeQuit } from "./quit";
+import { agentRoomList } from "./rooms/agent-rooms";
+import { keepKeys } from "./rooms/keep-keys";
+import { agentRooms, agentToOpen, selectionIn, type AgentRoom } from "./rooms/model";
+import type { RoomSelection } from "./rooms/selection";
 
 export interface Panel {
   root: HTMLElement;
   /** Where the gate card goes. */
   foot: HTMLElement;
+  /** Under the state: where the quick offline switch goes. */
+  modeSlot: HTMLElement;
   buildToggle: HTMLButtonElement;
   jobsToggle: HTMLButtonElement;
   settingsToggle: HTMLButtonElement;
 }
 
-export function mountPanel(parent: HTMLElement, store: Store): Panel {
+/** The rooms of the house as the panel offers them: the one chosen, and how to go into one. */
+export interface Rooms {
+  selection: RoomSelection;
+  /** Flies the camera into the room and opens its card: the same as a double-click in the scene. */
+  focus(roomId: string): void;
+}
+
+export function mountPanel(parent: HTMLElement, store: Store, rooms: Rooms): Panel {
   const root = el("aside", "panel");
   const wordmark = el("h1", "wordmark");
   const state = el("div", "state caps");
@@ -27,9 +41,12 @@ export function mountPanel(parent: HTMLElement, store: Store): Panel {
   const stateText = el("span");
   const brain = el("span", "brain");
   const running = el("span", "automation-running");
-  state.append(stateDot, stateText, brain, running);
+  const modeMark = el("span", "mode-mark");
+  state.append(stateDot, stateText, brain, modeMark, running);
+  const modeSlot = el("div", "mode-slot");
   const residents = el("ul", "residents");
   residents.setAttribute("aria-label", "Residents");
+  keepKeys(residents);
   const budget = el("section", "budget");
   const budgetRow = el("div", "budget-row caps");
   const budgetAmount = el("span", "amount");
@@ -51,10 +68,12 @@ export function mountPanel(parent: HTMLElement, store: Store): Panel {
   const actions = el("div", "panel-actions");
   actions.append(buildToggle, jobsToggle, settingsToggle, quit.button);
   const foot = el("div", "gate-slot");
-  root.append(wordmark, state, residents, budget, actions, quit.confirm, el("div", "spacer"), foot);
+  root.append(wordmark, state, modeSlot, residents, budget, actions, quit.confirm, el("div", "spacer"), foot);
   parent.append(root);
 
   let residentsKey = "";
+  /** The agent whose rooms are listed; one at a time. */
+  let open: string | null = null;
   const render = (s: ViewState): void => {
     setText(wordmark, s.plan?.assistant.name ?? "");
     document.title = s.plan?.assistant.name ?? document.title;
@@ -62,7 +81,10 @@ export function mountPanel(parent: HTMLElement, store: Store): Panel {
     const offline = s.connection !== "open";
     setText(stateText, offline ? (s.connection === "connecting" ? "connecting" : "offline") : s.assistant);
     state.className = `state caps${offline ? " is-offline" : s.assistant === "idle" ? " is-idle" : ""}`;
-    setText(brain, s.brain === "local" ? "local model" : "");
+    const mark = !offline && s.mode ? offlineMark(s.mode) : null;
+    setText(modeMark, mark ?? "");
+    modeMark.title = mark && s.mode ? offlineTitle(s.mode) : "";
+    setText(brain, mark === null && s.brain === "local" ? "local model" : "");
     setText(running, !offline && s.automation ? `automation: ${s.automation.name}` : "");
     running.title = s.automation ? `Running the automation "${s.automation.name}"` : "";
 
@@ -70,10 +92,14 @@ export function mountPanel(parent: HTMLElement, store: Store): Panel {
     setText(jobsCount, working > 0 ? String(working) : "");
     jobsToggle.title = working > 0 ? `${working} ${working === 1 ? "job" : "jobs"} running` : "Jobs";
 
-    const key = JSON.stringify([s.plan?.revision, s.plan?.agents, s.roomLights, s.assistant, s.agents, workTitles(s)]);
+    const selected = selectionIn(s.plan, rooms.selection.get());
+    const listed = open && s.plan ? agentRooms(s.plan, open, s, s.roomLights, selected) : [];
+    const key = JSON.stringify([s.plan?.revision, s.plan?.agents, s.roomLights, s.assistant, s.agents, workTitles(s), open, selected, listed]);
     if (key !== residentsKey) {
       residentsKey = key;
-      residents.replaceChildren(...residentRows(s));
+      const back = residents.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset["focus"] : undefined;
+      residents.replaceChildren(...residentRows(s, { open, listed, toggle, focus: rooms.focus }));
+      if (back) residents.querySelector<HTMLElement>(`[data-focus="${back}"]`)?.focus();
     }
 
     if (s.budget) {
@@ -86,9 +112,17 @@ export function mountPanel(parent: HTMLElement, store: Store): Panel {
       budget.hidden = true;
     }
   };
+  const toggle = (agent: string): void => {
+    open = open === agent ? null : agent;
+    render(store.get());
+  };
+  rooms.selection.subscribe((id) => {
+    open = agentToOpen(store.get().plan, selectionIn(store.get().plan, id), open);
+    render(store.get());
+  });
   render(store.get());
   store.subscribe(render);
-  return { root, foot, buildToggle, jobsToggle, settingsToggle };
+  return { root, foot, modeSlot, buildToggle, jobsToggle, settingsToggle };
 }
 
 const WORK_WORD: Record<AgentWork, string> = { idle: "idle", working: "working", waiting: "waiting for your yes" };
@@ -98,7 +132,15 @@ function workTitles(s: ViewState): string[] {
   return Object.values(s.agents).map((a) => (a.job ? (s.jobs[a.job]?.title ?? "") : ""));
 }
 
-function residentRows(s: ViewState): HTMLElement[] {
+interface RowActions {
+  open: string | null;
+  /** The open agent's rooms. */
+  listed: AgentRoom[];
+  toggle(agent: string): void;
+  focus(roomId: string): void;
+}
+
+function residentRows(s: ViewState, act: RowActions): HTMLElement[] {
   const plan = s.plan;
   if (!plan) return [];
   const host = hostAgentId(plan);
@@ -118,7 +160,14 @@ function residentRows(s: ViewState): HTMLElement[] {
     const filled = isHost || busy || tower;
     const line = el("span", "where", `${where}, ${status}`);
     if (work === "working" && home?.job) line.append(el("span", "job-title", home.job.title));
-    row.append(el("span", filled ? "dot" : "dot hollow"), el("span", "name caps", agent.name), line);
+    const head = el("button", "resident-row");
+    head.type = "button";
+    head.dataset["focus"] = `a:${agent.id}`;
+    head.setAttribute("aria-expanded", String(act.open === agent.id));
+    head.append(el("span", filled ? "dot" : "dot hollow"), el("span", "name caps", agent.name), line);
+    head.addEventListener("click", () => act.toggle(agent.id));
+    row.append(head);
+    if (act.open === agent.id) row.append(agentRoomList(act.listed, agent.name, act.focus));
     return row;
   });
 }
