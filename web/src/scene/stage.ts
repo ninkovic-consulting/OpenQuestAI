@@ -104,7 +104,7 @@ export class Stage {
     notify: (text: string) => void,
   ) {
     this.level = LEVELS[this.prefs.get().quality];
-    this.ratio = pixelRatioRange(this.prefs.get().quality, window.devicePixelRatio, false).max;
+    this.ratio = pixelRatioRange(this.prefs.get().quality, window.devicePixelRatio).max;
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance", stencil: false });
     this.renderer.setPixelRatio(this.ratio);
     this.renderer.shadowMap.enabled = true;
@@ -323,6 +323,9 @@ export class Stage {
       ambient: this.hasStreaks || this.build.active,
     };
     this.build.update(this.time);
+    // Before the frame is drawn, never after: resizing clears the canvas, and a
+    // cleared canvas left until the next frame shows as a flash.
+    this.stepRatio(now);
     const shadows = shadowsDue(signals, this.shadowsForced, now - this.shadowAt);
     this.renderer.shadowMap.needsUpdate = shadows;
     if (shadows) {
@@ -339,7 +342,6 @@ export class Stage {
       this.labelsAt = now;
       this.onFrame(this.anchors());
     }
-    this.stepRatio(now);
     return activityOf(signals);
   }
 
@@ -350,9 +352,13 @@ export class Stage {
     this.refreshReadout(now);
   }
 
-  /** Move the drawn pixel ratio one small step toward where the quality, the scaler and stepping back put it. */
+  /**
+   * Move the drawn pixel ratio one small step toward where the quality and the
+   * scaler put it. Called at the start of a frame, so the resized canvas is
+   * drawn in the same turn and is never shown empty.
+   */
   private stepRatio(now: number): void {
-    const range = pixelRatioRange(this.prefs.get().quality, window.devicePixelRatio, this.pacer.steppedBack);
+    const range = pixelRatioRange(this.prefs.get().quality, window.devicePixelRatio);
     const target = Math.max(range.min, range.max * this.scaler.scale);
     if (Math.abs(target - this.ratio) < 0.01 || now - this.ratioAt < RATIO_STEP_MS) return;
     this.ratio = easeRatio(this.ratio, target);

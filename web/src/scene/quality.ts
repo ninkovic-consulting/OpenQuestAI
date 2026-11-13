@@ -71,11 +71,27 @@ export const LEVELS: Readonly<Record<Quality, QualityLevel>> = {
   },
 };
 
-/** While the assistant works on this Mac: the lightest pacing and resolution, whatever the level. */
-export const STEP_BACK: { rates: Rates; maxPixelRatio: number } = {
-  rates: { ambient: 12, motion: 20, interaction: 30 },
-  maxPixelRatio: 1,
+/**
+ * While the assistant works on this Mac the scene draws no faster than this,
+ * whatever the level. Only the rate is capped, and to rates that still look
+ * smooth: the picture keeps its sharpness, because changing the resolution
+ * as a reply starts and ends shows, and that is when the owner is looking.
+ */
+export const STEP_BACK: { rates: Rates } = {
+  rates: { ambient: 24, motion: 30, interaction: 60 },
 };
+
+/** The rates to draw at: the level's own, capped while stepping back. */
+export function ratesFor(quality: Quality, stepBack: boolean): Rates {
+  const own = LEVELS[quality].rates;
+  if (!stepBack) return own;
+  const cap = STEP_BACK.rates;
+  return {
+    ambient: Math.min(own.ambient, cap.ambient),
+    motion: Math.min(own.motion, cap.motion),
+    interaction: Math.min(own.interaction, cap.interaction),
+  };
+}
 
 export const DEFAULT_QUALITY: Quality = "balanced";
 
@@ -91,11 +107,10 @@ export function isQuality(v: unknown): v is Quality {
   return typeof v === "string" && (QUALITIES as readonly string[]).includes(v);
 }
 
-/** The pixel ratios the scene may draw at: the level's cap (lowered while stepping back) and the scaler's floor. */
-export function pixelRatioRange(quality: Quality, devicePixelRatio: number, stepBack: boolean): { max: number; min: number } {
+/** The pixel ratios the scene may draw at: the level's cap and the scaler's floor. The assistant's state never changes them. */
+export function pixelRatioRange(quality: Quality, devicePixelRatio: number): { max: number; min: number } {
   const level = LEVELS[quality];
   const device = devicePixelRatio > 0 ? devicePixelRatio : 1;
-  const cap = stepBack ? Math.min(level.maxPixelRatio, STEP_BACK.maxPixelRatio) : level.maxPixelRatio;
-  const max = Math.min(cap, device);
+  const max = Math.min(level.maxPixelRatio, device);
   return { max, min: max * level.minScale };
 }

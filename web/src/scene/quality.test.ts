@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PREFS, DisplayPrefsStore, parsePrefs, STORAGE_KEY, type PrefsStorage } from "./display-prefs";
-import { isQuality, LEVELS, pixelRatioRange, QUALITIES, samplesFor, STEP_BACK } from "./quality";
+import { isQuality, LEVELS, pixelRatioRange, QUALITIES, ratesFor, samplesFor, STEP_BACK } from "./quality";
 
 describe("quality levels", () => {
   it("defaults to Balanced, which draws as sharp as High", () => {
@@ -26,15 +26,24 @@ describe("quality levels", () => {
   });
 
   it("caps the pixel ratio by the level and the display, with the scaler's floor below", () => {
-    expect(pixelRatioRange("balanced", 2, false)).toEqual({ max: 2, min: 2 * LEVELS.balanced.minScale });
-    expect(pixelRatioRange("balanced", 1, false).max).toBe(1);
-    expect(pixelRatioRange("low", 2, false).max).toBe(1);
-    expect(pixelRatioRange("high", 3, false).max).toBe(2);
-    expect(pixelRatioRange("high", 0, false).max).toBe(1);
+    expect(pixelRatioRange("balanced", 2)).toEqual({ max: 2, min: 2 * LEVELS.balanced.minScale });
+    expect(pixelRatioRange("balanced", 1).max).toBe(1);
+    expect(pixelRatioRange("low", 2).max).toBe(1);
+    expect(pixelRatioRange("high", 3).max).toBe(2);
+    expect(pixelRatioRange("high", 0).max).toBe(1);
   });
 
-  it("drops to the lightest resolution while stepping back", () => {
-    expect(pixelRatioRange("high", 2, true).max).toBe(STEP_BACK.maxPixelRatio);
+  it("caps the rates while stepping back, and never raises a level's own", () => {
+    expect(ratesFor("balanced", false)).toBe(LEVELS.balanced.rates);
+    expect(ratesFor("high", true)).toEqual(STEP_BACK.rates);
+    expect(ratesFor("balanced", true)).toEqual({ ambient: 24, motion: 30, interaction: 60 });
+    expect(ratesFor("low", true)).toEqual(LEVELS.low.rates);
+  });
+
+  it("keeps stepping back smooth: nothing that moves drops under 24 frames a second", () => {
+    expect(STEP_BACK.rates.ambient).toBeGreaterThanOrEqual(24);
+    expect(STEP_BACK.rates.motion).toBeGreaterThanOrEqual(30);
+    expect(STEP_BACK.rates.interaction).toBeGreaterThanOrEqual(60);
   });
 
   it("halves Balanced's samples where Retina pixels hide the difference", () => {

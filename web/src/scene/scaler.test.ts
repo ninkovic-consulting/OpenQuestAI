@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EASE_STEP, easeRatio, FRESH, scaleStep, STEP, type ScalerState } from "./scaler";
+import { EASE_STEP, easeRatio, FRESH, scaleStep, STALL_MS, STEP, type ScalerState } from "./scaler";
 
 const BUDGET = 1000 / 60;
 const VSYNC = 1000 / 120;
@@ -69,6 +69,20 @@ describe("the resolution scaler", () => {
 
   it("keeps within its floor even if the floor rises", () => {
     expect(scaleStep({ ...FRESH, scale: 0.5 }, 1, BUDGET, MIN).scale).toBe(MIN);
+  });
+
+  it("does not lower the resolution for stalls or a window whose ticks are held back", () => {
+    let s = FRESH;
+    for (let i = 0; i < 500; i++) s = scaleStep(s, 1000, BUDGET, MIN);
+    expect(s.scale).toBe(1);
+    for (let i = 0; i < 500; i++) s = scaleStep(s, STALL_MS, BUDGET, MIN);
+    expect(s).toEqual(FRESH);
+  });
+
+  it("still lowers it for frames that are slow but not stalled", () => {
+    let s = FRESH;
+    for (let i = 0; i < 40; i++) s = scaleStep(s, STALL_MS - 1, BUDGET, MIN);
+    expect(s.scale).toBeLessThan(1);
   });
 });
 

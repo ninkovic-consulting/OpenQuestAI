@@ -1,11 +1,11 @@
 // How often the scene draws. Each drawn frame reports the strongest activity
 // in the scene (nothing, ambient motion, real motion, or the owner moving
 // the view); the quality level gives each a rate. While the assistant works
-// on this Mac the scene steps back to the lightest rates, and while the page
-// is hidden it draws nothing at all.
+// on this Mac the scene steps back: its rates are capped, its sharpness is
+// not. While the page is hidden it draws nothing at all.
 
 import type { ViewState } from "../net/store";
-import { LEVELS, STEP_BACK, type Quality } from "./quality";
+import { ratesFor, type Quality } from "./quality";
 
 export type Activity = "still" | "ambient" | "motion" | "interaction";
 
@@ -38,7 +38,7 @@ export function decidePace(p: PaceInput): Pace {
   const word = WORDS[p.activity];
   const prefix = p.stepBack ? "stepped back · " : "";
   if (p.activity === "still") return { fps: 0, label: `${prefix}still` };
-  const fps = (p.stepBack ? STEP_BACK.rates : LEVELS[p.quality].rates)[p.activity];
+  const fps = ratesFor(p.quality, p.stepBack)[p.activity];
   return { fps, label: `${prefix}${word} ${fps === Infinity ? "display rate" : `${fps}/s`}` };
 }
 

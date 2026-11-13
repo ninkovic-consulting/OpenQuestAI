@@ -35,12 +35,14 @@ describe("the pace of drawing", () => {
     }
   });
 
-  it("steps back to the lightest rates, whatever the level", () => {
+  it("caps the rates while stepping back, whatever the level", () => {
     for (const quality of ["low", "balanced", "high"] as const) {
       const p = decidePace({ visible: true, activity: "interaction", stepBack: true, quality });
       expect(p.fps).toBe(STEP_BACK.rates.interaction);
       expect(p.label).toMatch(/^stepped back/);
     }
+    expect(decidePace({ visible: true, activity: "ambient", stepBack: true, quality: "low" }).fps).toBe(LEVELS.low.rates.ambient);
+    expect(decidePace({ visible: true, activity: "motion", stepBack: true, quality: "high" }).fps).toBe(STEP_BACK.rates.motion);
   });
 
   it("ranks activity", () => {

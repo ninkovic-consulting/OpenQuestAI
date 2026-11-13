@@ -35,7 +35,7 @@ export const displayGroup: Group = {
         fieldRow("Quality", quality),
         summary,
         stepBack,
-        note("While the local model answers or the voice speaks, the house draws less often and less sharply, so they get the graphics chip; it eases back afterwards."),
+        note("While the local model answers or the voice speaks, the house draws a little less often, so they get more of the graphics chip. Its sharpness does not change."),
         readout,
         note("Frames a second, frame time, resolution and draw calls, in the scene's corner. Add ?stats=1 to the address for the same."),
       ),

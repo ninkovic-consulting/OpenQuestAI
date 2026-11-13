@@ -17,6 +17,12 @@ export const ON_TIME_FRAMES = 90;
 export const COOLDOWN_FRAMES = 30;
 /** Frames before a level that failed is tried again, at first; it doubles with each failure there, so retries soon all but stop. */
 export const HOLD_FRAMES = 600;
+/**
+ * A frame this long says nothing about the graphics chip: the page stalled, or
+ * the window is in the background and its ticks are held back. Fewer pixels
+ * would not have helped, so it is not counted either way.
+ */
+export const STALL_MS = 250;
 
 export interface ScalerState {
   /** Share of the quality level's pixel ratio drawn, from `min` to 1. */
@@ -42,6 +48,7 @@ export function scaleStep(s: ScalerState, frameMs: number, budgetMs: number, min
     next.cooldown -= 1;
     return next;
   }
+  if (frameMs >= STALL_MS) return next;
   const late = frameMs > budgetMs * LATE_SHARE;
   next.late = late ? next.late + 1 : Math.max(0, next.late - 1);
   next.onTime = frameMs <= budgetMs ? next.onTime + 1 : 0;
