@@ -39,6 +39,7 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
             setLoginItem: (enabled) => call("setLoginItem", [Boolean(enabled)]),
             restartDaemon: () => call("restartDaemon"),
             appInfo: () => call("appInfo"),
+            quit: () => call("quit"),
           });
           Object.defineProperty(window, "pywebview", { value: Object.freeze({ api }) });
         })();
@@ -92,6 +93,10 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
                 "bundleId": Bundle.main.bundleIdentifier ?? "",
                 "ownsDaemon": supervisor.startedDaemon,
             ]
+        case "quit":
+            // Answer first, then quit on a later turn of the run loop, so the page's call does not hang.
+            NSApp.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0.1)
+            return true
         default:
             throw ShellError("unknown method \(method)")
         }

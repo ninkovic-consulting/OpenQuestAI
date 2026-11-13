@@ -293,6 +293,68 @@ select {
   color: var(--mustard);
 }
 
+/* Quit sits with the other actions, quieter until it is pointed at. */
+.quit-toggle {
+  flex: 1 1 auto;
+  background: none;
+  border: 1px solid var(--hairline-strong);
+  color: var(--muted);
+  padding: 10px 14px 9px;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+
+.quit-toggle:hover,
+.quit-toggle.is-on {
+  border-color: var(--alert);
+  color: var(--alert);
+}
+
+.quit-confirm {
+  margin-top: 10px;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--hairline-strong);
+}
+
+.quit-question {
+  margin: 0 0 12px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.quit-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.quit-yes,
+.quit-no {
+  flex: 1 1 0;
+  background: none;
+  border: 1px solid var(--hairline-strong);
+  color: var(--muted-light);
+  padding: 9px 12px 8px;
+  cursor: pointer;
+}
+
+.quit-yes {
+  border-color: var(--alert);
+  color: var(--alert);
+}
+
+.quit-yes:hover:not(:disabled) {
+  background: var(--alert);
+  color: var(--ground);
+}
+
+.quit-no:hover {
+  border-color: var(--mustard);
+  color: var(--mustard);
+}
+
 /* Running jobs, counted on the control while the panel is closed. */
 .jobs-toggle .count {
   min-width: 18px;

@@ -22,7 +22,7 @@ final class SelfTest {
         offline: state ? state.classList.contains("is-offline") : true,
         wordmark: wordmark ? wordmark.textContent : "",
         bridge: ["token", "chooseFolder", "micStatus", "requestMic", "openSystemSettings",
-                 "loginItemEnabled", "setLoginItem", "restartDaemon", "appInfo"]
+                 "loginItemEnabled", "setLoginItem", "restartDaemon", "appInfo", "quit"]
           .filter((m) => typeof window.pywebview?.api?.[m] !== "function"),
       });
     })()

@@ -2,7 +2,7 @@ import type { NativeHelpers } from "../../../net/native";
 import type { Doctor, DoctorCheck } from "../../../net/settings-types";
 import { el } from "../../dom";
 import { RESTART_HELP, type Group, type SettingsContext } from "../context";
-import { block, button, note, segmented, statusLine, type Tone } from "../fields";
+import { block, button, confirmButton, note, segmented, statusLine, type Tone } from "../fields";
 
 export const macGroup: Group = {
   id: "mac",
@@ -26,6 +26,7 @@ export const macGroup: Group = {
     root.append(
       block("Start at login", login),
       block("Restart", restartControl(ctx), version),
+      ...quitBlock(ctx.native),
       block("Setup", el("p", "field-note", "The first-start steps: key, downloads, microphone, name and a project room."), setup),
       block("Doctor", checks),
     );
@@ -76,6 +77,21 @@ function restartControl(ctx: SettingsContext): HTMLElement {
   });
   root.append(go, result);
   return root;
+}
+
+/** Quit is the app's to do, so the block is there only inside the Mac app. */
+function quitBlock(native: NativeHelpers): HTMLElement[] {
+  const quit = native.quit;
+  if (!quit) return [];
+  const control = confirmButton(
+    "Quit the app",
+    { question: "Quit? The assistant stops answering, and its automations and the phone wait until you open the app again.", confirm: "Quit", danger: true },
+    async () => {
+      await quit();
+      return "Quitting…";
+    },
+  );
+  return [block("Quit", control)];
 }
 
 function tone(c: DoctorCheck): Tone {

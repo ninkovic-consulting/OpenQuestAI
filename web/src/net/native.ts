@@ -15,6 +15,7 @@ interface PywebviewApi {
   setLoginItem?: (enabled: boolean) => Promise<unknown>;
   restartDaemon?: () => Promise<unknown>;
   appInfo?: () => Promise<unknown>;
+  quit?: () => Promise<unknown>;
 }
 
 interface PywebviewBridge {
@@ -58,6 +59,8 @@ export interface NativeHelpers {
   setLoginItem: ((enabled: boolean) => Promise<void>) | null;
   restartDaemon: (() => Promise<void>) | null;
   appInfo: (() => Promise<AppInfo | null>) | null;
+  /** Quit the app, which also stops the assistant it started. */
+  quit: (() => Promise<void>) | null;
 }
 
 const MIC: ReadonlySet<string> = new Set<MicStatus>(["granted", "denied", "restricted", "undetermined"]);
@@ -76,7 +79,7 @@ export function asAppInfo(v: unknown): AppInfo | null {
 export function nativeHelpers(): NativeHelpers {
   const api = window.pywebview?.api;
   if (!api) return withNone();
-  const { chooseFolder, micStatus, requestMic, openSystemSettings, loginItemEnabled, setLoginItem, restartDaemon, appInfo } = api;
+  const { chooseFolder, micStatus, requestMic, openSystemSettings, loginItemEnabled, setLoginItem, restartDaemon, appInfo, quit } = api;
   return {
     chooseFolder: chooseFolder
       ? async () => {
@@ -91,6 +94,7 @@ export function nativeHelpers(): NativeHelpers {
     setLoginItem: setLoginItem ? async (enabled) => void (await setLoginItem.call(api, enabled)) : null,
     restartDaemon: restartDaemon ? async () => void (await restartDaemon.call(api)) : null,
     appInfo: appInfo ? async () => asAppInfo(await appInfo.call(api)) : null,
+    quit: quit ? async () => void (await quit.call(api)) : null,
   };
 }
 
@@ -104,5 +108,6 @@ function withNone(): NativeHelpers {
     setLoginItem: null,
     restartDaemon: null,
     appInfo: null,
+    quit: null,
   };
 }

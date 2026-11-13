@@ -107,7 +107,7 @@ The packaged app is macOS only for now; Windows and Linux are planned. It is a s
 
 - **Opening it** shows the house full screen on the screen with the pointer. If no assistant is answering yet, the app starts one and shows a loading screen until it answers. If the assistant stops, the window says so and offers to restart it.
 - **Closing the window** (Cmd+W) leaves the app and the assistant running. The armchair in the menu bar shows the assistant's state and opens the window again. **Ctrl+Cmd+F** switches between full screen and a normal window.
-- **Quitting** (Cmd+Q, or Quit in the menu bar item) stops the assistant, but only if the app started it.
+- **Quitting** (the **Quit** button in the window's left panel or in **Settings, This Mac**, Cmd+Q, or Quit in the menu bar item) stops the assistant, but only if the app started it. The button asks first.
 - **Start at login** is a checkmark in the menu bar item, and a switch in Settings. The app then opens hidden at login: the assistant runs and the window stays closed.
 - **Permissions** are asked for under the app's name.
 

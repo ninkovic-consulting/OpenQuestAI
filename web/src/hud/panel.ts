@@ -8,6 +8,7 @@ import { residenceOf } from "../scene/residence";
 import { el, setText } from "./dom";
 import { runningCount } from "./jobs/model";
 import { formatSpend } from "./money";
+import { makeQuit } from "./quit";
 
 export interface Panel {
   root: HTMLElement;
@@ -46,16 +47,18 @@ export function mountPanel(parent: HTMLElement, store: Store): Panel {
   const settingsToggle = el("button", "settings-toggle caps", "Settings");
   settingsToggle.type = "button";
   settingsToggle.title = "Settings (⌘ ,)";
+  const quit = makeQuit();
   const actions = el("div", "panel-actions");
-  actions.append(buildToggle, jobsToggle, settingsToggle);
+  actions.append(buildToggle, jobsToggle, settingsToggle, quit.button);
   const foot = el("div", "gate-slot");
-  root.append(wordmark, state, residents, budget, actions, el("div", "spacer"), foot);
+  root.append(wordmark, state, residents, budget, actions, quit.confirm, el("div", "spacer"), foot);
   parent.append(root);
 
   let residentsKey = "";
   const render = (s: ViewState): void => {
     setText(wordmark, s.plan?.assistant.name ?? "");
     document.title = s.plan?.assistant.name ?? document.title;
+    quit.sync(s.plan?.assistant.name ?? "");
     const offline = s.connection !== "open";
     setText(stateText, offline ? (s.connection === "connecting" ? "connecting" : "offline") : s.assistant);
     state.className = `state caps${offline ? " is-offline" : s.assistant === "idle" ? " is-idle" : ""}`;
