@@ -42,6 +42,7 @@ import anthropic
 from vision.brains.claude_errors import to_brain_error
 from vision.brains.models import HostModels, host_models
 from vision.brains.pump import Emit, Pump
+from vision.brains.reply_form import with_reply_form
 from vision.core import effort
 from vision.core.config import Config
 from vision.core.events import BrainName
@@ -248,7 +249,7 @@ class ClaudeBrain:
             return
         self._trim(len(images))
         if self._system is None:
-            self._system = self._memory.core()
+            self._system = with_reply_form(self._memory.core())
         model = self._models.heavy if heavy else self._models.talk
         turn = _Turn(model=model, heavy=heavy, messages=[{"role": "user", "content": user_content(text, images)}])
         error: BrainError | None = None

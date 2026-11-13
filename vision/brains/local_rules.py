@@ -11,19 +11,21 @@ web search is not available.
 
 from __future__ import annotations
 
+from vision.brains.reply_form import PLAIN
+
 NO_TOOLS = (
     "You are answering on the small local model because the main model is not available right now. "
     "You have no tools: you cannot hand work to the residents, remember or look anything up, open apps "
     "or links, run commands or change automations, whatever else this conversation says about tools. "
     "If asked for any of that, say plainly that it has to wait until the main model is back, and "
-    "never make up a result."
+    "never make up a result. " + PLAIN
 )
 OFFLINE_NO_TOOLS = (
     "You are answering on a local model on this Mac because the owner turned on offline mode, and this "
     "model has no tools: you cannot hand work to the residents, remember or look anything up, open apps "
     "or links, run commands or change automations, whatever else this conversation says about tools. "
     "If asked for any of that, say plainly that this model cannot do it (a model that can use tools is "
-    "chosen in Settings, under Models), and never make up a result."
+    "chosen in Settings, under Models), and never make up a result. " + PLAIN
 )
 WHY = {
     True: "because the owner turned on offline mode",
@@ -33,7 +35,7 @@ WITH_TOOLS = (
     "You are answering on a local model on this Mac {why}. Keep answers short and spoken. Use a tool "
     "only when the request needs one: call one tool at a time, with exactly the arguments its "
     "description asks for, wait for its result, and never make up a result. Web search and "
-    "loading web pages are not available on the local model."
+    "loading web pages are not available on the local model. " + PLAIN
 )
 
 ESSENTIAL = (

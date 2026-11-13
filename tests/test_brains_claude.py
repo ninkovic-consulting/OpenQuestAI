@@ -19,6 +19,7 @@ from vision.brains.claude import (
     ClaudeBrain,
     echo_content,
 )
+from vision.brains.reply_form import with_reply_form
 from vision.core.config import Config
 from vision.core.interfaces import BrainError, TextDelta, ToolSpec, TurnDone
 from vision.testing.fakes import FakeBudget, FakeMemory, FakeToolHost
@@ -145,7 +146,10 @@ async def test_streams_text_and_records_usage(config: Config) -> None:
     assert request["model"] == "claude-haiku-5-5"
     assert request["output_config"] == {"effort": "low"}
     assert request["max_tokens"] == config.brain.max_output_tokens
-    assert request["system"] == [{"type": "text", "text": "PERSONA", "cache_control": {"type": "ephemeral"}}]
+    assert request["system"] == [
+        {"type": "text", "text": with_reply_form("PERSONA"), "cache_control": {"type": "ephemeral"}}
+    ]
+    assert "Never use Markdown marks" in request["system"][0]["text"]  # replies are spoken and shown plain
     assert request["cache_control"] == {"type": "ephemeral"}
     assert "thinking" not in request and "betas" not in request and "fallbacks" not in request
     assert "tools" not in request
@@ -172,7 +176,7 @@ async def test_history_is_kept_and_system_prompt_frozen(config: Config) -> None:
     brain._memory._core = "CHANGED"  # a note was added; the cached prefix must not move
     await collect(brain, "two")
     second = client.requests[1]
-    assert second["system"][0]["text"] == "PERSONA"
+    assert second["system"][0]["text"] == with_reply_form("PERSONA")
     roles = [m["role"] for m in second["messages"]]
     assert roles == ["user", "assistant", "user"]
     assert second["messages"][1]["content"][0]["type"] == "thinking"  # passed back unchanged
