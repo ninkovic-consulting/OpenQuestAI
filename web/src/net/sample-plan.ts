@@ -32,7 +32,7 @@ function room(
   shape: Room["shape"] = "rect",
 ): Room {
   const tools = agent === "host" ? HOST_TOOLS.map((t) => ({ ...t })) : [];
-  return { id, name, kind: "default", shape, at, size, agent, model, folders: [], floor, wall, tools, state };
+  return { id, name, kind: "default", shape, at, size, agent, model, folders: [], project: null, floor, wall, tools, state };
 }
 
 export function samplePlan(): Plan {

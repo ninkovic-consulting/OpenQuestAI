@@ -7,10 +7,11 @@ import type { Json } from "../../net/settings-types";
 import { el } from "../dom";
 import { localShort } from "../mode";
 import type { SettingsContext } from "./context";
-import { block, segmented, statusLine } from "./fields";
+import { block, fieldRow, segmented, statusLine } from "./fields";
 import { formatBytes } from "./format";
 import { catalogRow, customRow, type RowActions } from "./local-catalog";
 import { customForm } from "./local-custom";
+import { loadLine } from "./local-load";
 import { serverForm } from "./local-server";
 import { anyRunning, chosenSize, chosenTitle, downloadOf, memoryLine, offersDownload, orderBySize } from "./local-words";
 import { offlineBlock } from "./offline-block";
@@ -33,6 +34,7 @@ export function mountLocal(ctx: SettingsContext): LocalBlocks {
   const offlineRoot = block("Offline mode");
   const localRoot = block("Local model");
   let local = ctx.settings.models.local;
+  let mode = ctx.store.get().mode;
   let listing: LocalListing | null = null;
   let loadError: string | null = null;
   let refusal: string | null = null;
@@ -121,12 +123,14 @@ export function mountLocal(ctx: SettingsContext): LocalBlocks {
     const l = listing;
     const offer = refusal !== null && l !== null && offersDownload(l) ? { download: downloadOf(l, l.chosen.model) ?? IDLE, size: chosenSize(l) } : null;
     const parts = offlineBlock(
-      { on: local.offline, busy, model: l ? chosenTitle(l) : localShort(local.model), tools: local.tools, refusal, offer, ready },
+      { on: local.offline, busy, model: title(), tools: local.tools, load: mode ? loadLine(mode, title()) : null, refusal, offer, ready },
       { toggle: (on) => void setOffline(on), download: () => void download(local.model) },
     );
     const heading = offlineRoot.firstElementChild;
     offlineRoot.replaceChildren(...(heading ? [heading] : []), ...parts);
   }
+
+  const title = (): string => (listing ? chosenTitle(listing) : localShort(local.model));
 
   // ---------------------------------------------------------------- the local model block
 
@@ -151,8 +155,28 @@ export function mountLocal(ctx: SettingsContext): LocalBlocks {
     await download(repo);
     return null;
   });
+  const keep = el("select");
+  for (const [value, label] of [
+    ["idle", `For ${Math.round(local.idle_s / 60)} minutes after its last use`],
+    ["always", "Always"],
+  ] as const) {
+    const option = el("option", "", label);
+    option.value = value;
+    keep.append(option);
+  }
+  keep.value = local.keep;
+  keep.addEventListener("change", () => {
+    keep.disabled = true;
+    void patch({ local_keep: keep.value }).then((problem) => {
+      keep.disabled = false;
+      if (problem !== null) notice(problem, true);
+    });
+  });
+  const keepRow = fieldRow("Keep it ready", keep, {
+    note: "When Claude answers and this model is only the stand-in. Kept ready, the first message it answers does not wait for it to load, but it holds its memory all the while. In offline mode it always stays ready.",
+  });
   const insideApp = el("div", "lm-pane");
-  insideApp.append(memory, result, rows, typed);
+  insideApp.append(memory, result, keepRow, rows, typed);
   const onServer = el("div", "lm-pane");
   onServer.append(server);
   const show = (view: string): void => {
@@ -206,7 +230,9 @@ export function mountLocal(ctx: SettingsContext): LocalBlocks {
   function drawInUse(): void {
     const where =
       local.backend === "openai" ? `${local.model} on the server at ${local.server}` : `${listing ? chosenTitle(listing) : localShort(local.model)}, inside the app`;
-    inUseLine.replaceChildren(statusLine("ok", `In use: ${where}.`));
+    const load = mode && local.backend === "mlx" ? loadLine(mode, title()) : null;
+    inUseLine.replaceChildren(statusLine("ok", `In use: ${where}.`), ...(load ? [statusLine(load.tone, load.text)] : []));
+    keep.value = local.keep;
   }
 
   function drawAll(): void {
@@ -215,10 +241,17 @@ export function mountLocal(ctx: SettingsContext): LocalBlocks {
     drawInUse();
   }
 
-  // Offline mode switched elsewhere (the left panel) shows here too.
-  const stop = ctx.store.subscribe((s) => {
+  // Offline mode switched elsewhere (the left panel) shows here too, and so does the model
+  // loading, reading or settling in memory.
+  const stop = ctx.store.subscribe((s, prev) => {
     if (!localRoot.isConnected) return stop();
+    if (s.mode === prev.mode) return;
+    mode = s.mode;
     if (s.mode && s.mode.offline !== local.offline) void refresh();
+    else {
+      drawOffline();
+      drawInUse();
+    }
   });
 
   drawAll();

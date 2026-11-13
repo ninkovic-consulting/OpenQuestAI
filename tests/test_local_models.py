@@ -16,6 +16,7 @@ from vision.brains import catalog
 from vision.brains.local_chat import Call
 from vision.brains.local_server import Probe
 from vision.brains.local_tools import problem
+from vision.brains.mlx_local import not_downloaded
 from vision.core.events import BrainMode, Notice
 from vision.core.interfaces import ToolSpec
 from vision.setup import hf_cache
@@ -175,13 +176,19 @@ async def test_offline_on_and_off_while_running(daemon: Daemon) -> None:
         off = (await http.patch("/api/settings", json={"models": {"offline": False}})).json()
     assert on["applied"] == ["models.offline"] and on["restart"] == []
     assert on["settings"]["models"]["local"]["offline"] is True
-    assert state["mode"] == {
+    mode = state["mode"]
+    # Offline mode starts the load at once; this test's cache has no weights, so it fails.
+    assert (mode.pop("local_state"), mode.pop("local_problem")) in (("unloaded", None), ("failed", not_downloaded(DEFAULT)))
+    assert mode == {
         "offline": True,
         "answering": "fake",
         "local_backend": "mlx",
         "local_model": DEFAULT,
         "local_tools": None,
         "local_images": False,
+        "local_bytes": None,
+        "local_cache_bytes": 0,
+        "local_reading": None,
     }
     assert off["settings"]["models"]["local"]["offline"] is False and daemon.config.brain.offline is False
     events: list[Any] = []
@@ -225,3 +232,17 @@ def test_delete_stays_inside_the_cache(tmp_path: Path) -> None:
         hf_cache.delete("../../etc", tmp_path)
     on_disk(DEFAULT)
     assert hf_cache.delete(DEFAULT) == 10 and hf_cache.cached_size(DEFAULT) is None
+
+
+async def test_keeping_the_local_model_ready_is_one_setting(daemon: Daemon) -> None:
+    use(daemon)
+    followed: list[str] = []
+    daemon.local.follow = lambda: followed.append(daemon.config.brain.local_keep_loaded)  # type: ignore[method-assign,assignment,return-value]
+    async with client(daemon) as http:
+        before = (await http.get("/api/settings")).json()["models"]["local"]
+        on = await http.patch("/api/settings", json={"models": {"local_keep": "always"}})
+        bad = await http.patch("/api/settings", json={"models": {"local_keep": "sometimes"}})
+    assert before["keep"] == "idle" and before["idle_s"] == 600
+    assert on.status_code == 200 and on.json()["settings"]["models"]["local"]["keep"] == "always"
+    assert daemon.config.brain.local_keep_loaded == "always" and followed == ["always"]
+    assert bad.status_code == 400 and bad.json()["detail"]["errors"][0]["field"] == "models.local_keep"

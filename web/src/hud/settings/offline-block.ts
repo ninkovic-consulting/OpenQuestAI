@@ -1,10 +1,12 @@
-// Offline mode: a switch, what it means, and, when the daemon refuses to turn
-// it on, why, with the download that fixes it when the model is missing.
+// Offline mode: a switch, what it means, the model loading or in memory while
+// it is on, and, when the daemon refuses to turn it on, why, with the download
+// that fixes it when the model is missing.
 
 import type { LocalDownload } from "../../net/brain-types";
 import { el } from "../dom";
 import { button, downloadRow, statusLine } from "./fields";
 import { formatBytes } from "./format";
+import type { LoadLine } from "./local-load";
 
 export interface OfflineProps {
   on: boolean;
@@ -13,6 +15,8 @@ export interface OfflineProps {
   model: string;
   /** Whether it can use tools; null until known. */
   tools: boolean | null;
+  /** The model loading, reading or in memory; null for a model on a server. */
+  load: LoadLine | null;
   /** The daemon's refusal to turn it on. */
   refusal: string | null;
   /** Set when the refusal is for want of the model: what to download. */
@@ -52,6 +56,7 @@ export function offlineBlock(p: OfflineProps, act: OfflineActions): HTMLElement[
   head.append(toggle, words);
   const parts: HTMLElement[] = [head];
   if (p.on) parts.push(statusLine("ok", `${p.model} answers, on this Mac.`));
+  if (p.on && p.load) parts.push(statusLine(p.load.tone, p.load.text));
   if (p.on && p.tools === false) parts.push(statusLine("warn", "This model cannot use tools, so the agents cannot take jobs offline. Choose a larger one below if you want them to."));
   if (p.refusal) {
     const why = statusLine("bad", p.refusal);

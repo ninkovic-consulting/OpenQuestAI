@@ -5,7 +5,10 @@ misaki for English pronunciation. misaki wants to pip-install its spaCy model
 on first use, which does not work in a uv environment, so the model is loaded
 from spaCy's own Hugging Face repository instead. Both load from the disk
 only (`on_disk`): a missing one fails, it is never fetched. espeak-ng (bundled
-by `espeakng-loader`) spells out words misaki does not know.
+by `espeakng-loader`) spells out words misaki does not know. espeak-ng keeps
+its data path in a small buffer, and inside the standalone app's bundle that
+path is too long, so it is reached through a short symbolic link in the
+assistant's home instead (`espeak_data_path`).
 
 `TtsSpeaker` is the `Speaker` the session uses: it synthesises a sentence on
 the model worker, plays it, and publishes `voice.level` about 30 times a
@@ -16,7 +19,9 @@ plays the short sound that marks the start of thinking.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import os
 import shutil
 import subprocess
 import tempfile
@@ -31,6 +36,7 @@ from typing import Any, Protocol, TypeVar
 import numpy as np
 
 from vision.core.bus import Bus
+from vision.core.config import vision_home
 from vision.core.events import VoiceLevel
 from vision.voice.audio_io import LEVEL_RATE, AudioSink, levels
 from vision.voice.errors import VoiceUnavailable
@@ -45,6 +51,8 @@ Run = Callable[[Callable[[], T]], Awaitable[T]]
 
 ESPEAK_MAX_PATH = 150
 """espeak-ng keeps its data path in a 160-byte buffer and exits the process if it overflows."""
+ESPEAK_LINK = "espeak-ng-data"
+"""The short link in the assistant's home that leads to espeak-ng's data folder."""
 
 
 class Synth(Protocol):
@@ -93,8 +101,52 @@ class KokoroSynth:
         return np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
 
 
-def _english_g2p() -> Any:
-    """misaki's American English G2P, with spaCy's tagger from the Hugging Face Hub."""
+def espeak_data_path(real: str, home: Path) -> str | None:
+    """A path to espeak-ng's data folder `real` that fits espeak's buffer; None when none can be made.
+
+    A path that fits is used as it is. A longer one (the standalone app's
+    bundle) is reached through `<home>/espeak-ng-data`, a symbolic link that is
+    made or pointed at `real` again at each load. Anything else already at that
+    name is left alone.
+    """
+    if len(real.encode()) < ESPEAK_MAX_PATH:
+        return real
+    link = home / ESPEAK_LINK
+    if len(str(link).encode()) >= ESPEAK_MAX_PATH:
+        return None
+    try:
+        if link.is_symlink() and os.readlink(link) == real:
+            return str(link)
+        if link.exists() and not link.is_symlink():
+            return None
+        home.mkdir(mode=0o700, parents=True, exist_ok=True)
+        fresh = home / f".{ESPEAK_LINK}.{os.getpid()}"
+        fresh.unlink(missing_ok=True)
+        fresh.symlink_to(real, target_is_directory=True)
+        os.replace(fresh, link)  # in one step, so another process never sees no link
+    except OSError as exc:
+        log.warning("could not make a short path to espeak-ng's data: %s", exc)
+        return None
+    return str(link)
+
+
+def use_espeak_data(wrapper: Any, data: str) -> None:
+    """Have espeak-ng read its data from `data`, a path that fits its buffer.
+
+    phonemizer's wrapper resolves a data path it is given, which would undo
+    the short link and hand espeak the long path again. So the wrapper is given
+    none, and espeak-ng finds its data through its own `ESPEAK_DATA_PATH`,
+    which it reads as it is.
+    """
+    wrapper.set_data_path(None)
+    os.environ["ESPEAK_DATA_PATH"] = data
+
+
+def _english_g2p(home: Path | None = None) -> Any:
+    """misaki's American English G2P, with spaCy's tagger from the Hugging Face Hub.
+
+    `home` holds the short link to espeak-ng's data when its own path is too long.
+    """
     import espeakng_loader
     import spacy
     from misaki import en, espeak
@@ -104,7 +156,9 @@ def _english_g2p() -> Any:
         warnings.filterwarnings("ignore", message=r".*\[W095\]")  # 3.7 model on spaCy 3.8
         nlp = spacy.load(nlp_dir, enable=["tok2vec", "tagger"])
     fallback = None
-    if len(espeakng_loader.get_data_path()) < ESPEAK_MAX_PATH:
+    data = espeak_data_path(espeakng_loader.get_data_path(), home or vision_home())
+    if data is not None:
+        use_espeak_data(espeak.EspeakWrapper, data)
         fallback = espeak.EspeakFallback(british=False)
     else:
         log.warning("espeak-ng data path is too long; unknown words will be skipped")
@@ -191,8 +245,33 @@ class Spoken:
     ended: float
 
 
+@dataclass(slots=True)
+class _Place:
+    """A sentence's place in line: queued into the sink, and done playing."""
+
+    queued: asyncio.Event
+    done: asyncio.Event
+
+
+async def _nothing() -> None:
+    return None
+
+
 class TtsSpeaker:
-    """Speaks one sentence at a time and reports what it said, for the echo guard."""
+    """Speaks sentences in the order they are given and reports what it said, for the echo guard.
+
+    Each sentence is synthesised on the model worker as soon as it is given
+    (the session gives the next while one plays) and queued into the sink as
+    soon as the one before is queued, so the sink can play them back to back.
+    A reply starts only with enough audio ready: when its first sentence is
+    shorter than `PREBUFFER_S` and the next is still being synthesised, it
+    waits for that one, up to `PREBUFFER_WAIT_S`. `before_speaking` runs
+    before a reply's first sentence (voice uses it to make sure a push-to-talk
+    microphone has closed). `stop()` drops everything queued at once.
+    """
+
+    PREBUFFER_S = 1.5
+    PREBUFFER_WAIT_S = 1.0
 
     def __init__(self, bus: Bus, sink: AudioSink, run: Run[Any], clock: Callable[[], float] = time.monotonic) -> None:
         self._bus = bus
@@ -202,8 +281,14 @@ class TtsSpeaker:
         self._synth: Synth | None = None
         self._generation = 0
         self._spoken: deque[Spoken] = deque(maxlen=32)
-        self._playing = asyncio.Lock()
+        self._last: _Place | None = None
+        self._ahead = 0
+        """Sentences queued into the sink and not yet played."""
+        self._synthesising = 0
+        self._synth_idle = asyncio.Event()
+        self._synth_idle.set()
         self.current: Spoken | None = None
+        self.before_speaking: Callable[[], Awaitable[None]] = _nothing
 
     def use(self, synth: Synth) -> None:
         self._synth = synth
@@ -231,26 +316,68 @@ class TtsSpeaker:
         if not words(text):
             return
         generation = self._generation
-        audio = await self._run(lambda: synth.synth(text))
-        async with self._playing:
+        previous, mine = self._last, _Place(asyncio.Event(), asyncio.Event())
+        self._last = mine
+        try:
+            audio = await self._synthesise(synth, text)
+            if previous is not None:
+                await previous.queued.wait()
             if generation != self._generation or audio.size == 0:
                 return
+            if self._ahead == 0:  # the first sentence of a reply
+                await self._prebuffer(len(audio) / synth.sample_rate)
+                await self.before_speaking()
+                if generation != self._generation:
+                    return
+            await self._play(audio, synth.sample_rate, text, previous, mine)
+        finally:
+            mine.queued.set()
+            mine.done.set()
+
+    async def _synthesise(self, synth: Synth, text: str) -> np.ndarray:
+        self._synthesising += 1
+        self._synth_idle.clear()
+        try:
+            return await self._run(lambda: synth.synth(text))
+        finally:
+            self._synthesising -= 1
+            if self._synthesising == 0:
+                self._synth_idle.set()
+
+    async def _prebuffer(self, seconds: float) -> None:
+        """A short first sentence waits for the next one being made, so the reply does not stall."""
+        if seconds >= self.PREBUFFER_S or self._synthesising == 0:
+            return
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(self._synth_idle.wait(), self.PREBUFFER_WAIT_S)
+
+    async def _play(self, audio: np.ndarray, rate: int, text: str, previous: _Place | None, mine: _Place) -> None:
+        self._ahead += 1
+        played = asyncio.create_task(self._sink.play(audio, rate))
+        await asyncio.sleep(0)  # the sink takes it in line before the next sentence is queued
+        mine.queued.set()
+        try:
+            if previous is not None:
+                await previous.done.wait()  # it plays once the sentence before has
             started = self._clock()
             self.current = Spoken(text, started, started)
-            meter = asyncio.create_task(self._meter(levels(audio, synth.sample_rate)))
+            meter = asyncio.create_task(self._meter(levels(audio, rate)))
             try:
-                await self._sink.play(audio, synth.sample_rate)
+                await played
             finally:
                 meter.cancel()
                 await asyncio.gather(meter, return_exceptions=True)
                 self._bus.publish(VoiceLevel(level=0.0))
                 self._spoken.append(Spoken(text, started, self._clock()))
                 self.current = None
+        finally:
+            self._ahead -= 1
+            if not played.done():
+                played.cancel()
 
     async def chime(self) -> None:
         """A short soft two-note sound: the assistant has started thinking."""
-        async with self._playing:
-            await self._sink.play(CHIME, CHIME_RATE)
+        await self._sink.play(CHIME, CHIME_RATE)
 
     async def stop(self) -> None:
         self._generation += 1

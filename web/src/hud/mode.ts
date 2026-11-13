@@ -3,21 +3,34 @@
 import type { BrainMode } from "../net/brain-types";
 import type { Job } from "../net/job-types";
 import { modelShort } from "./agent-choice";
+import { loadMark } from "./settings/local-load";
 
 /** A local model's short name: the repo without its owner or its quantisation, "Qwen3-4B-Instruct-2507". */
 export function localShort(model: string): string {
   return modelShort(model).replace(/-(?:MLX-)?\d+bit$|-MXFP4-Q8$/i, "");
 }
 
-/** The mark beside the state while offline mode is on; null otherwise. */
+/** The mark beside the state while offline mode is on, with what the model is busy with before
+ * it can answer (loading, reading a long prompt); null otherwise. */
 export function offlineMark(mode: BrainMode | null): string | null {
-  return mode?.offline ? `offline · ${localShort(mode.local_model)}` : null;
+  if (!mode?.offline) return null;
+  const busy = loadMark(mode);
+  return `offline · ${localShort(mode.local_model)}${busy ? ` · ${busy}` : ""}`;
 }
 
 /** What the mark says on hover. */
 export function offlineTitle(mode: BrainMode): string {
   const tools = mode.local_tools === false ? " This model cannot use tools, so the agents cannot take jobs." : "";
-  return `Offline mode: Claude is not answering. Everything runs on ${mode.local_model}, on this Mac, and nothing is sent to Anthropic.${tools}`;
+  const busy = loadMark(mode);
+  const why =
+    busy === "loading"
+      ? " It is loading into memory; a message sent now waits for it."
+      : busy === "reading"
+        ? " It is reading the conversation before its first word."
+        : busy === "not loaded"
+          ? ` It could not be loaded: ${mode.local_problem ?? "see Settings, under Models."}`
+          : "";
+  return `Offline mode: Claude is not answering. Everything runs on ${mode.local_model}, on this Mac, and nothing is sent to Anthropic.${tools}${why}`;
 }
 
 /** The model a job ran on, by short name: "Opus 5.5", "Qwen3-4B-Instruct-2507". Null before the job has started. */

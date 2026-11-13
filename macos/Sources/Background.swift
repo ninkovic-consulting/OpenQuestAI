@@ -12,6 +12,8 @@ final class Background {
     private(set) var prefs: ShellPrefs
     /// Opens the house window; the app delegate sets it.
     var openHouse: () -> Void = {}
+    /// Closes the house window and leaves the app in the menu bar; the app delegate sets it.
+    var goToBackground: () -> Void = {}
 
     init(settings: Settings, supervisor: Supervisor, store: PrefStore) {
         self.store = store
@@ -30,7 +32,8 @@ final class Background {
         hotKeys.apply(summon: prefs.summon, talk: prefs.talk)
     }
 
-    /// At start: the widget shows when it is on, or when the app opens with the widget only.
+    /// At start: the house opens only with "When the app opens: the house"; the widget shows
+    /// when it is on, or when the app opens with the widget only.
     var opensHouse: Bool { prefs.openWith == .house }
 
     func start() {
@@ -68,7 +71,10 @@ final class Background {
     }
 
     /// Push to talk: key down starts listening, key up stops. The widget's page sends
-    /// `input.ptt`, as the house's hold-to-talk does, and shows that it listens.
+    /// `input.ptt`, as the house's hold-to-talk does, and shows that it listens. The page
+    /// is loaded whenever the daemon answers, shown or not, so this works with the widget
+    /// hidden and the house closed: in `hold` the daemon opens the microphone on the press
+    /// and closes it after the release (and on its own if the page goes away meanwhile).
     func talk(_ down: Bool) {
         if down && !widget.isVisible { widget.show(focus: false) }
         Task { _ = await widget.evaluate("window.visionWidget && window.visionWidget.talk(\(down))") }

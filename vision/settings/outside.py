@@ -68,6 +68,7 @@ class AudioDevice:
     outputs: int
     default_input: bool
     default_output: bool
+    bluetooth: bool = False
 
 
 class Outside(Protocol):
@@ -195,6 +196,7 @@ class MacOutside:
                 outputs=int(row["outputs"]),
                 default_input=bool(row["default_input"]),
                 default_output=bool(row["default_output"]),
+                bluetooth=bool(row.get("bluetooth", False)),
             )
             for row in rows
         ]

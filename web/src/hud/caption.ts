@@ -6,11 +6,15 @@
 // What arrived while the owner was not looking sits under a quiet divider,
 // "While you were away", and the thread opens to it when they are back; the
 // divider goes once they have had it in front of them for a few seconds.
+// Under the thread, what waits for the reply to end: each message with "Sends
+// after this reply", and, for what was typed at the Mac, Send now and Take
+// back (`chat/queue.ts`). The daemon holds the list, so every window shows it.
 
-import type { Store } from "../net/store";
+import type { Store, ViewState } from "../net/store";
 import { followAttention, looking } from "./chat/attention";
 import { type ChatDock, chatDock } from "./chat/dock";
 import { awayStart, type Entry, type Origin, replyStarted, type Thread } from "./chat/entries";
+import { waitingRows, type WaitingRow } from "./chat/queue";
 import { imageMark, type ThumbRow, thumbRow } from "./chat/thumbs";
 import { el, setText } from "./dom";
 
@@ -130,6 +134,54 @@ function paint(v: EntryView, e: Entry, assistant: string, source: ChatDock["imag
   v.root.dataset["phase"] = e.phase;
 }
 
+function smallButton(className: string, text: string, label: string, act: () => void): HTMLButtonElement {
+  const b = el("button", className, text);
+  b.type = "button";
+  b.setAttribute("aria-label", label);
+  b.addEventListener("mousedown", (ev) => ev.preventDefault());
+  b.addEventListener("click", act);
+  return b;
+}
+
+function waitingRow(row: WaitingRow, dock: ChatDock): HTMLElement {
+  const root = el("div", "waiting-row");
+  root.dataset["id"] = row.id;
+  const side = el("div", "waiting-side");
+  side.append(el("div", "who caps", row.mark ? `${row.who} · ${row.mark}` : row.who));
+  const note = el("div", "waiting-note caps");
+  note.append(el("span", "dot"), row.note);
+  side.append(note);
+  const body = el("div", "waiting-body");
+  body.append(el("p", "waiting-text", row.text));
+  if (row.controls) {
+    const actions = el("div", "waiting-actions");
+    actions.append(
+      smallButton("caps", "Send now", `Stop the reply and send: ${row.text}`, () => dock.waiting.sendNow(row.id)),
+      smallButton("caps", "Take back", `Take back: ${row.text}`, () => dock.waiting.takeBack(row.id)),
+    );
+    body.append(actions);
+  }
+  root.append(side, body);
+  return root;
+}
+
+/** The messages that wait for the reply to end, under the thread. */
+function mountWaiting(after: HTMLElement, store: Store, dock: ChatDock): void {
+  const list = el("section", "waiting-list");
+  list.setAttribute("aria-label", "Waiting to be sent");
+  list.setAttribute("aria-live", "polite");
+  after.after(list);
+  let shown: ViewState["queue"] | null = null;
+  const render = (s: ViewState): void => {
+    if (s.queue === shown) return;
+    shown = s.queue;
+    list.replaceChildren(...waitingRows(s.queue).map((row) => waitingRow(row, dock)));
+    list.hidden = s.queue.length === 0;
+  };
+  render(store.get());
+  store.subscribe(render);
+}
+
 export function mountCaption(parent: HTMLElement, store: Store): void {
   const dock = chatDock(parent, store);
   const thread = el("section", "thread is-empty");
@@ -140,6 +192,7 @@ export function mountCaption(parent: HTMLElement, store: Store): void {
   list.setAttribute("aria-live", "polite");
   thread.append(toggle, list);
   dock.root.prepend(thread);
+  mountWaiting(thread, store, dock);
 
   const views = new Map<number, EntryView>();
   let expanded = false;

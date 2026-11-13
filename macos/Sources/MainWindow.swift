@@ -4,7 +4,9 @@ import AppKit
 ///
 /// Full screen here is a borderless window covering the screen with the
 /// pointer, with the Dock and menu bar hidden while the app is in front. It is
-/// not macOS's full-screen Space, so Escape stays with the page.
+/// not macOS's full-screen Space, so Escape stays with the page. On a screen
+/// with a camera notch the page is told how much of its top to keep clear
+/// (`SafeArea`), at load and whenever full screen or the screen changes.
 @MainActor
 final class MainWindow: NSObject, NSWindowDelegate {
     /// Out of full screen: this size, or 85 percent of a smaller screen, centred.
@@ -21,6 +23,8 @@ final class MainWindow: NSObject, NSWindowDelegate {
     private var pageToken: String?
     private(set) var isFullScreen: Bool
     var onRestart: () -> Void = {}
+    /// The window closed (Cmd+W, Background); the app delegate sends the app to the menu bar.
+    var onClosed: () -> Void = {}
     /// Handed to the page's bridge, for the widget block in Settings.
     weak var shell: Background?
 
@@ -45,13 +49,23 @@ final class MainWindow: NSObject, NSWindowDelegate {
         window.delegate = self
         window.contentView = status
         applyMode()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(screensChanged),
+            name: NSApplication.didChangeScreenParametersNotification, object: nil
+        )
     }
+
+    var isVisible: Bool { window.isVisible }
+
+    /// What the page keeps clear at its top on the screen the window is on now.
+    var safeTop: CGFloat { SafeArea.top(of: window) }
 
     func show() {
         if isFullScreen { applyMode() }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
         updatePresentation()
+        pushSafeTop()
     }
 
     func close() { window.close() }
@@ -60,6 +74,18 @@ final class MainWindow: NSObject, NSWindowDelegate {
         isFullScreen.toggle()
         applyMode()
         updatePresentation()
+        pushSafeTop()
+    }
+
+    /// Tells the page the strip a notch hides, as `--safe-top`.
+    private func pushSafeTop() {
+        guard let page else { return }
+        let script = SafeArea.script(safeTop)
+        Task { _ = await page.evaluate(script) }
+    }
+
+    @objc private func screensChanged() {
+        pushSafeTop()
     }
 
     /// Shows what the supervisor reports: the page once ready, the status view otherwise.
@@ -90,6 +116,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
         page.onLoadFailed = { [weak self] reason in
             self?.showStatus("The page did not load: \(reason)", canRestart: true)
         }
+        page.onLoaded = { [weak self] in self?.pushSafeTop() }
         self.page = page
         pageToken = token
         window.contentView = page.webView
@@ -140,6 +167,11 @@ final class MainWindow: NSObject, NSWindowDelegate {
         dropPage()
         window.contentView = status
         NSApp.presentationOptions = []
+        onClosed()
+    }
+
+    func windowDidChangeScreen(_ notification: Notification) {
+        pushSafeTop()
     }
 }
 

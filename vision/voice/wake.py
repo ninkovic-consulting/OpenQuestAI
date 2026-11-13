@@ -8,8 +8,10 @@ All matching works on the transcript only, so it is pure and fast:
 - `StopMatcher.matches(text)` recognises the short stop phrases.
 - `residual(text, spoken)` drops the words that repeat what the assistant was
   saying, so it never hears itself.
-- `Addressing` combines the wake phrase, push to talk and the follow-up
-  window into one decision.
+- `Addressing` combines the listening mode, the wake phrase, push to talk
+  and the follow-up window into one decision.
+- `enough_for_always(text, voiced_s)` is the floor an utterance must clear to
+  start a turn in `always`, where no name is needed.
 """
 
 from __future__ import annotations
@@ -19,9 +21,18 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
+from vision.core.events import ListenMode
+
 _WORD = re.compile(r"[a-z0-9]+(?:'[a-z]+)?")
 _WORD_SPAN = re.compile(r"[A-Za-z0-9]+(?:['’][A-Za-z]+)?")
 _LEAD_JUNK = re.compile(r"^[\s,.;:!?…\-–—]+")
+_ANNOTATION = re.compile(r"\[[^\]]*\]|\([^)]*\)|\*[^*]*\*")
+"""What Whisper writes for sounds rather than words: "[BLANK_AUDIO]", "(coughs)", "*typing*"."""
+
+ALWAYS_MIN_WORDS = 3
+"""In `always`, fewer words than this ("okay", "thank you") do not start a turn."""
+ALWAYS_MIN_VOICED_S = 0.6
+"""In `always`, less speech than this (a cough, a key, a word) does not start a turn."""
 
 GREETINGS = frozenset({"hey", "hi", "hay", "hello", "ok", "okay", "a", "yo"})
 FILLERS = frozenset({"um", "uh", "er", "erm", "so", "oh", "well", "please", "now", "just"})
@@ -91,6 +102,15 @@ class WakeMatcher:
         return rest[:1].upper() + rest[1:]
 
 
+def enough_for_always(text: str, voiced_s: float) -> bool:
+    """True when an utterance nobody addressed is still worth a turn in `always`.
+
+    It needs at least `ALWAYS_MIN_WORDS` words, not counting what Whisper
+    writes for sounds, and at least `ALWAYS_MIN_VOICED_S` of speech.
+    """
+    return voiced_s >= ALWAYS_MIN_VOICED_S and len(words(_ANNOTATION.sub(" ", text))) >= ALWAYS_MIN_WORDS
+
+
 class StopMatcher:
     """Recognises "stop", "cancel" or "<name> stop", alone or with a filler."""
 
@@ -141,16 +161,20 @@ def residual(text: str, spoken: Iterable[str]) -> list[str]:
 
 @dataclass(slots=True)
 class Addressing:
-    """Decides whether an utterance is for the assistant.
+    """Decides whether an utterance is for the assistant, by the listening mode.
 
-    It is when push to talk was held at any time during the utterance, when it
-    starts with the wake phrase, or when it started inside the open window:
-    the follow-up window after a reply, or a moment after the wake phrase was
-    said on its own. Times are `time.monotonic()` seconds.
+    In every mode an utterance counts when push to talk was held at any time
+    during it. In `hold` nothing else counts (the microphone is closed between
+    presses anyway). In `wake` it also counts when it starts with the name, or
+    started inside the open window: the follow-up window after a reply, or a
+    moment after the name was said on its own. In `always` it counts as in
+    `wake`, and otherwise when it clears `enough_for_always`. Times are
+    `time.monotonic()` seconds.
     """
 
     wake: WakeMatcher
     window_s: float
+    mode: ListenMode = "wake"
     ptt_down: bool = False
     ptt_released_at: float = float("-inf")
     window_until: float = float("-inf")
@@ -166,10 +190,13 @@ class Addressing:
     def held_during(self, started_at: float) -> bool:
         return self.ptt_down or self.ptt_released_at >= started_at
 
-    def decide(self, text: str, started_at: float, now: float) -> str | None:
-        """The text to pass on, or None to drop the utterance."""
+    def decide(self, text: str, started_at: float, now: float, voiced_s: float = 0.0) -> str | None:
+        """The text to pass on, or None to drop the utterance. `voiced_s`: its seconds of speech."""
         text = text.strip()
         if not words(text):
+            return None
+        held = self.held_during(started_at)
+        if self.mode == "hold" and not held:
             return None
         stripped = self.wake.strip(text)
         if stripped == "":
@@ -177,6 +204,8 @@ class Addressing:
             return None
         if stripped is not None:
             return stripped
-        if self.held_during(started_at) or started_at <= self.window_until:
+        if held or started_at <= self.window_until:
+            return text
+        if self.mode == "always" and enough_for_always(text, voiced_s):
             return text
         return None

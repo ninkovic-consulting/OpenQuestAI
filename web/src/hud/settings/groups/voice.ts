@@ -1,9 +1,11 @@
 import type { SpeakChoice, VoiceDevices, VoiceState } from "../../../net/settings-types";
+import type { ListenMode } from "../../../net/types";
 import { el } from "../../dom";
+import { HEADSET_LINE, headsetWarning, MODE_LINES, MODE_NAMES, ROOM_RUNS_COMMANDS } from "../../listen";
 import { row, selectInput, textInput, type Choice } from "../bind";
 import type { Group, SettingsContext } from "../context";
 import { downloadControl } from "../download-control";
-import { block, button, note, statusLine } from "../fields";
+import { block, button, note, segmented, statusLine } from "../fields";
 import { voiceLabel } from "../format";
 import { micPermission, silentMic, voiceTest } from "../voice-parts";
 
@@ -12,7 +14,7 @@ const NOT_CONNECTED = "Not connected: the system default is used until it is bac
 export const voiceGroup: Group = {
   id: "voice",
   title: "Voice",
-  blurb: "Talking out loud: the microphone, the speakers, the speaking voice. Device and voice changes apply at once.",
+  blurb: "Talking out loud: when the microphone listens, the devices, the speaking voice. Changes apply at once.",
   prefixes: ["voice."],
   render(ctx) {
     const v = ctx.settings.voice;
@@ -24,6 +26,7 @@ export const voiceGroup: Group = {
     const devices = deviceList(ctx);
     root.append(
       block("Voice", onOff(ctx, v, () => devices.focusMic())),
+      block("When it listens", whenItListens(ctx)),
       block("Microphone permission", micPermission(ctx.native, v)),
       block("Devices and voice", devices.root),
       block("Speech models", downloadControl(ctx.api, "speech_models", () => void modelsArrived(ctx, v))),
@@ -55,7 +58,7 @@ function onOff(ctx: SettingsContext, v: VoiceState, chooseMic: () => void): HTML
     return root;
   }
   const line = v.running
-    ? statusLine("ok", "On. The assistant is listening for you.")
+    ? statusLine("ok", v.listen === "hold" ? "On. The microphone opens while you hold to talk." : "On. The microphone is open.")
     : v.enabled
       ? statusLine("warn", `On, but the microphone loop is not running.${v.mic_detail ? ` ${v.mic_detail}` : ""}`)
       : statusLine("idle", "Off. You can still type to the assistant: press /.");
@@ -150,19 +153,78 @@ function deviceFields(ctx: SettingsContext, d: VoiceDevices): { nodes: HTMLEleme
     const select = selectInput(ctx, field, options);
     return { node: row(ctx, field, label, select, missing ? { note: NOT_CONNECTED } : {}), select };
   };
-  const followup = el("div", "unit-input");
-  followup.append(textInput(ctx, "voice.followup_s", { inputMode: "decimal" }), el("span", "unit", "seconds"));
   const input = device("voice.input_device", "Microphone", d.inputs);
   const output = device("voice.output_device", "Speakers", d.outputs);
   const pair = el("div", "two-up");
   pair.append(input.node, output.node);
-  const pair2 = el("div", "two-up");
-  pair2.append(
-    row(ctx, "voice.tts_voice", "Speaking voice", selectInput(ctx, "voice.tts_voice", d.voices.map((id) => ({ value: id, label: voiceLabel(id) })))),
-    row(ctx, "voice.followup_s", "Follow-up window", followup, { note: "How long it keeps listening after it answers, without Space." }),
-  );
-  return { nodes: [pair, pair2, speakTest(ctx)], mic: input.select };
+  const headset = statusLine("warn", HEADSET_LINE);
+  const mode = ctx.draft["voice.listen"];
+  headset.hidden = !headsetWarning(mode === "wake" || mode === "always" ? mode : "hold", d.inputs, d.outputs, ctx.draft["voice.input_device"] ?? "", ctx.draft["voice.output_device"] ?? "");
+  const speaking = row(ctx, "voice.tts_voice", "Speaking voice", selectInput(ctx, "voice.tts_voice", d.voices.map((id) => ({ value: id, label: voiceLabel(id) }))));
+  return { nodes: [pair, headset, speaking, speakTest(ctx)], mic: input.select };
 }
+
+/**
+ * The three listening modes, each with what it does to the microphone, and
+ * the follow-up window, which only the modes that keep listening have.
+ * Always with shell commands free asks first.
+ */
+function whenItListens(ctx: SettingsContext): HTMLElement {
+  const root = el("div", "listen-modes");
+  const field = "voice.listen";
+  const line = el("p", "field-note listen-line");
+  const confirm = el("div", "tier-confirm");
+  const followup = el("div", "unit-input");
+  followup.append(textInput(ctx, "voice.followup_s", { inputMode: "decimal" }), el("span", "unit", "seconds"));
+  const followRow = row(ctx, "voice.followup_s", "Follow-up window", followup, { note: "How long it keeps taking what you say after it answers, without its name." });
+  const show = (mode: ListenMode): void => {
+    line.textContent = MODE_LINES[mode];
+    followRow.hidden = mode === "hold";
+  };
+  const segments = (["hold", "wake", "always"] as const).map((m) => ({ value: m, label: MODE_NAMES[m] }));
+  const shellFree = (): boolean => (ctx.draft["gate.tiers.shell"] ?? ctx.settings.gate.tiers["shell"]) === "free";
+  const current = (): ListenMode => asMode(ctx.draft[field]);
+  const control = (): HTMLElement =>
+    segmented("When it listens", segments, current(), (v) => {
+      const mode = asMode(v);
+      if (mode === "always" && current() !== "always" && shellFree()) return askFirst();
+      confirm.replaceChildren();
+      ctx.edit(field, mode);
+      show(mode);
+    });
+  let shown = control();
+  const choice = row(ctx, field, "Mode", shown);
+  choice.append(line, confirm);
+
+  /** Always is shown chosen while the question is up; Cancel puts the old choice back. */
+  const askFirst = (): void => {
+    const yes = button("Listen always", "danger");
+    const no = button("Cancel");
+    const actions = el("div", "row-actions");
+    actions.append(yes, no);
+    const box = el("div", "confirm-box");
+    box.append(el("p", "confirm-question", ROOM_RUNS_COMMANDS), actions);
+    confirm.replaceChildren(box);
+    show("always");
+    yes.focus();
+    yes.addEventListener("click", () => {
+      confirm.replaceChildren();
+      ctx.edit(field, "always");
+    });
+    no.addEventListener("click", () => {
+      confirm.replaceChildren();
+      const fresh = control();
+      shown.replaceWith(fresh);
+      shown = fresh;
+      show(current());
+    });
+  };
+  show(current());
+  root.append(choice, followRow);
+  return root;
+}
+
+const asMode = (v: string | undefined): ListenMode => (v === "wake" || v === "always" ? v : "hold");
 
 /** Says one short sentence in the chosen voice through the chosen speakers, saved or not. */
 function speakTest(ctx: SettingsContext): HTMLElement {

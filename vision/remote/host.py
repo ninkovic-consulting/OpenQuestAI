@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Protocol
 from vision.core.bus import Bus
 from vision.core.events import GateRequest, State
 from vision.core.interfaces import AuditRecord, Picture, TurnRecord
+from vision.core.waiting import Waiting
 from vision.house.tools import load_catalog
 from vision.presence import Seen
 from vision.proposals.model import TOOL_PREFIX
@@ -56,9 +57,22 @@ class Host(Protocol):
         """True while a turn runs, someone speaks at the Mac, or a gate request waits."""
         ...
 
-    async def run_turn(self, text: str, *, speak: bool, images: Sequence[Picture] = ()) -> TurnRecord:
+    async def run_turn(
+        self,
+        text: str,
+        *,
+        speak: bool,
+        images: Sequence[Picture] = (),
+        waited: int = 0,
+        ids: Sequence[str] = (),
+    ) -> TurnRecord:
         """Run a phone turn now, with the images that came with it, and wait for it.
+        `waited` counts the messages that waited and go in it together, `ids` names them.
         Raises `TurnsBusy`."""
+        ...
+
+    def show_waiting(self, items: Sequence[Waiting]) -> None:
+        """The phone's messages that wait now, for every window's list (`queue.changed`)."""
         ...
 
     async def keep_image(self, data: bytes) -> Picture:
@@ -110,14 +124,25 @@ class DaemonHost:
     def busy(self) -> bool:
         return self._d.busy()
 
-    async def run_turn(self, text: str, *, speak: bool, images: Sequence[Picture] = ()) -> TurnRecord:
+    async def run_turn(
+        self,
+        text: str,
+        *,
+        speak: bool,
+        images: Sequence[Picture] = (),
+        waited: int = 0,
+        ids: Sequence[str] = (),
+    ) -> TurnRecord:
         session = self._d.session
         if session is None or self.busy():
             raise TurnsBusy
         try:
-            return await session.run_phone(text, speak=speak, images=images)
+            return await session.run_phone(text, speak=speak, images=images, waited=waited, ids=ids)
         except RuntimeError as exc:
             raise TurnsBusy from exc
+
+    def show_waiting(self, items: Sequence[Waiting]) -> None:
+        self._d.waiting.show("phone", items)
 
     async def keep_image(self, data: bytes) -> Picture:
         return await asyncio.to_thread(self._d.images.add, data)

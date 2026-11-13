@@ -64,6 +64,10 @@ MAX_TOOL_ROUNDS = 8
 DEFAULT_HISTORY_TURNS = 20
 DEFAULT_HEAVY_MAX_TOKENS = 8192
 REFUSAL_LINE = "I can't help with that one."
+OUT_OF_ROOM = "I ran out of room there, so that is not the whole answer. Ask me to go on."
+NOTHING_SAID = "I ran out of room before I could answer that. Ask me again, or in smaller pieces."
+"""Said when a reply stops at the output limit: thinking counts toward it, so a long turn
+can end with no words at all, and silence would look like a fault."""
 MAX_CARRIED_IMAGES = 20
 """The most images one request carries: above 20 the API applies a stricter size limit to
 every image in it, and each one is paid for again (at the cache-read price) on every call."""
@@ -280,6 +284,9 @@ class ClaudeBrain:
             tool_uses = [b for b in content if b.get("type") == "tool_use"]
             if message.stop_reason == "max_tokens" and tool_uses:
                 return  # a truncated tool input must not run
+            if message.stop_reason == "max_tokens":
+                turn.fresh_call = True  # keep the line apart from the cut text
+                self._say(turn, emit, OUT_OF_ROOM if "".join(turn.spoken).strip() else NOTHING_SAID)
             if content:
                 turn.messages.append({"role": "assistant", "content": content})
             if message.stop_reason == "pause_turn":

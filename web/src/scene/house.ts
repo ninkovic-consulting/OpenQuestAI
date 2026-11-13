@@ -77,7 +77,8 @@ export class HouseView {
     return added;
   }
 
-  update(dt: number): void {
+  /** Raise new rooms into place; true while one is still rising. */
+  update(dt: number): boolean {
     this.rising = this.rising.filter((r) => {
       r.t = Math.min(1, r.t + dt / RISE_S);
       const eased = 1 - Math.pow(1 - r.t, 3);
@@ -85,6 +86,7 @@ export class HouseView {
       r.group.position.y = r.t >= 1 ? 0 : (eased - 1) * r.depth + settle;
       return r.t < 1;
     });
+    return this.rising.length > 0;
   }
 
   floors(): THREE.Object3D[] {

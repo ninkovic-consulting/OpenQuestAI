@@ -79,6 +79,13 @@
   overflow-wrap: anywhere;
 }
 
+.agent-room-project {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .agent-room-meta {
   color: var(--muted);
   font-size: 12px;
@@ -98,10 +105,10 @@
 
 .room-card {
   position: absolute;
-  top: 56px;
+  top: calc(56px + var(--safe-top));
   left: clamp(16px, 2vw, 28px);
   width: min(320px, max(280px, 44%));
-  max-height: calc(100% - 72px);
+  max-height: calc(100% - 72px - var(--safe-top));
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -214,6 +221,28 @@
 
 .room-card dd.is-muted {
   color: var(--muted);
+}
+
+/* "Edit room" beside "No project name": a link in the line, not a second button. */
+.card-link {
+  margin-left: 10px;
+  padding: 2px 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--hairline-strong);
+  color: var(--mustard);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+}
+
+.card-link:hover {
+  border-bottom-color: var(--mustard);
+}
+
+.card-link:focus-visible {
+  outline: 1px solid var(--mustard);
+  outline-offset: 2px;
 }
 
 .card-section {

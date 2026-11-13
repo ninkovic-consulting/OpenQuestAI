@@ -49,9 +49,23 @@ ProcedureChange = Literal["saved", "removed"]
 ProposalKind = Literal["tool", "change"]
 ProposalStatus = Literal["waiting", "approved", "declined"]
 MadeToolChange = Literal["approved", "enabled", "disabled", "updated", "deleted", "ran"]
+ListenMode = Literal["hold", "wake", "always"]
+"""When voice listens: only while push to talk is held, for its name, or to everything said."""
+Listening = Literal["wake", "always"]
+"""The two modes that keep the microphone open."""
+LocalLoad = Literal["unloaded", "loading", "ready", "failed"]
+"""The in-process local model: not in memory, being loaded, in memory, or its load failed."""
+MicState = Literal["closed", "opening", "open"]
+"""The microphone stream: none, asked for and waiting for its first audio, or delivering audio."""
+ReplyStatus = Literal["ok", "interrupted", "failed"]
+"""How a turn ended: answered, cut off by the owner (or by their next words), or failed."""
+WaitingSource = Literal["text", "phone"]
+"""Where a waiting message came from: typed in a window, or sent from the paired phone."""
 
 
 _IMAGE_ID = re.compile(r"^[0-9a-f]{32}$")
+MESSAGE_ID = r"^[A-Za-z0-9_-]{1,64}$"
+"""A message's id: chosen by the window that typed it, or made by the daemon."""
 
 
 class EventError(ValueError):
@@ -118,20 +132,29 @@ class SentImage(BaseModel):
 
 MAX_IMAGES = 6
 """Images per message, from the window or the phone."""
+MAX_WAITING = 5
+"""Messages that may wait while the assistant is busy, per lane (the window's, the phone's)."""
+MAX_TURN_IMAGES = MAX_IMAGES * (MAX_WAITING + 1)
+"""Images one turn may carry: every waiting message's, and a message sent now behind them."""
 
 
 class UserUtterance(Event):
     """What the user said or typed, once it is accepted as addressed to Vision.
 
     `images` are the images the message carried (typed in the window or sent from the
-    phone); `text` may be empty only when there are some.
+    phone); `text` may be empty only when there are some. A turn that answers several
+    messages at once (they waited while the assistant was busy) carries all their words,
+    one message per paragraph in the order they were written, and all their images;
+    `ids` names those messages (`queue.changed`), so a window can fold the ones it shows
+    as waiting into this turn. It is empty for speech and for older clients' messages.
     """
 
     TYPE: ClassVar[str] = "user.utterance"
     DIRECTION: ClassVar[Direction] = "out"
     text: str
     source: UtteranceSource
-    images: list[SentImage] = Field(default_factory=list, max_length=MAX_IMAGES)
+    images: list[SentImage] = Field(default_factory=list, max_length=MAX_TURN_IMAGES)
+    ids: list[str] = Field(default_factory=list, max_length=MAX_WAITING + 1)
 
     @model_validator(mode="after")
     def _says_something(self) -> UserUtterance:
@@ -152,14 +175,15 @@ class VisionReply(Event):
     """Vision's reply, published once per turn when the turn ends.
 
     Every `user.utterance` is closed by exactly one `vision.reply` with the
-    same turn. If the turn was interrupted, `text` is what was said so far; if
-    it failed, `text` is the spoken error line.
+    same turn. If the turn was interrupted, `text` is what was said so far and
+    `status` is `interrupted`; if it failed, `text` is the spoken error line.
     """
 
     TYPE: ClassVar[str] = "vision.reply"
     DIRECTION: ClassVar[Direction] = "out"
     text: str
     turn_id: str = Field(min_length=1)
+    status: ReplyStatus = "ok"
 
 
 class VoiceLevel(Event):
@@ -168,6 +192,25 @@ class VoiceLevel(Event):
     TYPE: ClassVar[str] = "voice.level"
     DIRECTION: ClassVar[Direction] = "out"
     level: float = Field(ge=0, le=1)
+
+
+class VoiceListen(Event):
+    """When voice listens, and whether a microphone stream is open right now.
+
+    `voice` is whether the voice loop runs; `listening` is the listening mode
+    last chosen, which the window's quick control goes back to from `hold`;
+    `shell_free` is whether shell commands run without asking, which makes
+    `always` a risk the window confirms first. `/api/state` carries the same
+    shape as `listen`.
+    """
+
+    TYPE: ClassVar[str] = "voice.listen"
+    DIRECTION: ClassVar[Direction] = "out"
+    mode: ListenMode
+    mic: MicState
+    voice: bool
+    listening: Listening = "wake"
+    shell_free: bool = False
 
 
 class RoomState(Event):
@@ -231,6 +274,17 @@ class BrainMode(Event):
     local_tools: bool | None
     local_images: bool = False
     """Whether the local model can read images (none in the catalog can yet)."""
+    local_state: LocalLoad = "unloaded"
+    """Whether the in-process model is in memory, being loaded, or failed to load (a server's
+    model always says `unloaded`). Published again on every change."""
+    local_bytes: int | None = Field(default=None, ge=0)
+    """The memory the loaded model's weights hold."""
+    local_cache_bytes: int = Field(default=0, ge=0)
+    """The memory the prompts kept for the next turn hold."""
+    local_reading: tuple[int, int] | None = None
+    """While a long prompt is read before the first word: tokens read, tokens to read."""
+    local_problem: str | None = None
+    """Why the last load failed, in words for the owner."""
 
 
 class HouseChanged(Event):
@@ -386,6 +440,35 @@ class MadeToolChanged(Event):
     enabled: bool
 
 
+class WaitingMessage(BaseModel):
+    """A message that waits for the assistant to be free, as windows list it.
+
+    `preview` is the start of its words, `images` how many images it carries,
+    `source` where it was written, `at` when it arrived (Unix seconds).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str = Field(pattern=MESSAGE_ID)
+    preview: str
+    images: int = Field(ge=0, le=MAX_IMAGES)
+    source: WaitingSource
+    at: float
+
+
+class QueueChanged(Event):
+    """What waits for the assistant changed: a message was queued, taken back or sent.
+
+    `items` is every waiting message in the order they will go: the window's
+    first (they go as one turn as soon as the turn in progress ends), then the
+    phone's (one turn after that). `/api/state` carries the same list as `queue`.
+    """
+
+    TYPE: ClassVar[str] = "queue.changed"
+    DIRECTION: ClassVar[Direction] = "out"
+    items: list[WaitingMessage] = Field(default_factory=list)
+
+
 class Notice(Event):
     """A message for the user, shown in the window."""
 
@@ -409,13 +492,20 @@ class Hello(Event):
 class InputText(Event):
     """Typed input, with the ids of the images uploaded for it (`POST /api/images`).
 
-    `text` may be empty only when at least one image goes with it.
+    `text` may be empty only when at least one image goes with it. While the
+    assistant is busy the message waits (`queue.changed`) and goes with the
+    others that wait once the turn ends; `now` instead stops the turn and sends
+    it at once, behind whatever already waits. `id` is the window's own name for
+    the message, so it can find it again in `queue.changed` and `user.utterance`;
+    the daemon makes one when it is left out.
     """
 
     TYPE: ClassVar[str] = "input.text"
     DIRECTION: ClassVar[Direction] = "in"
     text: str = Field(default="", max_length=20_000)
     images: list[str] = Field(default_factory=list, max_length=MAX_IMAGES)
+    now: bool = False
+    id: str | None = Field(default=None, pattern=MESSAGE_ID)
 
     @model_validator(mode="after")
     def _says_something(self) -> InputText:
@@ -441,6 +531,22 @@ class InputInterrupt(Event):
     DIRECTION: ClassVar[Direction] = "in"
 
 
+class InputTakeBack(Event):
+    """Take a waiting message back before it is sent (`queue.changed` names it)."""
+
+    TYPE: ClassVar[str] = "input.take_back"
+    DIRECTION: ClassVar[Direction] = "in"
+    id: str = Field(pattern=MESSAGE_ID)
+
+
+class InputSendNow(Event):
+    """Stop the turn in progress and send this waiting message now, with the ones ahead of it."""
+
+    TYPE: ClassVar[str] = "input.send_now"
+    DIRECTION: ClassVar[Direction] = "in"
+    id: str = Field(pattern=MESSAGE_ID)
+
+
 class GateDecision(Event):
     """The user's answer to a gate request."""
 
@@ -461,6 +567,7 @@ EVENT_TYPES: dict[str, type[Event]] = {
         VisionDelta,
         VisionReply,
         VoiceLevel,
+        VoiceListen,
         RoomState,
         GateRequest,
         GateResolved,
@@ -476,11 +583,14 @@ EVENT_TYPES: dict[str, type[Event]] = {
         ProcedureChanged,
         ProposalChanged,
         MadeToolChanged,
+        QueueChanged,
         Notice,
         Hello,
         InputText,
         InputPtt,
         InputInterrupt,
+        InputTakeBack,
+        InputSendNow,
         GateDecision,
     )
 }

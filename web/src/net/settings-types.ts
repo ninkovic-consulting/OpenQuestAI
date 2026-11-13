@@ -2,6 +2,7 @@
 // source of truth; settings-guards.ts narrows its JSON to these.
 
 import type { Owner } from "./owner";
+import type { Listening, ListenMode } from "./types";
 
 export type Tier = "free" | "ask" | "never";
 export type KeySource = "keychain" | "env_file" | "environment";
@@ -32,6 +33,9 @@ export interface VoiceState {
   output_device: string;
   tts_voice: string;
   followup_s: number;
+  /** When it listens, and the listening mode the quick control goes back to. */
+  listen: ListenMode;
+  listening: Listening;
   models_downloaded: boolean;
   models_size_bytes: number | null;
 }
@@ -52,13 +56,16 @@ export interface Settings {
     talk_effort: string;
     heavy_effort: string;
     /** `tools` is whether the local model can call tools, null until it has loaded. */
-    local: { backend: string; model: string; downloaded: boolean; size_bytes: number | null; server: string; tools: boolean | null; offline: boolean };
+    /** `keep` is whether the model stays ready after its last use while offline mode is off: for `idle_s` seconds, or always. */
+    local: { backend: string; model: string; downloaded: boolean; size_bytes: number | null; server: string; tools: boolean | null; offline: boolean; keep: "idle" | "always"; idle_s: number };
   };
   budget: { month: string; spent_usd: number; cap_usd: number; warn_fraction: number };
   agents: SettingsAgent[];
   voice: VoiceState;
   /** `free_at_the_mac_only`: free holds only for what the owner types or says at the Mac. */
   gate: { tools: GateTool[]; tiers: Record<string, Tier>; never_free: string[]; free_at_the_mac_only: string[] };
+  /** `root`: the folder new projects are made in, as the owner wrote it (`[projects] root`). */
+  projects: { root: string };
   key: { stored: boolean; source: KeySource | null };
   setup: { completed: boolean; first_run: boolean };
   restart_pending: string[];
@@ -113,6 +120,8 @@ export interface KeyAnswer {
 export interface AudioDevice {
   name: string;
   default: boolean;
+  /** Connected over Bluetooth (AirPods, a headset); an older daemon leaves it out. */
+  bluetooth?: boolean;
 }
 
 export interface VoiceDevices {
@@ -194,10 +203,11 @@ export interface RestoreAnswer {
   restart: boolean;
 }
 
-/** `PATCH /api/house/rooms/{id}`; null clears model or tools; `folders` is the whole list, and an empty one detaches every folder. */
+/** `PATCH /api/house/rooms/{id}`; null clears model or tools; `folders` is the whole list, and an empty one detaches every folder; an empty `project` clears the project name. */
 export interface RoomPatch {
   name?: string;
   agent?: string;
+  project?: string;
   folders?: string[];
   model?: string | null;
   tools?: string[] | null;

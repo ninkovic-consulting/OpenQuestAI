@@ -17,7 +17,7 @@ const press = (key: string, more: Partial<KeyPress> = {}): KeyPress => ({
   composing: false,
   ...more,
 });
-const scene: KeyContext = { focus: "other", overlay: false, fieldEmpty: true, speaking: false };
+const scene: KeyContext = { focus: "other", overlay: false, fieldEmpty: true, answering: false };
 const field: KeyContext = { ...scene, focus: "field" };
 
 describe("keys outside the field", () => {
@@ -51,7 +51,7 @@ describe("keys outside the field", () => {
 
   it("Escape interrupts a speaking assistant, else steps back, overlay or not", () => {
     const esc = press("Escape", { code: "Escape" });
-    expect(routeKey(esc, { ...scene, speaking: true }).kind).toBe("interrupt");
+    expect(routeKey(esc, { ...scene, answering: true }).kind).toBe("interrupt");
     expect(routeKey(esc, scene).kind).toBe("step-back");
     expect(routeKey(esc, { ...scene, overlay: true }).kind).toBe("step-back");
   });
@@ -106,7 +106,7 @@ describe("keys in the field", () => {
 
   it("Escape interrupts while speaking, else leaves the field", () => {
     const esc = press("Escape", { code: "Escape" });
-    expect(routeKey(esc, { ...field, speaking: true }).kind).toBe("interrupt");
+    expect(routeKey(esc, { ...field, answering: true }).kind).toBe("interrupt");
     expect(routeKey(esc, field).kind).toBe("blur");
   });
 

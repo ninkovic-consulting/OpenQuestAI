@@ -43,12 +43,15 @@ export const STATUS_WORD: Record<JobStatus, string> = {
 export interface Names {
   agent(id: string): string;
   room(id: string | null): string | null;
+  /** The project name of the room, when it has one. */
+  project(id: string | null): string | null;
 }
 
 export function namesFrom(plan: Plan | null): Names {
   return {
     agent: (id) => plan?.agents.find((a) => a.id === id)?.name ?? id,
     room: (id) => (id === null ? null : (plan?.rooms.find((r) => r.id === id)?.name ?? id)),
+    project: (id) => (id === null ? null : (plan?.rooms.find((r) => r.id === id)?.project ?? null)),
   };
 }
 

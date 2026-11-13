@@ -15,6 +15,7 @@ from typing import Any
 
 from vision.aware import limits
 from vision.aware.personas import Personas
+from vision.house.project import rooms_named
 from vision.jobs.model import Job
 from vision.memory.library import LibraryEntry
 
@@ -99,14 +100,23 @@ def summary(view: HouseView) -> str:
         rooms = ", ".join(r["name"] for r in view.rooms_of(a["id"])) or "no room"
         who = f"{a['name']}, the {role}" if role else a["name"]
         lines.append(f"- {who} ({a['model']}): {rooms}; {view.agent_state(a['id'], short=True)}.")
+    named = [f"{r['name']}: {r['project']}" for r in view.plan["rooms"] if r.get("project")]
+    if named:
+        lines.append(f"- Projects: {'; '.join(named)}.")
     attached = [f"{r['name']}: {', '.join(r['folders'])}" for r in view.plan["rooms"] if r["folders"]]
     if attached:
         lines.append(f"- Project folders: {'; '.join(attached)}.")
     lines.append(f"- {limits.limits_line(view.project_tools)}")
+    lines.append(f"- {limits.projects_line()}")
     lines.append(f"- {limits.learning_line()}")
     if view.offline:
         lines.append(f"- {limits.offline_line(view.local_model, view.local_tools)}")
     return "\n".join(lines)
+
+
+def project_words(room: dict[str, Any]) -> str:
+    """A room's project name in a sentence, with its trailing space; empty when it has none."""
+    return f"Project: {room['project']}. " if room.get("project") else ""
 
 
 def folders_words(folders: Sequence[str]) -> str:
@@ -133,13 +143,21 @@ def overview(view: HouseView) -> str:
     ]
     for r in rooms:
         agent = view.agent(r["agent"])
-        project = f"folders {', '.join(r['folders'])}" if r["folders"] else "no project folder"
+        folders = f"folders {', '.join(r['folders'])}" if r["folders"] else "no project folder"
+        project = f"project {r['project']}; {folders}" if r.get("project") else folders
         work = "".join(f'; job {j.id} "{j.title}" {j.status}' for j in view.room_jobs(r["id"]))
         out.append(f"- {r['name']} (id {r['id']}): run by {agent['name']}; light {r['state']}; {project}{work}.")
     out += ["", "Agents:"]
     for a in plan["agents"]:
         out.append(agent_block(view, a))
-    out += ["", f"Limits: {limits.limits_line(view.project_tools)}", "", limits.learning_line()]
+    out += [
+        "",
+        f"Limits: {limits.limits_line(view.project_tools)}",
+        "",
+        limits.projects_line(),
+        "",
+        limits.learning_line(),
+    ]
     if view.offline:
         out.append(limits.offline_line(view.local_model, view.local_tools))
     return "\n".join(out)
@@ -170,12 +188,15 @@ def _plain(text: str) -> str:
 
 
 def find_room(plan: dict[str, Any], ref: str) -> dict[str, Any]:
-    """The room called `ref`, by id or name, forgiving case, "the", "room" and small slips."""
+    """The room called `ref`, by id, name or project name, forgiving case, "the", "room" and small slips."""
     rooms: list[dict[str, Any]] = plan["rooms"]
     wanted = ref.strip().lower()
     for r in rooms:
         if wanted in (r["id"].lower(), r["name"].lower()):
             return r
+    named = rooms_named(rooms, ref)
+    if len(named) == 1:
+        return named[0]
     plain = _plain(ref)
     keys = {}
     for r in rooms:
@@ -201,7 +222,7 @@ def room_details(view: HouseView, room: dict[str, Any], library: Sequence[Librar
     who = f"{agent['name']}" + (f", the {role}" if role else "")
     out = [
         f"{room['name']} (id {room['id']}), {kind}, run by {who}: {view.agent_state(agent['id'])}.",
-        f"Model here: {room['model']}. {folders_words(room['folders'])} Light: {room['state']}.",
+        f"Model here: {room['model']}. {project_words(room)}{folders_words(room['folders'])} Light: {room['state']}.",
     ]
     tools = room["tools"]
     if tools:

@@ -27,6 +27,7 @@ const LABELS: Record<string, string> = {
   "voice.output_device": "speakers",
   "voice.tts_voice": "speaking voice",
   "voice.followup_s": "follow-up window",
+  "voice.listen": "when it listens",
   "setup.completed": "setup",
   key: "API key",
 };
@@ -47,6 +48,7 @@ export function draftFrom(s: Settings): Draft {
     "voice.output_device": s.voice.output_device,
     "voice.tts_voice": s.voice.tts_voice,
     "voice.followup_s": String(s.voice.followup_s),
+    "voice.listen": s.voice.listen,
   };
   for (const a of s.agents) {
     if (a.is_host) continue;

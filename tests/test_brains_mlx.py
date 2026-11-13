@@ -50,20 +50,60 @@ class StubSplitter:
         return [(self.state, "")]
 
 
+GENERATED = 0xE000
+"""Generated tokens are private-use characters, so they never equal a re-rendered reply."""
+
+
+class StubKV:
+    """The tokens a model has read, in order: what it "sees" when it generates."""
+
+    def __init__(self, trimmable: bool = True) -> None:
+        self.tokens: list[int] = []
+        self._trimmable = trimmable
+
+    def trimmable(self) -> bool:
+        return self._trimmable
+
+    def trim(self, n: int) -> None:
+        del self.tokens[len(self.tokens) - n :]
+
+    def nbytes(self) -> int:
+        return 10 * len(self.tokens)
+
+    def size(self) -> int | None:
+        return len(self.tokens)
+
+
 class StubModel:
-    """Characters are tokens; the chat prompt is the messages joined."""
+    """Characters are tokens; the chat prompt is the messages joined. It records exactly which
+    tokens each generation read and the whole context it generated from."""
 
     def __init__(
-        self, replies: list[list[str]], *, delay: float = 0.0, context: int = 100_000, tools: bool = True
+        self,
+        replies: list[list[str]],
+        *,
+        delay: float = 0.0,
+        context: int = 100_000,
+        tools: bool = True,
+        trimmable: bool = True,
     ) -> None:
         self.replies = replies
         self.delay = delay
         self.context_tokens = context
         self.tools = tools
+        self.trimmable = trimmable
+        self.weights_bytes = 2_000_000
         self.prompts: list[str] = []
+        """The whole context each generation saw, as text."""
+        self.read: list[str] = []
+        """What each generation read itself (the rest came from the kept prompts)."""
+        self.built: list[str] = []
+        """The prompt the backend built for each generation."""
+        self.progress: list[tuple[int, int]] = []
         self.offered: list[list[str]] = []
         self.thinking: list[bool] = []
         self.generated = 0
+        self._last = ""
 
     def encode(self, text: str) -> list[int]:
         return [ord(c) for c in text]
@@ -74,16 +114,32 @@ class StubModel:
     def chat_prompt(self, messages: list[Message], tools: list[dict[str, Any]] | None, thinking: bool) -> list[int]:
         self.offered.append([t["function"]["name"] for t in tools or []])
         self.thinking.append(thinking)
-        return self.encode("|".join(f"{m['role']}:{m['content']}" for m in messages))
+        names = ",".join(t["function"]["name"] for t in tools or [])
+        parts = [f"{m['role']}:{m['content']}" for m in messages]
+        if names:  # after the system message, as chat templates put them
+            parts.insert(1, f"tools:{names}")
+        self._last = "|".join(parts)
+        return self.encode(self._last)
 
-    def stream(self, prompt: list[int], max_tokens: int) -> Iterator[Piece]:
-        self.prompts.append(self.decode(prompt))
+    def new_kv(self) -> StubKV:
+        return StubKV(self.trimmable)
+
+    def stream(self, prompt: list[int], max_tokens: int, kv: Any, progress: Any) -> Iterator[Piece]:
+        progress(0, len(prompt))
+        self.read.append(self.decode(prompt))
+        self.built.append(self._last)
+        kv.tokens.extend(prompt)
+        self.prompts.append(self.decode(kv.tokens))
+        progress(len(prompt), len(prompt))
+        self.progress.append((len(prompt), len(prompt)))
         pieces = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
         for i, text in enumerate(pieces):
             time.sleep(self.delay)
             self.generated += 1
+            token = GENERATED + (ord(text[0]) if text else 0)
+            kv.tokens.append(token)
             last = i == len(pieces) - 1
-            yield Piece(text, len(prompt), i + 1, "stop" if last else None)
+            yield Piece(text, token, i + 1, "stop" if last else None)
 
     def splitter(self) -> StubSplitter:
         return StubSplitter()
@@ -106,6 +162,10 @@ class StubRuntime:
         self.online = online
         self.size = size
         self.loads = 0
+        self.loading = threading.Event()
+        self.hold: threading.Event | None = None
+        """Set to make `load` wait until it is set."""
+        self.fail: Exception | None = None
         self.releases = 0
         self.downloads = 0
         self.tokenizer_reads = 0
@@ -131,6 +191,11 @@ class StubRuntime:
     def load(self, path: Path) -> StubModel:
         self._here()
         self.loads += 1
+        self.loading.set()
+        if self.hold is not None:
+            self.hold.wait(5)
+        if self.fail is not None:
+            raise self.fail
         return self.model
 
     def can_call_tools(self, path: Path) -> bool:

@@ -127,7 +127,7 @@ def own_tools(notes: ResidentNotes, desk: Desk, *, may_ask: bool) -> list[Tool]:
                             "brief": {"type": "string", "description": "The whole request, standing on its own."},
                             "room": {
                                 "type": "string",
-                                "description": "The room to work in, by name or id. Optional; this job's room when left out.",
+                                "description": "The room to work in, by name, id or project name. Optional; this job's room when left out.",
                             },
                         },
                         ["agent", "brief"],

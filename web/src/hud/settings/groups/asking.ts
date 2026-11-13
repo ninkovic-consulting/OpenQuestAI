@@ -1,5 +1,6 @@
 import type { GateTool } from "../../../net/settings-types";
 import { el } from "../../dom";
+import { ROOM_RUNS_COMMANDS } from "../../listen";
 import type { Group, SettingsContext } from "../context";
 import { button, fieldRow, segmented, type Segment } from "../fields";
 
@@ -59,7 +60,8 @@ function tierRow(ctx: SettingsContext, tool: GateTool): HTMLElement {
     const no = button("Cancel");
     const actions = el("div", "row-actions");
     actions.append(yes, no);
-    box.append(el("p", "confirm-question", WARNING), actions);
+    const listen = ctx.draft["voice.listen"] ?? ctx.settings.voice.listen;
+    box.append(el("p", "confirm-question", listen === "always" && tool.id === "shell" ? `${WARNING} ${ROOM_RUNS_COMMANDS}` : WARNING), actions);
     confirm.replaceChildren(box);
     yes.focus();
     yes.addEventListener("click", () => {

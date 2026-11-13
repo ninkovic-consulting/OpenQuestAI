@@ -4,7 +4,8 @@ No audio hardware is touched. Both ends keep the same timeline: with
 `pace=1.0` the input is fed at real time and the output file holds the
 assistant's speech at the moment it was said, so the two files line up.
 `pace=2.0` runs twice as fast; `pace=0` feeds input as fast as the models go
-(and makes speech take no time).
+(and makes speech take no time). Nobody holds push to talk to a file, so a
+file is listened to for the name (`wake`) when the config says `hold`.
 
     voice = make_file_voice(config, bus, "in.wav", "out.wav")
     await voice.start()
@@ -14,6 +15,7 @@ assistant's speech at the moment it was said, so the two files line up.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import time
 from collections.abc import AsyncIterator
 from math import gcd
@@ -82,11 +84,14 @@ class WavSink:
         self._stop = asyncio.Event()
         self._started: float | None = None
         self._duration = 0.0
+        self._turn = asyncio.Lock()
+        self._stops = 0
 
     def open(self) -> None:
         self._t0 = time.monotonic()
 
     def stop(self) -> None:
+        self._stops += 1  # what waits in line is dropped too
         self._stop.set()
 
     def position(self) -> float:
@@ -97,6 +102,12 @@ class WavSink:
         return min((time.monotonic() - self._started) * self.pace, self._duration)
 
     async def play(self, audio: np.ndarray, sample_rate: int) -> bool:
+        """One after another, in call order, as the speakers play a reply."""
+        stops = self._stops
+        async with self._turn:
+            return stops == self._stops and await self._play(audio, sample_rate)
+
+    async def _play(self, audio: np.ndarray, sample_rate: int) -> bool:
         stop = self._stop = asyncio.Event()
         audio = resample(audio, sample_rate, self.sample_rate)
         self._started = time.monotonic()
@@ -130,6 +141,8 @@ def make_file_voice(
 ) -> LocalVoice:
     """The real pipeline and models, with files in place of the microphone and speakers."""
     settings = VoiceSettings.from_config(config)
+    if settings.listen == "hold":
+        settings = dataclasses.replace(settings, listen="wake")
     return LocalVoice(
         bus,
         settings,

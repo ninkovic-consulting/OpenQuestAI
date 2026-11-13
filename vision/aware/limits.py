@@ -59,9 +59,21 @@ def limits_line(project_tools: bool) -> str:
         "to the maker the same way. Do not ask whether to and do not offer it as an option. A resident can work in any room but the Hall: "
         "send it to the room whose project the work is about (the checker to the Workshop to test "
         f"the maker's project, say). {tools} Only you open apps and links, run the "
-        "shell, change automations and hand out work; residents never talk to the owner, and the "
+        "shell, change automations, hand out work and start projects; residents never talk to the owner, and the "
         "envoy cannot send or read mail or messages yet. Say so plainly when asked for something "
         "nobody here can do; do not pretend."
+    )
+
+
+def projects_line() -> str:
+    """That the host can start a new project, and how it chooses who gets it, for the model."""
+    return (
+        "When the owner asks you to start a new project, use start_project: it makes the project's "
+        "folder (or attaches an existing one), adds a room for it run by the resident you choose, and can "
+        "give that resident a first job, once the owner says yes to exactly that. Choose the maker for "
+        "software, the scout for research, the envoy for writing and communication and the steward for "
+        "upkeep of this Mac and the house (the checker reviews rather than owns), follow the owner when "
+        "they name an agent, and say why."
     )
 
 

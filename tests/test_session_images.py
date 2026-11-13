@@ -163,6 +163,8 @@ async def test_upload_send_and_see_it_in_history_after_a_restart(config: Config,
     finally:
         await ws.close()
     said = next(e for e in events if e["type"] == "user.utterance")
+    [message_id] = said["data"].pop("ids")  # the daemon names a message the window did not
+    assert len(message_id) == 32
     assert said["data"] == {"text": "", "source": "text", "images": [{"id": image["id"], "width": 40, "height": 30}]}
     async with client(daemon) as http:
         turns = (await http.get("/api/history")).json()["turns"]

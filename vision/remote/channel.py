@@ -22,11 +22,16 @@ From the owner:
   a message with nothing usable gets the "text, voice notes and images" line;
 - any other text: a turn.
 
-Turns wait their turn: each is queued (at most five waiting) and starts only
-when the assistant is idle, through `Host.run_turn`, so it never overlaps a
-turn at the Mac or an automation. "Typing" shows from the moment a message is
-accepted until its reply is sent. No command goes around the gate; `stop`
-only interrupts.
+Turns wait their turn: each message waits (at most five) until the assistant
+is idle and nothing typed at the Mac waits (`Host.busy`), then everything
+that waited goes as ONE turn through `Host.run_turn`, in the order it was
+sent, with all its images, and gets one reply; the brain is told when several
+came one after another (`turns.waited_note`). So a phone turn never overlaps
+a turn at the Mac or an automation, and the phone's words never share a turn
+with the window's. What waits is listed in every window (`Host.show_waiting`).
+"Typing" shows from the moment a message is accepted until its reply is
+sent. No command goes around the gate; `stop` drops what waits and
+interrupts.
 """
 
 from __future__ import annotations
@@ -34,13 +39,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 
 from vision.attachments.clean import MAX_BYTES as MAX_IMAGE_BYTES
 from vision.attachments.clean import NOT_AN_IMAGE, TOO_BIG, ImageRefused
-from vision.core.events import MAX_IMAGES, Notice
+from vision.core.events import MAX_IMAGES, MAX_WAITING, Notice
 from vision.core.interfaces import Picture, TurnRecord
+from vision.core.waiting import Waiting, joined, new_id
 from vision.remote import audio, words
 from vision.remote.approvals import Approvals
 from vision.remote.ears import Ears
@@ -54,7 +60,6 @@ from vision.remote.transport import Attachment, Handlers, Incoming, Unreachable
 
 log = logging.getLogger(__name__)
 
-MAX_WAITING = 5
 IDLE_POLL_S = 0.5
 TYPING_EVERY_S = 8.0
 """The service shows typing for about ten seconds per call."""
@@ -70,6 +75,11 @@ class _Job:
     text: str
     voice: bool
     images: tuple[Picture, ...] = ()
+    id: str = field(default_factory=new_id)
+    at: float = field(default_factory=time.time)
+
+    def waiting(self) -> Waiting:
+        return Waiting(self.text, self.images, "phone", self.id, self.at)
 
 
 def command(text: str) -> str | None:
@@ -89,7 +99,8 @@ class PhoneChannel:
         self._ears = ears
         self._decoders = decoders
         self._clock = clock
-        self._queue: asyncio.Queue[_Job] = asyncio.Queue(maxsize=MAX_WAITING)
+        self._waiting: list[_Job] = []
+        self._arrived = asyncio.Event()
         self._job: asyncio.Task[None] | None = None
         self._refused_at: dict[str, float] = {}
         self.approvals = Approvals(link)
@@ -101,7 +112,8 @@ class PhoneChannel:
 
     @property
     def waiting(self) -> int:
-        return self._queue.qsize()
+        """Messages that wait for the assistant, not yet in a turn."""
+        return len(self._waiting)
 
     async def run(self) -> None:
         """Serve queued turns and send notifications until cancelled."""
@@ -171,10 +183,8 @@ class PhoneChannel:
 
     async def stop(self) -> str:
         """Drop the waiting messages and interrupt the reply in progress."""
-        dropped = 0
-        while not self._queue.empty():
-            self._queue.get_nowait()
-            dropped += 1
+        dropped = len(self._waiting)
+        self._set_waiting([])
         busy = self._link.host.busy()
         if busy:
             await self._link.host.interrupt()
@@ -185,12 +195,16 @@ class PhoneChannel:
         return words.STOPPED if dropped or busy or waiting_job else words.NOTHING_TO_STOP
 
     async def _enqueue(self, job: _Job) -> None:
-        try:
-            self._queue.put_nowait(job)
-        except asyncio.QueueFull:
+        if len(self._waiting) >= MAX_WAITING:
             await self._link.transport.send(job.chat_id, words.TOO_MANY)
             return
+        self._set_waiting([*self._waiting, job])
+        self._arrived.set()
         await self._link.transport.typing(job.chat_id)
+
+    def _set_waiting(self, jobs: Sequence[_Job]) -> None:
+        self._waiting = list(jobs)
+        self._link.host.show_waiting([j.waiting() for j in self._waiting])
 
     # ------------------------------------------------------------ images
 
@@ -275,39 +289,60 @@ class PhoneChannel:
 
     async def _serve_queue(self) -> None:
         while True:
-            job = await self._queue.get()
-            self._job = asyncio.create_task(self._serve(job))
+            while not self._waiting:
+                self._arrived.clear()
+                await self._arrived.wait()
+            self._job = asyncio.create_task(self._serve(self._waiting[0].chat_id))
             await asyncio.gather(self._job, return_exceptions=True)
             self._job = None
 
-    async def _serve(self, job: _Job) -> None:
-        typing = asyncio.create_task(self._keep_typing(job.chat_id))
+    async def _serve(self, chat_id: str) -> None:
+        typing = asyncio.create_task(self._keep_typing(chat_id))
         try:
-            record = await self._run_when_idle(job.text, job.images)
+            batch, record = await self._run_when_idle()
         finally:
             typing.cancel()
             await asyncio.gather(typing, return_exceptions=True)
+        if record is None:
+            return
+        chat_id = batch[-1].chat_id
         reply = record.reply.strip() or words.NO_REPLY
         if record.status == "interrupted":
             reply = f"{reply}\n\n{words.CUT_SHORT}" if record.reply.strip() else words.CUT_SHORT
         try:
-            await self._link.transport.send(job.chat_id, reply)
+            await self._link.transport.send(chat_id, reply)
         except Unreachable as exc:
             log.info("phone reply not sent: %s", exc)
             return
-        if job.voice and self._link.state().voice_replies and record.reply.strip():
-            await self._voice_reply(job.chat_id, record.reply)
+        if any(j.voice for j in batch) and self._link.state().voice_replies and record.reply.strip():
+            await self._voice_reply(chat_id, record.reply)
 
-    async def _run_when_idle(self, text: str, images: tuple[Picture, ...]) -> TurnRecord:
+    async def _run_when_idle(self) -> tuple[list[_Job], TurnRecord | None]:
+        """Once the assistant is idle, everything that waits goes as one turn (none when
+        `stop` dropped it all meanwhile)."""
         host = self._link.host
-        extra = {"images": images} if images else {}
         while True:
             while host.busy():
                 await asyncio.sleep(IDLE_POLL_S)
+            batch = self._waiting
+            if not batch:
+                return batch, None
+            self._set_waiting([])
+            pictures = tuple(p for j in batch for p in j.images)
+            extra = {"images": pictures} if pictures else {}
             try:
-                return await host.run_turn(text, speak=self._link.state().speak_on_mac, **extra)
+                record = await host.run_turn(
+                    joined([j.waiting() for j in batch]),
+                    speak=self._link.state().speak_on_mac,
+                    waited=len(batch),
+                    ids=[j.id for j in batch],
+                    **extra,
+                )
             except TurnsBusy:
+                self._set_waiting([*batch, *self._waiting])
                 await asyncio.sleep(IDLE_POLL_S)
+                continue
+            return batch, record
 
     async def _keep_typing(self, chat_id: str) -> None:
         while True:

@@ -42,6 +42,7 @@ from typing import Any, Literal
 from vision.core.bus import Bus
 from vision.core.config import Config
 from vision.core.events import AgentState, AgentWork, JobStatus, RoomLight, RoomState
+from vision.house.project import rooms_named
 from vision.jobs import store
 from vision.jobs.model import BRIEF_MAX, RESULT_MAX, TITLE_MAX, Job, Step, StepKind, clip
 
@@ -336,8 +337,8 @@ class Board:
     def _room(
         self, plan: dict[str, Any], agent_id: str, ref: str | None, default: str | None = None
     ) -> str | None:
-        """Any room but the Hall: a resident may work where the project lives. Without one, the
-        given default, else the agent's first room."""
+        """Any room but the Hall, found by id, name or project name: a resident may work where
+        the project lives. Without one, the given default, else the agent's first room."""
         rooms = [r for r in plan["rooms"] if r["agent"] == agent_id]
         if ref is None or not str(ref).strip():
             if default is not None:
@@ -347,6 +348,15 @@ class Board:
         found = next(
             (r for r in plan["rooms"] if wanted in (r["id"].casefold(), r["name"].casefold())), None
         )
+        if found is None:
+            named = rooms_named(plan["rooms"], wanted)
+            if len(named) > 1:
+                both = " and ".join(f"the {r['name']} (id {r['id']})" for r in named)
+                raise JobError(
+                    f"More than one room holds the project {str(ref).strip()!r}: {both}. "
+                    "Name the room by its name or id."
+                )
+            found = named[0] if named else None
         if found is None:
             names = ", ".join(r["name"] for r in plan["rooms"] if r["agent"] != HOST)
             raise JobError(f"There is no room called {ref!r}. The rooms are: {names}.")

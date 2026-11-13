@@ -1,8 +1,10 @@
 // The conversation thread as data: earlier turns from `/api/history`, then
 // the live ones built from the store's caption, then what was typed here and
-// not yet echoed back. What arrived while nobody was looking is marked, so
-// the thread can set it apart when the owner is back. Every function is
-// pure; the dock feeds them.
+// not yet echoed back. A message the daemon holds while the assistant answers
+// is not an entry: the thread lists it from the store's queue until the turn
+// that answers it begins, and that turn's entry carries its words. What
+// arrived while nobody was looking is marked, so the thread can set it apart
+// when the owner is back. Every function is pure; the dock feeds them.
 
 import type { ImageRef } from "../../net/image-types";
 import type { Caption } from "../../net/store";
@@ -33,6 +35,8 @@ export interface Entry {
   away?: true;
   /** Images the owner sent with the words; left out when there are none. */
   images?: ImageRef[];
+  /** This window's name for a message it sent (`input.text`'s `id`), until the daemon echoes it. */
+  msgId?: string;
 }
 
 export interface Thread {
@@ -76,8 +80,26 @@ const withImages = (images: readonly ImageRef[] | undefined): { images?: ImageRe
 const imageKey = (images: readonly ImageRef[] | undefined): string => (images ?? []).map((i) => i.id).join(",");
 
 /** A message typed here, perhaps with images: shown at once, below everything, until the daemon echoes it. */
-export function sent(t: Thread, text: string, toGate: boolean, images: readonly ImageRef[] = []): Thread {
-  return add(t, { user: text, origin: "text", reply: "", phase: "sending", ended: null, toGate, ...withImages(images) }, false);
+export function sent(t: Thread, text: string, toGate: boolean, images: readonly ImageRef[] = [], msgId?: string): Thread {
+  const named = msgId === undefined ? {} : { msgId };
+  return add(t, { user: text, origin: "text", reply: "", phase: "sending", ended: null, toGate, ...withImages(images), ...named }, false);
+}
+
+/** Messages sent from here that the daemon now holds as waiting leave the thread: the waiting list shows them. */
+export function nowWaiting(t: Thread, waiting: readonly string[]): Thread {
+  if (waiting.length === 0) return t;
+  const held = new Set(waiting);
+  const entries = t.entries.filter((e) => !(e.phase === "sending" && e.msgId !== undefined && held.has(e.msgId)));
+  return entries.length === t.entries.length ? t : { ...t, entries };
+}
+
+/** The unconfirmed messages typed here that this turn answers: by the ids it names, else by its words. */
+function claimed(entries: readonly Entry[], next: Caption): number[] {
+  const ids = next.ids ?? [];
+  if (ids.length > 0) return entries.flatMap((e, i) => (e.phase === "sending" && e.msgId !== undefined && ids.includes(e.msgId) ? [i] : []));
+  const said = imageKey(next.images);
+  const mine = entries.findIndex((e) => e.phase === "sending" && e.user === next.user && imageKey(e.images) === said);
+  return mine === -1 ? [] : [mine];
 }
 
 /** A request was answered: typed messages sent to it that were never echoed were the answer. */
@@ -105,20 +127,21 @@ export function fromCaption(t: Thread, prev: Caption, next: Caption): Thread {
   if (startsTurn(prev, next)) {
     // Whatever was still open closed before this turn began.
     const closed = t.entries.map((e) => (open(e.phase) ? { ...e, phase: "done" as const, ended: e.ended ?? "ok" } : e));
-    const said = imageKey(next.images);
-    const mine = origin === "text" ? closed.findIndex((e) => e.phase === "sending" && e.user === next.user && imageKey(e.images) === said) : -1;
-    if (mine !== -1) {
-      const claimed = { ...closed[mine]!, phase: "waiting" as const };
-      // The claimed message moves above any later ones still unconfirmed.
-      const rest = closed.filter((_, i) => i !== mine);
+    const mine = origin === "text" ? claimed(closed, next) : [];
+    const first = mine[0];
+    if (first !== undefined) {
+      // One entry for the turn, with all its words and images; it moves above any later ones still unconfirmed.
+      const { msgId: _echoed, images: _typed, ...base } = closed[first]!;
+      const turn: Entry = { ...base, user: next.user, phase: "waiting", ...withImages(next.images) };
+      const rest = closed.filter((_, i) => !mine.includes(i));
       const firstPending = rest.findIndex((e) => e.phase === "sending");
       const at = firstPending === -1 ? rest.length : firstPending;
-      return { ...t, entries: [...rest.slice(0, at), claimed, ...rest.slice(at)] };
+      return { ...t, entries: [...rest.slice(0, at), turn, ...rest.slice(at)] };
     }
     return add({ ...t, entries: closed }, { user: next.user, origin, ...about(next), reply: "", phase: "waiting", ended: null, toGate: false, ...withImages(next.images) }, true);
   }
   const phase: Phase = next.streaming ? "streaming" : "done";
-  const ended = next.streaming ? null : next.reply === "" ? "interrupted" : "ok";
+  const ended = next.streaming ? null : (next.ended ?? (next.reply === "" ? "interrupted" : "ok"));
   let current = -1;
   for (let i = t.entries.length - 1; i >= 0; i--) {
     if (open(t.entries[i]!.phase)) {

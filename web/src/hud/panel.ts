@@ -1,5 +1,6 @@
 // The left panel: wordmark, state, residents, budget, and the build, jobs,
-// proposals and settings toggles. The gate card mounts into its foot.
+// proposals and settings toggles, two to a row, then Minimize and Quit when
+// the Mac app offers them. The gate card mounts into its foot.
 
 import type { AgentWork } from "../net/job-types";
 import { hostAgentId } from "../net/plan";
@@ -10,6 +11,7 @@ import { runningCount } from "./jobs/model";
 import { formatSpend } from "./money";
 import { offlineMark, offlineTitle } from "./mode";
 import { makeQuit } from "./quit";
+import { makeMinimize } from "./minimize";
 import { agentRoomList } from "./rooms/agent-rooms";
 import { keepKeys } from "./rooms/keep-keys";
 import { agentRooms, agentToOpen, selectionIn, type AgentRoom } from "./rooms/model";
@@ -19,7 +21,7 @@ export interface Panel {
   root: HTMLElement;
   /** Where the gate card goes. */
   foot: HTMLElement;
-  /** Under the state: where the quick offline switch goes. */
+  /** Under the state: where the quick listening control and the offline switch go. */
   modeSlot: HTMLElement;
   buildToggle: HTMLButtonElement;
   jobsToggle: HTMLButtonElement;
@@ -71,8 +73,9 @@ export function mountPanel(parent: HTMLElement, store: Store, rooms: Rooms): Pan
   settingsToggle.type = "button";
   settingsToggle.title = "Settings (⌘ ,)";
   const quit = makeQuit();
+  const minimize = makeMinimize();
   const actions = el("div", "panel-actions");
-  actions.append(buildToggle, jobsToggle, proposalsToggle, settingsToggle, quit.button);
+  actions.append(buildToggle, jobsToggle, proposalsToggle, settingsToggle, minimize.button, quit.button);
   const foot = el("div", "gate-slot");
   root.append(wordmark, state, modeSlot, residents, budget, actions, quit.confirm, el("div", "spacer"), foot);
   parent.append(root);
@@ -84,6 +87,7 @@ export function mountPanel(parent: HTMLElement, store: Store, rooms: Rooms): Pan
     setText(wordmark, s.plan?.assistant.name ?? "");
     document.title = s.plan?.assistant.name ?? document.title;
     quit.sync(s.plan?.assistant.name ?? "");
+    minimize.sync();
     const offline = s.connection !== "open";
     setText(stateText, offline ? (s.connection === "connecting" ? "connecting" : "offline") : s.assistant);
     state.className = `state caps${offline ? " is-offline" : s.assistant === "idle" ? " is-idle" : ""}`;

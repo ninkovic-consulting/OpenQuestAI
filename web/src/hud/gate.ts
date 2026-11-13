@@ -1,8 +1,8 @@
 // The gate card: the oldest pending request, in carpet red, with who asks,
 // a countdown to `expires_at` and two buttons that answer it. More requests
 // wait behind it, answered one by one, oldest first. The detail (an exact
-// command and its folder, a file preview) is preformatted and scrolls inside
-// the card.
+// command and its folder, a file preview, a new project's plan) is
+// preformatted and scrolls inside the card; a long one gets more room.
 
 import type { Daemon } from "../net/daemon";
 import type { Store, ViewState } from "../net/store";
@@ -33,6 +33,9 @@ export function gateCard(s: Pick<ViewState, "gates" | "jobs" | "plan">): GateCar
   return { gate, who, summary, more: s.gates.length - 1 };
 }
 
+/** Details with more lines than this are a plan to read, not a command to glance at. */
+const LONG_DETAIL_LINES = 3;
+
 const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export function mountGate(parent: HTMLElement, store: Store, daemon: Daemon): void {
@@ -59,6 +62,8 @@ export function mountGate(parent: HTMLElement, store: Store, daemon: Daemon): vo
     if (c.who) node.append(el("p", "gate-who caps", c.who));
     const summary = el("p", "gate-summary", c.summary);
     const detail = el("pre", "gate-detail", gate.detail);
+    // A plan of several lines (a new project's) gets more height and a smaller face, still scrolling.
+    detail.classList.toggle("is-long", gate.detail.split("\n").length > LONG_DETAIL_LINES);
     detail.hidden = gate.detail === "";
     detail.tabIndex = 0;
     const actions = el("div", "gate-actions");

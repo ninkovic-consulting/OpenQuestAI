@@ -83,3 +83,15 @@ async def test_a_command_with_an_image_is_a_message(running: Rig) -> None:
     await r.channel.on_message(dm("status", attachments=(attachment(1, png(3, 3), r, name="s.png"),)))
     await until(lambda: r.transport.sent)
     assert r.host.turns == [("status", False)]
+
+
+async def test_images_of_messages_that_waited_go_together_in_order(running: Rig) -> None:
+    r = running
+    r.host.is_busy = True
+    await r.channel.on_message(dm("first", attachments=(attachment(1, png(4, 4), r, name="a.png"),)))
+    await r.channel.on_message(dm("", attachments=(attachment(2, png(6, 6), r, name="b.png"),)))
+    await r.channel.on_message(dm("and why"))
+    r.host.is_busy = False
+    await until(lambda: r.transport.sent)
+    assert r.host.turns == [("first\n\nand why", False)]
+    assert [p.width for p in r.host.pictures[0]] == [4, 6]

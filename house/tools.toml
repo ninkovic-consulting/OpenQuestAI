@@ -108,6 +108,11 @@ title = "Cancel a job"
 description = "Stops a job and any request it made to another resident."
 built_in = true
 
+[tools.start_project]
+title = "Start a new project"
+description = "Makes a project folder with a README and git, adds a room for it run by a resident, and can hand them a first job. Always asks first."
+built_in = true
+
 [tools.update_profile]
 title = "Update what it knows about you"
 description = "Changes what to call you, your business, or what to always keep in mind."

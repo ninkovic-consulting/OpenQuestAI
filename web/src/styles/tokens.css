@@ -23,4 +23,8 @@
   --scene-pad: clamp(24px, 3.4vw, 48px);
   --tracking-wordmark: 0.42em;
   --tracking-label: 0.24em;
+
+  /* The strip the Mac app's full-screen window keeps clear for a camera notch;
+     the shell sets it, and it is 0 elsewhere (a browser, an external display). */
+  --safe-top: 0px;
 }

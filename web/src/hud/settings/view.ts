@@ -20,6 +20,7 @@ import { askingGroup } from "./groups/asking";
 import { assistantGroup } from "./groups/assistant";
 import { automationsGroup } from "./groups/automations";
 import { keyGroup } from "./groups/key";
+import { displayGroup } from "./groups/display";
 import { macGroup } from "./groups/mac";
 import { modelsGroup } from "./groups/models";
 import { libraryGroup } from "./groups/library";
@@ -28,7 +29,7 @@ import { resetGroup } from "./groups/reset";
 import { roomsGroup } from "./groups/rooms";
 import { voiceGroup } from "./groups/voice";
 
-const GROUPS: readonly Group[] = [assistantGroup, libraryGroup, modelsGroup, agentsGroup, roomsGroup, voiceGroup, askingGroup, automationsGroup, phoneGroup, keyGroup, macGroup, resetGroup];
+const GROUPS: readonly Group[] = [assistantGroup, libraryGroup, modelsGroup, agentsGroup, roomsGroup, voiceGroup, askingGroup, automationsGroup, phoneGroup, keyGroup, macGroup, displayGroup, resetGroup];
 const RESTART_POLL_MS = 1500;
 const RESTART_WAIT_MS = 30_000;
 

@@ -26,6 +26,7 @@ PACKAGES = [
     "vision.macapp",
     "vision.memory",
     "vision.presence",
+    "vision.projects",
     "vision.remote",
     "vision.residents",
     "vision.scheduler",

@@ -66,7 +66,8 @@ export function jobDetail(o: DetailOptions): HTMLElement {
     row.append(el("dt", "caps", "Model"), value);
     facts.append(row);
   }
-  fact("Room", names.room(job.room) ?? "None");
+  const project = names.project(job.room);
+  fact("Room", `${names.room(job.room) ?? "None"}${project ? ` · ${project}` : ""}`);
   fact("Asked by", `${asker(job, names, o.host)} · ${clock(job.created_at, o.now)}`);
   if (details) {
     fact("Careful", details.careful ? "Yes, the heavier model" : "No");

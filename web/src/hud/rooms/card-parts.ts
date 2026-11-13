@@ -13,14 +13,26 @@ function row(label: string, value: string | string[], muted = false): HTMLElemen
   return node;
 }
 
-/** Who runs the room, on which model, and its project folders in full. */
-export function setup(m: RoomCardModel): HTMLElement {
+/** The project line: its name, or, for a room with folders and no name, that there is none and a way to give one. */
+function projectRow(project: NonNullable<RoomCardModel["project"]>, onEdit: () => void): HTMLElement {
+  if (project.kind === "named") return row("Project", project.name);
+  const none = row("Project", "No project name", true);
+  const edit = el("button", "card-link caps", "Edit room");
+  edit.type = "button";
+  edit.addEventListener("click", onEdit);
+  none.querySelector("dd")?.append(edit);
+  return none;
+}
+
+/** Who runs the room, on which model, its project name and its project folders in full. */
+export function setup(m: RoomCardModel, onEdit: () => void): HTMLElement {
   const facts = el("dl");
   const model = row("Model", m.agent.model);
   model.querySelector("dd")?.setAttribute("title", m.agent.modelId);
   facts.append(
     row("Agent", m.agent.name),
     model,
+    ...(m.project ? [projectRow(m.project, onEdit)] : []),
     m.folders.length > 0 ? row(m.folders.length === 1 ? "Folder" : "Folders", m.folders) : row("Folders", "No project folders attached", true),
   );
   return facts;

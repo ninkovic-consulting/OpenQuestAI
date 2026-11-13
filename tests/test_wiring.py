@@ -134,7 +134,8 @@ async def test_long_sentence_with_ok_does_not_approve(
     sub = bus.subscribe({GateRequest.TYPE, GateResolved.TYPE})
     bus.publish(InputText(text="Run echo hello in the shell"))
     first = await next_of(sub, GateRequest)
-    bus.publish(InputText(text="ok so before that tell me what the weather is like"))
+    # Sent now (Cmd+Enter): plain Enter would wait behind the request (test_session_queue).
+    bus.publish(InputText(text="ok so before that tell me what the weather is like", now=True))
     resolved = await next_of(sub, GateResolved)
     assert (resolved.id, resolved.decision) == (first.id, "deny")
     assert ran == []

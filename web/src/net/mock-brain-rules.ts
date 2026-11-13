@@ -10,7 +10,7 @@ export const HF_REPO = /^[A-Za-z0-9][\w.-]{0,95}\/[\w.-]{1,95}$/;
 export const SERVER_URL = /^https?:\/\/[A-Za-z0-9.\-[\]:]+(\/[\w./-]*)?$/;
 
 /** The fields these rules own. */
-export const BRAIN_FIELDS: ReadonlySet<string> = new Set(["models.offline", "models.local", "models.local_backend", "models.local_server", "models.talk_effort", "models.heavy_effort"]);
+export const BRAIN_FIELDS: ReadonlySet<string> = new Set(["models.offline", "models.local", "models.local_backend", "models.local_server", "models.local_keep", "models.talk_effort", "models.heavy_effort"]);
 
 /** What the rules need to know of the pretend daemon. */
 export interface BrainState {
@@ -35,6 +35,8 @@ export function valueProblem(field: string, value: Json): string | null {
       return typeof value === "string" && SERVER_URL.test(value.trim()) ? null : "The server address is an http:// or https:// address, like http://127.0.0.1:1234/v1.";
     case "models.local":
       return typeof value === "string" && value.trim() !== "" ? null : "Name the local model.";
+    case "models.local_keep":
+      return value === "idle" || value === "always" ? null : "Keep the local model ready for a while after its last use (idle) or always.";
     default:
       return typeof value === "string" ? null : "An effort level is one of low, medium, high, xhigh, max.";
   }

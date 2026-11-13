@@ -6,8 +6,18 @@ generation after a change closes the old backend (freeing an MLX model's
 memory) and starts the new one. That happens inside the turnstile, so no
 generation is ever cut off by a change.
 
+`follow()` puts the model where the settings want it, at once: called when
+offline mode, the local model or the keep-loaded setting changes, and at
+start-up. It closes the backends of models no longer chosen (their memory is
+freed before another model loads) and, in offline mode, loads the chosen model
+in the background, so the first message does not wait for the load; a turn
+that comes during the load waits for that same load.
+
 `interrupt()` stops a generation only when it is the host's (the owner said
 stop); a resident's step goes on.
+
+`status()` is the chosen model's state for the window (`brain.mode`);
+`on_change` is called whenever it changes.
 """
 
 from __future__ import annotations
@@ -17,7 +27,7 @@ from collections.abc import Callable
 from typing import Protocol
 
 from vision.brains import catalog
-from vision.brains.local_chat import OnText, Reply, Request, Turnstile, Who
+from vision.brains.local_chat import OnText, Reply, Request, Status, Turnstile, Who
 from vision.brains.local_server import ServerBackend
 from vision.brains.mlx_local import MlxBackend
 from vision.core.bus import Bus
@@ -29,15 +39,19 @@ Key = tuple[str, str, str]
 
 class Backend(Protocol):
     model: str
+    changed: Callable[[], None]
 
     @property
     def known_tools(self) -> bool | None: ...
+    def status(self) -> Status: ...
     async def start(self) -> None: ...
     def stop(self) -> None: ...
     async def close(self) -> None: ...
     async def ready(self) -> str | None: ...
     async def can_call_tools(self) -> bool: ...
-    async def generate(self, request: Request, on_text: OnText | None) -> Reply: ...
+    async def preload(self) -> None: ...
+    def follow_policy(self) -> None: ...
+    async def generate(self, request: Request, on_text: OnText | None, who: Who = "host") -> Reply: ...
 
 
 Factory = Callable[[Config, Bus, str, str], Backend]
@@ -58,6 +72,9 @@ class LocalEngine:
         self._backends: dict[Key, Backend] = {}
         self._active: Key | None = None
         self._holder: Who | None = None
+        self._following: asyncio.Task[None] | None = None
+        self.on_change: Callable[[], None] = lambda: None
+        """Called whenever `status()` changes; the composition root publishes `brain.mode`."""
 
     # ------------------------------------------------------------ what it runs
 
@@ -78,6 +95,11 @@ class LocalEngine:
         found = self._backends.get(self._key())
         return found.known_tools if found is not None else None
 
+    def status(self) -> Status:
+        """The chosen model's state: in memory or not, its memory, a prompt being read."""
+        found = self._backends.get(self._key())
+        return found.status() if found is not None else Status()
+
     def small(self) -> bool:
         """A small model is offered a short list of tools (`local_rules.ESSENTIAL`)."""
         size = hf_cache.cached_size(self.model) if self.backend == "mlx" else None
@@ -91,13 +113,39 @@ class LocalEngine:
         found = self._backends.get(key)
         if found is None:
             found = self._factory(self._config, self._bus, key[0], key[1])
+            found.changed = self._changed
             await found.start()
             self._backends[key] = found
         return found
 
     # ------------------------------------------------------------ lifetime
 
+    def _changed(self) -> None:
+        self.on_change()
+
+    def follow(self) -> asyncio.Task[None]:
+        """Follow the settings now: retire models no longer chosen, and load the chosen one when
+        offline mode is on. Runs in the background; the task is answered for those who wait."""
+        previous = self._following
+        self._following = asyncio.create_task(self._follow(previous), name="local-model")
+        return self._following
+
+    async def _follow(self, previous: asyncio.Task[None] | None) -> None:
+        if previous is not None:
+            await asyncio.gather(previous, return_exceptions=True)
+        async with self._turnstile.turn("host"):
+            key = self._key()
+            await self._retire(key)
+            backend = await self._get(key)
+            backend.follow_policy()
+        self.on_change()
+        if self._config.brain.offline:
+            await backend.preload()
+
     async def close(self) -> None:
+        if self._following is not None:
+            self._following.cancel()
+            await asyncio.gather(self._following, return_exceptions=True)
         backends, self._backends = list(self._backends.values()), {}
         for backend in backends:
             await backend.close()
@@ -126,7 +174,7 @@ class LocalEngine:
             backend = await self._get(key)
             self._active, self._holder = key, who
             try:
-                return await backend.generate(request, on_text)
+                return await backend.generate(request, on_text, who)
             finally:
                 self._holder = None
 

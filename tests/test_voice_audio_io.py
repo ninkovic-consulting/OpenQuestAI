@@ -3,6 +3,7 @@ for sound, the silent-microphone message and the fall back to the system default
 
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 import sys
@@ -28,19 +29,15 @@ class FakeStream:
         self.closed = False
 
     def start(self) -> None:
-        callback = self.kw["callback"]
-        if "finished_callback" not in self.kw:  # an input stream: hand over what the device sends
-            for chunk in self.sd.feed:
-                callback(chunk.reshape(-1, 1), len(chunk), None, None)
-            return
-        frames = self.kw["blocksize"]
-        while True:
-            out = np.zeros((frames, 1), dtype=np.float32)
-            try:
-                callback(out, frames, None, None)
-            except self.sd.CallbackStop:
-                break
-        self.kw["finished_callback"]()
+        if self.kw.get("output"):
+            return  # the test pulls from an output stream, as the device would
+        for chunk in self.sd.feed:  # an input stream: hand over what the device sends
+            self.kw["callback"](chunk.reshape(-1, 1), len(chunk), None, None)
+
+    def pull(self, frames: int = 480) -> np.ndarray:
+        out = np.zeros((frames, 1), dtype=np.float32)
+        self.kw["callback"](out, frames, None, None)
+        return out[:, 0]
 
     def close(self) -> None:
         self.closed = True
@@ -50,7 +47,7 @@ class FakeSd:
     """Enough of `sounddevice`: a device list that changes only when PortAudio initialises."""
 
     PortAudioError = type("PortAudioError", (Exception,), {})
-    CallbackStop = type("CallbackStop", (Exception,), {})
+    CallbackAbort = type("CallbackAbort", (Exception,), {})
 
     def __init__(self, devices: list[dict[str, Any]], feed: list[np.ndarray]) -> None:
         self.devices = devices
@@ -79,7 +76,7 @@ class FakeSd:
         return FakeStream(self, **kw)
 
     def OutputStream(self, **kw: Any) -> FakeStream:  # noqa: N802
-        return FakeStream(self, **kw)
+        return FakeStream(self, output=True, **kw)
 
 
 def chunks(*levels: float) -> list[np.ndarray]:
@@ -161,17 +158,31 @@ async def test_a_missing_microphone_falls_back_to_the_default(sd: FakeSd) -> Non
     await mic.close()
 
 
+async def play_out(out: SpeakerOutput, sd: FakeSd, audio: np.ndarray) -> bool:
+    """Play `audio`, pulling from the stream as a device would until it has gone out."""
+    playing = asyncio.create_task(out.play(audio, 24_000))
+    while not playing.done():
+        await asyncio.sleep(0)
+        if sd.streams and not sd.streams[-1].closed:
+            sd.streams[-1].pull()
+    return playing.result()
+
+
 async def test_speakers_follow_the_device_list_and_say_a_fallback_once(sd: FakeSd) -> None:
     said: list[str] = []
-    out = SpeakerOutput("AirPods", on_missing=said.append)
+    out = SpeakerOutput("AirPods", on_missing=said.append, linger_s=0)
     out.open()
     audio = np.full(2_000, 0.1, dtype=np.float32)
-    assert await out.play(audio, 24_000) and await out.play(audio, 24_000)
+    assert await play_out(out, sd, audio)
+    await asyncio.sleep(0.01)  # it lingers no time: the stream closes
+    assert await play_out(out, sd, audio)
     assert [s.kw["device"] for s in sd.streams] == [None, None]
     assert said == ["The speakers “AirPods” are not connected, so the system default (MacBook Pro Speakers) is used."]
+    await asyncio.sleep(0.01)
     sd.plugged = [MAC_MIC, MAC_SPEAKERS, AIRPODS]
     out.open()
-    assert await out.play(audio, 24_000)
+    assert await play_out(out, sd, audio)
+    await asyncio.sleep(0.01)
     assert sd.streams[-1].kw["device"] == 2 and all(s.closed for s in sd.streams)
     assert len(said) == 1
 

@@ -1,8 +1,10 @@
 import AppKit
 
-/// The menu bar icon: a monochrome armchair, drawn as a template image so macOS tints it.
+/// The menu bar icon: a monochrome armchair, drawn as a template image so macOS
+/// tints it for a light or a dark menu bar. While a microphone stream is open a
+/// small dot sits at its top right, cut clear of the chair so it reads apart.
 enum ArmchairIcon {
-    static func make() -> NSImage {
+    static func make(mic: Bool) -> NSImage {
         let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
             NSColor.black.setFill()
             // Back, with rounded shoulders.
@@ -15,10 +17,17 @@ enum ArmchairIcon {
             // Short legs.
             NSBezierPath(rect: NSRect(x: 2.5, y: 1.5, width: 1.5, height: 3)).fill()
             NSBezierPath(rect: NSRect(x: 14, y: 1.5, width: 1.5, height: 3)).fill()
+            if mic {
+                // A ring of clear space, then the dot.
+                NSGraphicsContext.current?.compositingOperation = .clear
+                NSBezierPath(ovalIn: NSRect(x: 11, y: 11, width: 7, height: 7)).fill()
+                NSGraphicsContext.current?.compositingOperation = .sourceOver
+                NSBezierPath(ovalIn: NSRect(x: 12.5, y: 12.5, width: 4.5, height: 4.5)).fill()
+            }
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = "Armchair"
+        image.accessibilityDescription = mic ? "Armchair, microphone open" : "Armchair"
         return image
     }
 }

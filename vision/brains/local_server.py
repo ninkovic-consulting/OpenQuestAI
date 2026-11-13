@@ -18,12 +18,13 @@ import json
 import logging
 import os
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
 
-from vision.brains.local_chat import Call, Message, OnText, Reply, Request, openai_tools
+from vision.brains.local_chat import Call, Message, OnText, Reply, Request, Status, Who, openai_tools
 from vision.brains.local_errors import LocalModelError
 from vision.core.config import Config
 from vision.core.interfaces import BrainError
@@ -114,10 +115,21 @@ class ServerBackend:
         self._client: httpx.AsyncClient | None = None
         self._tools: bool | None = None
         self._halt = False
+        self.changed: Callable[[], None] = lambda: None
 
     @property
     def known_tools(self) -> bool | None:
         return self._tools
+
+    def status(self) -> Status:
+        """The server holds the model; nothing is loaded in this process."""
+        return Status()
+
+    async def preload(self) -> None:
+        """The server loads its own models."""
+
+    def follow_policy(self) -> None:
+        """Nothing is kept in this process."""
 
     async def start(self) -> None:
         key = server_key(self._config)
@@ -148,7 +160,7 @@ class ServerBackend:
         """Assumed until the server refuses tools once."""
         return self._tools is not False
 
-    async def generate(self, request: Request, on_text: OnText | None) -> Reply:
+    async def generate(self, request: Request, on_text: OnText | None, who: Who = "host") -> Reply:
         if self._client is None:
             raise LocalModelError(BrainError("internal", "The local brain was not started.", False))
         self._halt = False

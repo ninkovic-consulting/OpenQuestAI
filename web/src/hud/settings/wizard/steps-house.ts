@@ -1,11 +1,13 @@
 // The wizard's last steps: the assistant's name, a room with project folders, and the summary.
 
 import { OWNER_LIMITS, OWNER_PARTS, type Owner, type OwnerPart } from "../../../net/owner";
+import { projectProblem } from "../../../net/project-name";
 import type { Room } from "../../../net/types";
-import { toolsNote } from "../../build-form";
+import { PROJECT_NOTE, toolsNote } from "../../build-form";
 import { el } from "../../dom";
 import { mountFolderList } from "../../pickers/folder-list";
 import { mountModelPicker, OWN_MODEL } from "../../pickers/model-picker";
+import { mountProjectField } from "../../pickers/project-field";
 import { mountToolToggles } from "../../pickers/tool-toggles";
 import { fieldRow } from "../fields";
 import { isHostRoom, roomEditFrom, roomPatch } from "../room-edit";
@@ -113,15 +115,21 @@ export function roomStep(env: WizardEnv): StepView {
   );
   if (room) select.value = room.id;
   const tools = mountToolToggles(env.propose, toolsNote, () => (touched = true));
+  const project = mountProjectField({ value: room?.project ?? "", folders: room?.folders ?? [] });
   const folders = mountFolderList({
     api: env.api,
     native: env.native,
     folders: room?.folders ?? [],
     max: plan?.max_room_folders ?? 1,
     label: "Project folders",
-    onChange: (list) => tools.setFolders(list),
+    onChange: (list) => {
+      project.setFolders(list);
+      tools.setFolders(list);
+    },
   });
   const showRoom = (): void => {
+    project.set(room?.project ?? "");
+    project.setFolders(room?.folders ?? []);
     folders.set(room?.folders ?? []);
     touched = false;
     tools.setFolders(room?.folders ?? [], room?.tools.map((t) => t.id));
@@ -133,23 +141,27 @@ export function roomStep(env: WizardEnv): StepView {
   showRoom();
   const models = mountModelPicker({ source: env.models, value: "", own: { label: OWN_MODEL, note: "The room uses its agent's model." }, onChange: (v) => (model = v) });
   // Only a model picked here is sent; the room keeps its own otherwise.
-  body.append(fieldRow("Room", select), fieldRow("Project folders", folders.root), tools.root, fieldRow("Model (optional)", models.root), error);
+  body.append(fieldRow("Room", select), fieldRow("Project name", project.root, { note: PROJECT_NOTE }), fieldRow("Project folders", folders.root), tools.root, fieldRow("Model (optional)", models.root), error);
 
   return {
     heading: "A project room",
-    lead: "Give one room project folders, and the agent who runs it works there. Optional; rooms can be changed any time in Settings, Rooms.",
+    lead: "Give one room a project name and project folders, and the agent who runs it works there. Optional; rooms can be changed any time in Settings, Rooms.",
     body,
     finish: async () => {
       if (!plan || !room) return { status: "skipped", text: "No project folders attached." };
+      if (projectProblem(project.value()) !== null) return null;
       const before = roomEditFrom(plan, room);
-      const patch = roomPatch(before, { ...before, folders: folders.value(), model: model ?? before.model }, tools.picks(), touched, false);
-      if (patch.folders === undefined) return { status: "skipped", text: "No project folders attached." };
+      const edit = { ...before, project: project.value(), folders: folders.value(), model: model ?? before.model };
+      const patch = roomPatch(before, edit, tools.picks(), touched, false);
+      if (patch.folders === undefined && patch.project === undefined) return { status: "skipped", text: "No project folders attached." };
       const r = await env.api.patchRoom(room.id, patch);
-      if (r.ok) return { status: "done", text: `${room.name}: ${patch.folders.join(", ")}.` };
+      if (r.ok) return { status: "done", text: `${room.name}: ${[edit.project.trim(), ...(patch.folders ?? [])].filter((t) => t !== "").join(", ")}.` };
       const refusal = r.errors.find((e) => e.field === "folders")?.message;
+      const named = r.errors.find((e) => e.field === "project")?.message;
       folders.setError(refusal ?? "");
+      project.setError(named ?? "");
       error.textContent = r.message;
-      error.hidden = refusal !== undefined;
+      error.hidden = refusal !== undefined || named !== undefined;
       return null;
     },
   };

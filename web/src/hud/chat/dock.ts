@@ -8,10 +8,16 @@ import type { ImageSource } from "../../net/image-source";
 import type { Store } from "../../net/store";
 import { el } from "../dom";
 import { looking } from "./attention";
-import { emptyThread, fromCaption, gateResolved, markAway, seenAway, sent, type Thread, withHistory } from "./entries";
+import { emptyThread, fromCaption, gateResolved, markAway, nowWaiting, seenAway, sent, type Thread, withHistory } from "./entries";
 import { asTurns, type HistoryLoader } from "./history";
 
 export type ThreadListener = (thread: Thread, previous: Thread) => void;
+
+/** What the waiting list's controls do; the input sets them (it talks to the daemon). */
+export interface WaitingActions {
+  sendNow(id: string): void;
+  takeBack(id: string): void;
+}
 
 export class ChatDock {
   readonly root = el("div", "chat");
@@ -19,6 +25,8 @@ export class ChatDock {
   private readonly listeners = new Set<ThreadListener>();
   /** Folds the expanded thread back to the latest exchange; false when it was not expanded. Set by the thread view. */
   collapse: () => boolean = () => false;
+  /** The waiting list's Send now and Take back. Set by the input. */
+  waiting: WaitingActions = { sendNow: () => {}, takeBack: () => {} };
   private giveImages: (source: ImageSource) => void = () => {};
   /**
    * Where the thread's images come from. The thread is drawn before the daemon
@@ -30,6 +38,7 @@ export class ChatDock {
     store.subscribe((s, prev) => {
       let next = fromCaption(this.thread, prev.caption, s.caption);
       if (s.gates.length < prev.gates.length) next = gateResolved(next);
+      if (s.queue !== prev.queue) next = nowWaiting(next, s.queue.map((m) => m.id));
       if (!looking(document, s.presence)) next = markAway(this.thread, next);
       this.set(next);
     });
@@ -43,9 +52,9 @@ export class ChatDock {
     this.listeners.add(listener);
   }
 
-  /** A message typed here, perhaps with images, shown before the daemon echoes it. */
-  sent(text: string, images: readonly ImageRef[] = []): void {
-    this.set(sent(this.thread, text, this.store.get().gates.length > 0, images));
+  /** A message typed here, perhaps with images, shown before the daemon echoes it; `msgId` is its name for the daemon. */
+  sent(text: string, images: readonly ImageRef[] = [], msgId?: string): void {
+    this.set(sent(this.thread, text, this.store.get().gates.length > 0, images, msgId));
   }
 
   /** The daemon client is here: the thread's images can be fetched. */

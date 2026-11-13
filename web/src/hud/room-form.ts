@@ -57,6 +57,8 @@ export interface RoomFields {
   name: string;
   agent: string;
   at: Cell;
+  /** The project's name; left out or blank, the room has none. */
+  project?: string;
   folders: string[];
   model: string;
 }
@@ -70,6 +72,8 @@ export function newRoom(fields: RoomFields, picks: ToolPicks | null): NewRoom {
   const room: NewRoom = { name: fields.name.trim(), agent: fields.agent, at: fields.at };
   const folders = cleanFolders(fields.folders);
   const model = fields.model.trim();
+  const project = (fields.project ?? "").trim();
+  if (project) room.project = project;
   if (folders.length > 0) room.folders = folders;
   if (model) room.model = model;
   if (folders.length > 0 && picks && sameFolderSet(picks.folders, folders) && picks.tools.length > 0) {

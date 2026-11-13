@@ -79,17 +79,17 @@ def test_the_same_folder_through_a_link_is_refused(config: Config, tmp_path: Pat
         folders_of(config, [real, str(tmp_path / "up")])
 
 
-def test_the_old_project_key_is_an_unknown_setting(config: Config) -> None:
+def test_a_project_key_that_holds_a_path_is_refused_with_a_pointer_to_folders(config: Config) -> None:
     doc = {"rooms": [{"id": "workshop", "project": "~/Projects/shop"}]}
     with pytest.raises(HouseError) as caught:
         build_layout(store.read_toml(store.DEFAULT_FILE), doc, config)
     assert str(caught.value) == (
-        "Room 'workshop': unknown setting 'project'. Allowed: agent, at, floor, folders, id, model, name, "
-        'shape, size, tools, wall. A room lists its project folders as folders = ["~/Projects/shop"].'
+        "Room 'Workshop': the project name '~/Projects/shop' looks like a folder path. "
+        "A project name is a name, such as Harbor Books; put folders in folders."
     )
 
 
-async def test_a_house_file_with_project_falls_back_to_the_default_with_a_notice(config: Config) -> None:
+async def test_a_house_file_with_a_path_as_project_falls_back_to_the_default_with_a_notice(config: Config) -> None:
     config.paths.house_file.parent.mkdir(parents=True, exist_ok=True)
     config.paths.house_file.write_text('[[rooms]]\nid = "workshop"\nproject = "~/Projects/shop"\n')
     bus = Bus()
@@ -97,10 +97,10 @@ async def test_a_house_file_with_project_falls_back_to_the_default_with_a_notice
     house = GridHouse(config, bus, poll_s=0.02)
     try:
         workshop = next(r for r in house.plan()["rooms"] if r["id"] == "workshop")
-        assert workshop["folders"] == []
+        assert workshop["folders"] == [] and workshop["project"] is None
         event = await asyncio.wait_for(sub.get(), 2)
         assert isinstance(event, Notice) and event.level == "warn"
-        assert "unknown setting 'project'" in event.text and 'folders = ["~/Projects/shop"]' in event.text
+        assert "looks like a folder path" in event.text and "put folders in folders" in event.text
         assert "Using the default house until it is fixed." in event.text
     finally:
         await house.close()
@@ -118,7 +118,7 @@ async def test_rooms_take_folders_through_the_routes(daemon: Daemon, tmp_path: P
     async with client(daemon) as http:
         plan = (await http.get("/api/house")).json()
         assert plan["max_room_folders"] == 8 and all(r["folders"] == [] for r in plan["rooms"])
-        assert all("project" not in r for r in plan["rooms"])
+        assert all(r["project"] is None for r in plan["rooms"])
 
         added = await http.post("/api/house/rooms", json={"name": "Den", "agent": "maker", "folders": [a, b]})
         assert added.status_code == 201 and added.json()["room"]["folders"] == [a, b]
@@ -133,7 +133,7 @@ async def test_rooms_take_folders_through_the_routes(daemon: Daemon, tmp_path: P
         nested = await http.patch("/api/house/rooms/den", json={"folders": [a, f"{a}/"]})
         assert nested.status_code == 400 and "are the same folder" in nested.json()["detail"]
         old = await http.patch("/api/house/rooms/den", json={"project": a})
-        assert old.status_code == 400 and "Unknown setting 'project'" in old.json()["detail"]
+        assert old.status_code == 400 and "looks like a folder path" in old.json()["detail"]
         shape = await http.patch("/api/house/rooms/den", json={"folders": a})
         assert shape.status_code == 400 and "folders must be a list" in shape.json()["detail"]
 

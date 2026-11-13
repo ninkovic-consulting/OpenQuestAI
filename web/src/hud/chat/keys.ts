@@ -1,8 +1,10 @@
 // Which key does what, as a pure decision so it can be tested without a page.
 //
-// In the message field: Enter sends, Shift+Enter is a new line, Up in an
-// empty field recalls the last message, Escape interrupts a speaking
-// assistant or else leaves the field; everything else types.
+// In the message field: Enter sends (while the assistant answers, the
+// message waits for the reply to end), Cmd+Enter (Ctrl+Enter) stops the
+// answer and sends at once, Shift+Enter is a new line, Up in an empty field
+// recalls the last message, Escape interrupts an answering assistant or else
+// leaves the field; everything else types.
 // Elsewhere: another input, a form or a dialog keeps its keys. Escape
 // interrupts or steps back. While nothing is open over the scene, `/`
 // focuses the field, Space is push to talk when the field is empty (and
@@ -35,12 +37,14 @@ export interface KeyContext {
   /** Settings, the Jobs panel, the wizard or the build form is open over the scene (see OVERLAYS). */
   overlay: boolean;
   fieldEmpty: boolean;
-  speaking: boolean;
+  /** The assistant is thinking or speaking: Escape stops it. */
+  answering: boolean;
 }
 
 export type KeyAction =
   | { kind: "none" }
   | { kind: "send" }
+  | { kind: "send-now" }
   | { kind: "recall" }
   | { kind: "interrupt" }
   | { kind: "blur" }
@@ -58,9 +62,10 @@ export function printable(k: KeyPress): boolean {
 
 function inField(k: KeyPress, c: KeyContext): KeyAction {
   if (k.composing) return NONE;
-  if (k.key === "Escape") return c.speaking ? { kind: "interrupt" } : { kind: "blur" };
+  if (k.key === "Escape") return c.answering ? { kind: "interrupt" } : { kind: "blur" };
   const plain = !k.shift && !k.ctrl && !k.meta && !k.alt;
   if (k.key === "Enter" && plain) return { kind: "send" };
+  if (k.key === "Enter" && (k.meta || k.ctrl) && !k.shift && !k.alt) return { kind: "send-now" };
   if (k.key === "ArrowUp" && plain && c.fieldEmpty) return { kind: "recall" };
   return NONE;
 }
@@ -68,7 +73,7 @@ function inField(k: KeyPress, c: KeyContext): KeyAction {
 export function routeKey(k: KeyPress, c: KeyContext): KeyAction {
   if (c.focus === "field") return inField(k, c);
   if (c.focus === "editable" || k.composing) return NONE;
-  if (k.key === "Escape") return c.speaking ? { kind: "interrupt" } : { kind: "step-back" };
+  if (k.key === "Escape") return c.answering ? { kind: "interrupt" } : { kind: "step-back" };
   if (c.overlay) return NONE;
   if (k.code === "Space" && !k.ctrl && !k.meta) return c.fieldEmpty ? { kind: "talk" } : { kind: "type", text: " " };
   if (k.key === "/" && !k.ctrl && !k.meta && !k.alt) return { kind: "focus" };

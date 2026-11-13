@@ -4,10 +4,13 @@ import type { BrainMode } from "./brain-types";
 import { asImageRefs } from "./image-guards";
 import type { ImageRef } from "./image-types";
 import { isOpen, type AgentStatus, type Job, type JobList } from "./job-types";
+import { asWaitingList, type WaitingMessage } from "./queue-types";
+import { asListenView } from "./types";
 import type {
   AssistantState,
   BrainName,
   GateRequest,
+  ListenView,
   NoticeLevel,
   OutboundData,
   OutboundEvent,
@@ -31,6 +34,10 @@ export interface Caption {
   streaming: boolean;
   /** Images the owner sent with the words; left out when there are none. */
   images?: ImageRef[];
+  /** The waiting messages this turn answers together (`user.utterance`'s `ids`); left out when none. */
+  ids?: string[];
+  /** The reply was cut off or failed (`vision.reply`'s `status`); left out otherwise. */
+  ended?: "interrupted" | "failed";
 }
 
 export interface Toast {
@@ -70,8 +77,12 @@ export interface ViewState {
   turnOpen: boolean;
   /** Whether the owner is at the Mac, as the daemon reads it; null until it says. */
   presence: Presence | null;
+  /** When voice listens and whether a microphone stream is open; null until the daemon says. */
+  listen: ListenView | null;
   /** Proposals waiting for the owner, for the count on the panel's control; null until the daemon says. */
   proposalsWaiting: number | null;
+  /** Messages that wait for the assistant to be free, in the order they will go (`queue.changed`). */
+  queue: WaitingMessage[];
   /** Count proposal, made-tool and procedure changes, so the Proposals view knows to refetch. */
   proposalsRevision: number;
   madeToolsRevision: number;
@@ -117,7 +128,9 @@ export function initialState(): ViewState {
     reports: [],
     turnOpen: false,
     presence: null,
+    listen: null,
     proposalsWaiting: null,
+    queue: [],
     proposalsRevision: 0,
     madeToolsRevision: 0,
     proceduresRevision: 0,
@@ -176,10 +189,18 @@ function reduceEvent(s: ViewState, e: OutboundEvent): ViewState {
       return { ...s, houseRevision: Math.max(s.houseRevision, e.data.revision) };
     case "user.utterance": {
       const images = asImageRefs(e.data.images);
+      const ids = Array.isArray(e.data.ids) ? e.data.ids.filter((i): i is string => typeof i === "string") : [];
       return {
         ...s,
         turnOpen: true,
-        caption: { user: e.data.text, source: e.data.source, reply: "", streaming: false, ...(images.length > 0 ? { images } : {}) },
+        caption: {
+          user: e.data.text,
+          source: e.data.source,
+          reply: "",
+          streaming: false,
+          ...(images.length > 0 ? { images } : {}),
+          ...(ids.length > 0 ? { ids } : {}),
+        },
       };
     }
     case "vision.delta": {
@@ -193,10 +214,15 @@ function reduceEvent(s: ViewState, e: OutboundEvent): ViewState {
         },
       };
     }
-    case "vision.reply":
-      return { ...s, turnOpen: false, caption: { ...s.caption, reply: e.data.text, streaming: false } };
+    case "vision.reply": {
+      const status = e.data.status;
+      const ended = status === "interrupted" || status === "failed" ? { ended: status } : {};
+      return { ...s, turnOpen: false, caption: { ...s.caption, reply: e.data.text, streaming: false, ...ended } };
+    }
     case "voice.level":
       return { ...s, voiceLevel: Math.min(1, Math.max(0, e.data.level)) };
+    case "voice.listen":
+      return { ...s, listen: e.data };
     case "room.state":
       return { ...s, roomLights: { ...s.roomLights, [e.data.room]: e.data.state } };
     case "gate.request":
@@ -234,6 +260,8 @@ function reduceEvent(s: ViewState, e: OutboundEvent): ViewState {
       return { ...s, madeToolsRevision: s.madeToolsRevision + 1 };
     case "procedure.changed":
       return { ...s, proceduresRevision: s.proceduresRevision + 1 };
+    case "queue.changed":
+      return { ...s, queue: e.data.items };
     case "notice":
       return addToast(s, e.data.level, e.data.text);
   }
@@ -255,6 +283,8 @@ function reduceSnapshot(s: ViewState, snap: StateSnapshot, initial: boolean): Vi
     gates: [],
     automation: snap.automation ?? null,
     presence: snap.presence ?? s.presence,
+    listen: asListenView(snap.listen) ?? s.listen,
+    queue: asWaitingList(snap.queue) ?? [],
   };
   for (const gate of snap.gate_pending) next = addGate(next, gate);
   if (initial) for (const notice of snap.notices) next = addToast(next, notice.level, notice.text);

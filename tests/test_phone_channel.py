@@ -52,17 +52,34 @@ async def test_speaking_on_the_mac_follows_the_setting(running: Rig) -> None:
     assert r.host.turns == [("Say it out loud", True)]
 
 
-async def test_turns_wait_for_idle_and_never_overlap(running: Rig) -> None:
+async def test_messages_that_waited_go_as_one_turn_with_one_reply(running: Rig) -> None:
     r = running
     r.host.is_busy = True  # someone is talking at the Mac
     r.host.turn_s = 0.05
     for text in ("one", "two", "three"):
         await r.channel.on_message(dm(text))
     await settle(10)
-    assert r.host.turns == [] and r.channel.waiting >= 2
+    assert r.host.turns == [] and r.channel.waiting == 3
+    assert r.host.shown[-1] == ["one", "two", "three"]  # every window lists them
     r.host.is_busy = False
-    await until(lambda: len(r.host.turns) == 3)
-    assert [t for t, _ in r.host.turns] == ["one", "two", "three"]
+    await until(lambda: r.transport.sent)
+    await settle(10)
+    assert r.host.turns == [("one\n\ntwo\n\nthree", False)]
+    assert r.host.waited == [3]
+    assert r.transport.texts() == ["Echo: one\n\ntwo\n\nthree"]
+    assert r.host.shown[-1] == [] and r.channel.waiting == 0
+
+
+async def test_messages_sent_during_a_phone_turn_go_together_after_it(running: Rig) -> None:
+    r = running
+    r.host.turn_s = 0.2
+    await r.channel.on_message(dm("first"))
+    await until(lambda: r.host.running == 1)
+    await r.channel.on_message(dm("second"))
+    await r.channel.on_message(dm("third"))
+    await until(lambda: len(r.transport.sent) == 2)
+    assert [t for t, _ in r.host.turns] == ["first", "second\n\nthird"]
+    assert r.host.waited == [1, 2]
     assert r.host.most_at_once == 1
 
 
@@ -71,7 +88,8 @@ async def test_too_many_waiting_is_said(running: Rig) -> None:
     r.host.is_busy = True
     for i in range(7):
         await r.channel.on_message(dm(f"message {i}"))
-    assert words.TOO_MANY in r.transport.texts()
+    assert r.transport.texts() == [words.TOO_MANY, words.TOO_MANY]
+    assert r.channel.waiting == 5
 
 
 async def test_status_help_and_stop(running: Rig) -> None:
@@ -98,6 +116,17 @@ async def test_stop_interrupts_the_reply_and_drops_the_waiting(running: Rig) -> 
     assert r.host.interrupts == 1
     await settle()
     assert [t for t, _ in r.host.turns] == ["tell me a long story"]
+    assert r.channel.waiting == 0 and r.host.shown[-1] == []
+
+
+async def test_stop_while_others_talk_drops_what_waits_and_sends_nothing(running: Rig) -> None:
+    r = running
+    r.host.is_busy = True  # a turn at the Mac
+    await r.channel.on_message(dm("later"))
+    await r.channel.on_message(dm("stop"))
+    r.host.is_busy = False
+    await settle(30)
+    assert r.host.turns == [] and r.transport.texts() == [words.STOPPED]
 
 
 async def test_other_attachments_are_not_read(running: Rig) -> None:

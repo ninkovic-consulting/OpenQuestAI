@@ -82,7 +82,10 @@ class LocalBrain:
         return self.engine.model
 
     async def start(self) -> None:
-        """The engine loads the model on the first generation."""
+        """In offline mode the model starts loading now, so the first message need not wait for
+        it; otherwise the engine loads it on the first generation."""
+        if self._config.brain.offline:
+            self.engine.follow()
 
     async def interrupt(self) -> None:
         self._pump.stop()
@@ -168,7 +171,10 @@ class LocalBrain:
         if not said:
             return
         self._history.append((user, {"role": "assistant", "content": said}))
-        del self._history[: -self._max_turns]
+        if len(self._history) > self._max_turns:
+            # The oldest quarter goes at once, so the beginning of the prompt (which the engine
+            # keeps read) stays the same for several turns instead of changing on every one.
+            del self._history[: len(self._history) - (self._max_turns - self._max_turns // 4)]
 
 
 async def _refuse(name: str, args: dict[str, Any]) -> ToolResult:

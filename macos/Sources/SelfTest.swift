@@ -4,8 +4,10 @@ import AppKit
 ///
 /// Runs the daemon in a throwaway home with voice off and the fake brain, on a
 /// free port, opens a window (not full screen), waits until the page reports that it is
-/// connected, then does the same for the widget, shows and hides it, reads whether the
-/// two shortcuts registered, writes the result and quits. Never touches the real home,
+/// connected, then does the same for the widget, shows and hides it, minimizes the app to the
+/// menu bar and opens the house again (recording the activation policy and the window
+/// each time), reads whether the two shortcuts registered and the notch inset of the
+/// screen, writes the result and quits. Never touches the real home,
 /// and keeps the shell's preferences in memory.
 @MainActor
 final class SelfTest {
@@ -16,7 +18,8 @@ final class SelfTest {
     static let bridgeMethods = """
     ["token", "chooseFolder", "micStatus", "requestMic", "openSystemSettings",
      "loginItemEnabled", "setLoginItem", "restartDaemon", "appInfo", "quit",
-     "widgetPrefs", "setWidgetPrefs", "showWidget", "dismissWidget", "openHouse", "fitWidget"]
+     "widgetPrefs", "setWidgetPrefs", "showWidget", "dismissWidget", "openHouse", "fitWidget",
+     "goToBackground", "safeAreaTop"]
     """
 
     /// What the page shows: connected once the state is not offline and the plan has named
@@ -97,9 +100,17 @@ final class SelfTest {
                 "frame": Self.describe(background.widget.panel.frame),
             ]
             report["shortcuts"] = Self.shortcuts(background)
-            let ok = widget.ok && shown && hidden
+            let away = await Self.background(window: window, background: background)
+            report["menu_bar"] = away.report
+            report["safe_area"] = [
+                "window_top": Double(window.safeTop),
+                "screen_top": Double(NSScreen.main?.safeAreaInsets.top ?? 0),
+                "screens": NSScreen.screens.map { ["name": $0.localizedName, "top": Double($0.safeAreaInsets.top)] },
+            ]
+            let ok = widget.ok && shown && hidden && away.ok
+            let why = away.ok ? "the widget did not show and hide" : "Minimize (to the menu bar) did not work"
             finish(ok: ok, report: report, background: background, supervisor: supervisor,
-                   error: ok ? nil : widget.error ?? "the widget did not show and hide")
+                   error: ok ? nil : widget.error ?? why)
         }
     }
 
@@ -124,6 +135,29 @@ final class SelfTest {
             try? await Task.sleep(for: .milliseconds(500))
         }
         return Poll(ok: false, page: last, error: "not connected within \(Int(Self.timeout)) s")
+    }
+
+    /// Minimize (to the menu bar) and back: the window closes and the app leaves the Dock, the widget stays;
+    /// opening the house brings the window and the Dock icon back.
+    private static func background(window: MainWindow, background: Background) async -> (ok: Bool, report: [String: Any]) {
+        func policy() -> String {
+            switch NSApp.activationPolicy() {
+            case .regular: return "regular"
+            case .accessory: return "accessory"
+            default: return "prohibited"
+            }
+        }
+        let before = policy()
+        background.goToBackground()
+        try? await Task.sleep(for: .milliseconds(300))
+        let away = ["policy": policy(), "window_open": window.isVisible, "widget_shown": background.widget.isVisible] as [String: Any]
+        background.openHouse()
+        try? await Task.sleep(for: .milliseconds(300))
+        let back = ["policy": policy(), "window_open": window.isVisible] as [String: Any]
+        let ok = away["policy"] as? String == "accessory" && away["window_open"] as? Bool == false
+            && away["widget_shown"] as? Bool == true
+            && back["policy"] as? String == "regular" && back["window_open"] as? Bool == true
+        return (ok, ["before": before, "in_menu_bar": away, "house_again": back])
     }
 
     private static func shortcuts(_ background: Background) -> [String: Any] {

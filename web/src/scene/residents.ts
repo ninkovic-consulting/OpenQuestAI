@@ -12,7 +12,7 @@ import { blockObject, FloorGrid, type FloorShape } from "./floor";
 import type { HouseView, RoomView } from "./house";
 import { DIM } from "./layout";
 import { NO_BOARD, residences, type Board } from "./residence";
-import { Resident } from "./resident";
+import { Resident, type FigureMotion } from "./resident";
 import { choosePace, chooseSpot, SPOT_NEEDS, type Spot, type SpotNeeds } from "./spot";
 
 /** Kept clear around a room's lamp light, so it never sits inside a figure. */
@@ -65,13 +65,17 @@ export class Residents {
     for (const [agent, figure] of this.figures) if (!placed.has(agent)) figure.set(null, "idle");
   }
 
-  update(dt: number, camera: THREE.Camera): void {
+  /** Advance every figure; answers the most any of them did. */
+  update(dt: number, camera: THREE.Camera): FigureMotion {
     this.viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.viewProjection);
+    let most: FigureMotion = "none";
     for (const figure of this.figures.values()) {
       const bounds = figure.bounds(this.sphere);
-      figure.update(dt, bounds !== null && this.frustum.intersectsSphere(bounds));
+      const motion = figure.update(dt, bounds !== null && this.frustum.intersectsSphere(bounds));
+      if (motion === "moving" || (motion === "animating" && most === "none")) most = motion;
     }
+    return most;
   }
 
   /** Start loading an agent's figure once; it joins the house when it arrives. */

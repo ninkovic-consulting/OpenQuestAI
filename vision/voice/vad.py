@@ -69,6 +69,8 @@ class SpeechStarted:
 class Utterance:
     audio: np.ndarray
     """16 kHz mono float32."""
+    voiced_s: float = 0.0
+    """How much of it was speech, by the detector; the rest is the lead-in and the trailing quiet."""
 
     @property
     def seconds(self) -> float:
@@ -133,4 +135,5 @@ class Segmenter:
         self._frames, self._speech_frames, self._quiet = [], 0, 0
         if speech < self._min_speech_frames:
             return [Utterance(np.zeros(0, dtype=np.float32))]
-        return [Utterance(np.concatenate(frames).astype(np.float32, copy=False))]
+        audio = np.concatenate(frames).astype(np.float32, copy=False)
+        return [Utterance(audio, speech * FRAME_MS / 1000)]

@@ -35,12 +35,14 @@ export const INPUTS = [
   { name: "MacBook Pro Microphone", default: true },
   { name: "USB Audio Interface", default: false },
   { name: "Insta360 Link 2C", default: false },
+  { name: "Sam's AirPods Pro", default: false, bluetooth: true },
 ];
 /** A webcam in privacy mode: it opens, but sends only silence. */
 export const SILENT_INPUT = "Insta360 Link 2C";
 export const OUTPUTS = [
   { name: "MacBook Pro Speakers", default: true },
   { name: "Studio Headphones", default: false },
+  { name: "Sam's AirPods Pro", default: false, bluetooth: true },
 ];
 
 export const DEFAULT_VOICE: VoiceState = {
@@ -53,6 +55,8 @@ export const DEFAULT_VOICE: VoiceState = {
   output_device: "",
   tts_voice: "af_heart",
   followup_s: 20,
+  listen: "hold",
+  listening: "wake",
   models_downloaded: true,
   models_size_bytes: SPEECH_BYTES,
 };

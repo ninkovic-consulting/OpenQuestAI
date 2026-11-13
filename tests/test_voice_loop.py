@@ -17,6 +17,7 @@ from vision.core.bus import Bus
 from vision.core.config import Config
 from vision.core.events import (
     GateRequest,
+    ListenMode,
     GateResolved,
     InputInterrupt,
     InputPtt,
@@ -40,7 +41,7 @@ SPEECH = Utterance(np.full(16_000, 0.5, dtype=np.float32))
 
 
 class Harness:
-    def __init__(self, tmp_path: Path, *transcripts: str, name: str = "Vision") -> None:
+    def __init__(self, tmp_path: Path, *transcripts: str, name: str = "Vision", listen: ListenMode = "wake") -> None:
         self.bus = Bus()
         self.sub = self.bus.subscribe()
         self.stt = ScriptedStt(*transcripts)
@@ -50,8 +51,7 @@ class Harness:
         self.speaker.use(ToneSynth(0.6))
         self.loop = VoiceLoop(
             self.bus,
-            VoiceSettings(name=name),
-            FileSource(tmp_path / "unused.wav"),
+            VoiceSettings(name=name, listen=listen),
             LoudnessVad(),
             self.stt,
             self.speaker,
@@ -158,12 +158,53 @@ async def test_stop_phrase_while_speaking_interrupts(tmp_path: Path) -> None:
 
 
 async def test_other_speech_while_speaking_is_ignored(tmp_path: Path) -> None:
-    h = Harness(tmp_path, "Hey Vision, what about tomorrow?")
+    h = Harness(tmp_path, "What about tomorrow?", "Vision, um.", "Hey Vision, what about tomorrow?", listen="wake")
     h.session("speaking")
-    await h.utter()
+    await h.utter()  # no name
+    await h.utter()  # the name with nothing after it
+    h.loop.set_mode("hold")
+    await h.utter()  # in hold, the name is not enough
     events = await h.events()
     assert interrupts(events) == 0
     assert utterances(events) == []
+
+
+@pytest.mark.parametrize("listen", ["wake", "always"])
+async def test_the_name_over_the_reply_is_the_next_message(tmp_path: Path, listen: ListenMode) -> None:
+    h = Harness(tmp_path, "Hey Vision, what about tomorrow?", listen=listen)
+    h.session("speaking")
+    await h.utter()
+    events = await h.events()
+    assert utterances(events) == ["What about tomorrow?"]
+    assert interrupts(events) == 0  # the session stops the reply for the new message
+    assert states(events) == []
+
+
+async def test_its_own_name_in_its_own_speech_never_interrupts_it(tmp_path: Path) -> None:
+    h = Harness(
+        tmp_path,
+        "vision here the plan for today is ready",
+        "I am vision and I will read it to you",
+        listen="always",
+    )
+    h.session("speaking")
+    for sentence in ("Vision here. The plan for today is ready.", "I am Vision, and I will read it to you."):
+        saying = asyncio.create_task(h.speaker.say(sentence))
+        await asyncio.sleep(0.05)
+        await h.utter()
+        await saying
+    events = await h.events()
+    assert utterances(events) == [] and interrupts(events) == 0
+
+
+async def test_the_name_over_its_own_echo_still_gets_through(tmp_path: Path) -> None:
+    h = Harness(tmp_path, "the plan for today is ready vision wait what about the bank", listen="wake")
+    h.session("speaking")
+    saying = asyncio.create_task(h.speaker.say("The plan for today is ready."))
+    await asyncio.sleep(0.05)
+    await h.utter()
+    await saying
+    assert utterances(await h.events()) == ["Wait what about the bank"]
 
 
 async def test_echo_of_its_own_sentence_is_discarded(tmp_path: Path) -> None:
@@ -238,7 +279,7 @@ def file_voice(tmp_path: Path, plan: list[tuple[str, float]], stt: ScriptedStt, 
     bus = Bus()
     return LocalVoice(
         bus,
-        VoiceSettings(name="Vision"),
+        VoiceSettings(name="Vision", listen="wake"),
         source=FileSource(tone_wav(tmp_path / "in.wav", plan), pace=pace),
         sink=WavSink(tmp_path / "out.wav", pace=pace),
         models=lambda: Models(LoudnessVad(), stt, ToneSynth(0.5)),
@@ -338,3 +379,52 @@ async def test_falling_back_to_say_is_a_notice(tmp_path: Path) -> None:
     finally:
         await voice.stop()
     assert isinstance(notice, Notice) and (notice.level, notice.text) == ("warn", "Using say.")
+
+
+# ---------------------------------------------------------------- listening modes
+
+LONG_SPEECH = Utterance(np.full(16_000, 0.5, dtype=np.float32), voiced_s=1.0)
+
+
+async def test_always_takes_speech_without_the_name(tmp_path: Path) -> None:
+    h = Harness(tmp_path, "What is on today then?", "Okay.", listen="always")
+    for _ in range(2):
+        await h.loop.on_segment(SpeechStarted())
+        await h.loop.on_segment(LONG_SPEECH)
+    assert utterances(await h.events()) == ["What is on today then?"]
+
+
+async def test_always_still_ignores_its_own_echo_and_hears_stop(tmp_path: Path) -> None:
+    h = Harness(tmp_path, "the front door is locked now", "Stop.", listen="always")
+    h.session("speaking")
+    saying = asyncio.create_task(h.speaker.say("The front door is locked now."))
+    await asyncio.sleep(0.05)
+    await h.loop.on_segment(SpeechStarted())
+    await h.loop.on_segment(LONG_SPEECH)
+    await h.loop.on_segment(SpeechStarted())
+    await h.loop.on_segment(LONG_SPEECH)
+    await saying
+    events = await h.events()
+    assert utterances(events) == []
+    assert interrupts(events) == 1
+
+
+async def test_hold_takes_nothing_unheld_even_while_a_gate_request_waits(tmp_path: Path) -> None:
+    h = Harness(tmp_path, "Yes.", "Yes.", listen="hold")
+    h.session("speaking")
+    h.loop.on_event(gate_request())
+    await h.utter()
+    assert utterances(await h.events()) == []
+    h.loop.on_event(InputPtt(down=True))
+    await h.utter()
+    assert utterances(await h.events()) == ["Yes."]
+
+
+async def test_the_mode_changes_the_next_decision(tmp_path: Path) -> None:
+    h = Harness(tmp_path, "Vision, lights on.", "Vision, lights on.", listen="hold")
+    await h.loop.on_segment(SpeechStarted())
+    h.loop.set_mode("wake")  # changed mid-utterance: the utterance is decided by the new mode
+    await h.loop.on_segment(SPEECH)
+    h.loop.set_mode("hold")
+    await h.utter()
+    assert utterances(await h.events()) == ["Lights on."]

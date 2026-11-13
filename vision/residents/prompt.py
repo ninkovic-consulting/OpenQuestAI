@@ -95,6 +95,8 @@ def room_part(setting: Setting, tools: Sequence[str]) -> str:
         )
     else:
         lines.append(f"This job runs in the {room['name']}, one of your own rooms.")
+    if room is not None and room.get("project"):
+        lines.append(f"This room holds the project {room['project']}.")
     lines += folder_lines(setting.folders)
     lines.append(f"Your tools for this job: {', '.join(tools) or 'none'}.")
     if "web_fetch" in tools:

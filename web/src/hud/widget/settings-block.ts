@@ -1,5 +1,6 @@
 // Settings, This Mac, "Widget and shortcuts": the widget on or off, the two
-// global shortcuts, and what the app shows when it opens. These are the Mac
+// global shortcuts, what the app shows when it opens, and what closing the
+// house window does. These are the Mac
 // app's own preferences, read and written through its bridge, so a plain
 // browser shows nothing of this block.
 
@@ -39,9 +40,10 @@ export function widgetBlock(native: NativeHelpers): HTMLElement[] {
       [
         { value: "house", label: "The house" },
         { value: "widget", label: "Only the widget" },
+        { value: "menubar", label: "Only the menu bar" },
       ],
       p.openWith,
-      (v) => change({ openWith: v === "widget" ? "widget" : "house" }),
+      (v) => change({ openWith: v === "widget" || v === "menubar" ? v : "house" }),
     );
     body.replaceChildren(
       fieldRow("Widget", widget, {
@@ -53,6 +55,9 @@ export function widgetBlock(native: NativeHelpers): HTMLElement[] {
       shortcut("Push to talk", "talk", p, p.status.talk, "Hold to talk, from any app; let go to stop."),
       fieldRow("When the app opens", opens, {
         note: "At login the app always opens hidden; the widget shows when it is on.",
+      }),
+      fieldRow("When I close the house window", statusLine("idle", "It stays running in the menu bar, without a Dock icon, until you open the house again."), {
+        note: "Minimize in the left panel does the same.",
       }),
     );
   };

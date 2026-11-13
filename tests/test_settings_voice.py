@@ -10,13 +10,15 @@ import tomllib
 import pytest
 from settings_fakes import FakeOutside, client, denied, silent, use
 
+from tests.test_voice_fakes import drain
 from vision.app import Daemon
-from vision.core.bus import Bus
-from vision.core.config import Config
+from vision.core.bus import Bus, Subscription
+from vision.core.config import Config, load_config
+from vision.core.events import VoiceListen
 from vision.testing.fakes import FakeVoice
 from vision.voice.errors import VoiceUnavailable
 from vision.voice.on_disk import ModelMissing, missing_message
-from vision.voice.settings import VoiceSettings
+from vision.voice.settings import VoiceSettings, listen_mode, listening_mode
 
 
 class RefusingVoice(FakeVoice):
@@ -34,8 +36,8 @@ async def test_devices_are_listed_without_opening_the_microphone(daemon: Daemon)
         got = (await http.get("/api/voice/devices")).json()
         await http.get("/api/settings")
     assert got["installed"] is True
-    assert got["inputs"] == [{"name": "MacBook Pro Microphone", "default": True}]
-    assert got["outputs"] == [{"name": "MacBook Pro Speakers", "default": True}]
+    assert got["inputs"] == [{"name": "MacBook Pro Microphone", "default": True, "bluetooth": False}]
+    assert got["outputs"] == [{"name": "MacBook Pro Speakers", "default": True, "bluetooth": False}]
     assert got["voices"][0] == "af_heart" and len(got["voices"]) == 11
     assert "mic_test" not in fake.calls
 
@@ -236,3 +238,104 @@ async def test_voice_on_without_the_models_is_not_a_microphone_problem(
     assert "Privacy" not in got["mic_detail"]
     assert tested["ok"] is False and "Download them in Settings, Voice" in tested["message"]
     assert not any(call.startswith("download") for call in fake.calls)
+
+
+# ---------------------------------------------------------------- when it listens
+
+
+async def listen_events(sub: Subscription) -> list[VoiceListen]:
+    return [e for e in await drain(sub) if isinstance(e, VoiceListen)]
+
+
+async def test_hold_is_the_default_and_the_state_says_so(daemon: Daemon) -> None:
+    use(daemon)
+    async with client(daemon) as http:
+        state = (await http.get("/api/state")).json()
+        voice = (await http.get("/api/settings")).json()["voice"]
+    assert state["listen"] == {"mode": "hold", "mic": "closed", "voice": True, "listening": "wake", "shell_free": False}
+    assert voice["listen"] == "hold" and voice["listening"] == "wake"
+
+
+async def test_changing_the_mode_applies_at_once_without_starting_voice_again(daemon: Daemon) -> None:
+    fake = use(daemon)
+    fake.cache = downloaded(daemon)
+    voice = daemon.components.voice
+    sub = daemon.bus.subscribe({VoiceListen.TYPE})
+    async with client(daemon) as http:
+        answer = await http.patch("/api/settings", json={"voice": {"listen": "always"}})
+        state = (await http.get("/api/state")).json()["listen"]
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["applied"] == ["voice.listen", "voice.listening"]
+    assert daemon.components.voice is voice and isinstance(voice, FakeVoice)
+    assert voice.modes == ["always"]
+    assert state["mode"] == "always" and state["listening"] == "always"
+    assert [(e.mode, e.listening) for e in await listen_events(sub)] == [("always", "always")]
+    # It survives a restart, and hold keeps the listening mode to go back to.
+    assert listen_mode(load_config(daemon.config.paths.home)) == "always"
+    async with client(daemon) as http:
+        await http.patch("/api/settings", json={"voice": {"listen": "hold"}})
+    saved = load_config(daemon.config.paths.home)
+    assert (listen_mode(saved), listening_mode(saved)) == ("hold", "always")
+    assert voice.modes == ["always", "hold"]
+
+
+async def test_the_mode_is_refused_while_voice_is_off(daemon: Daemon) -> None:
+    fake = use(daemon)
+    fake.cache = downloaded(daemon)
+    async with client(daemon) as http:
+        await http.post("/api/voice", json={"enabled": False})
+        answer = await http.patch("/api/settings", json={"voice": {"listen": "wake"}})
+    assert answer.status_code == 400
+    assert answer.json()["detail"]["errors"] == [
+        {"field": "voice.listen", "message": "Voice is off. Turn it on first, then choose when Vision listens."}
+    ]
+    assert listen_mode(load_config(daemon.config.paths.home)) == "hold"
+
+
+async def test_the_mode_is_refused_without_the_speech_models(daemon: Daemon) -> None:
+    use(daemon)
+    async with client(daemon) as http:
+        answer = await http.patch("/api/settings", json={"voice": {"listen": "wake"}})
+    assert answer.status_code == 400
+    [error] = answer.json()["detail"]["errors"]
+    assert error["field"] == "voice.listen" and "not downloaded" in error["message"]
+
+
+async def test_the_mode_must_be_one_of_three(daemon: Daemon) -> None:
+    fake = use(daemon)
+    fake.cache = downloaded(daemon)
+    async with client(daemon) as http:
+        bad = await http.patch("/api/settings", json={"voice": {"listen": "sometimes", "listening": "hold"}})
+    assert bad.status_code == 400
+    assert {e["field"] for e in bad.json()["detail"]["errors"]} == {"voice.listen", "voice.listening"}
+
+
+async def test_a_free_shell_shows_in_the_listen_state(daemon: Daemon) -> None:
+    fake = use(daemon)
+    fake.cache = downloaded(daemon)
+    sub = daemon.bus.subscribe({VoiceListen.TYPE})
+    async with client(daemon) as http:
+        answer = await http.patch("/api/settings", json={"gate": {"tiers": {"shell": "free"}}})
+        state = (await http.get("/api/state")).json()["listen"]
+    assert answer.status_code == 200, answer.text
+    assert state["shell_free"] is True
+    assert [e.shell_free for e in await listen_events(sub)] == [True]
+
+
+async def test_a_failed_press_tells_the_settings_screen_about_the_microphone(daemon: Daemon) -> None:
+    use(daemon)
+    voice = daemon.components.voice
+    assert isinstance(voice, FakeVoice)
+    voice.mic_problem = str(denied())
+    async with client(daemon) as http:
+        got = (await http.get("/api/settings")).json()["voice"]
+    assert got["running"] is True and got["mic"] == "denied"
+
+
+async def test_turning_voice_off_and_on_announces_the_listen_state(daemon: Daemon) -> None:
+    use(daemon)
+    sub = daemon.bus.subscribe({VoiceListen.TYPE})
+    async with client(daemon) as http:
+        await http.post("/api/voice", json={"enabled": False})
+        await http.post("/api/voice", json={"enabled": True})
+    assert [e.voice for e in await listen_events(sub)] == [False, True]

@@ -9,12 +9,15 @@ import type { JobDetails } from "./job-types";
 import type { ImageRef } from "./image-types";
 import { MockAutomations } from "./mock-automations";
 import { folderRefusal } from "./mock-folders";
+import { projectProblem } from "./project-name";
+import { mockProject, START_PROJECT, type MockProject } from "./mock-project";
 import { MockImages } from "./mock-images";
 import { MockJobs } from "./mock-jobs";
 import { MockLibrary } from "./mock-library";
 import { MockPhone } from "./mock-phone";
 import { MockProcedures } from "./mock-procedures";
 import { MockProposals } from "./mock-proposals";
+import { MockQueue } from "./mock-queue";
 import { MockSettings } from "./mock-settings";
 import { hostAgentId, hostRefusal, hostRoom } from "./plan";
 import { HOST_TOOLS, samplePlan } from "./sample-plan";
@@ -25,6 +28,7 @@ import type {
   Cell,
   Door,
   InboundEvent,
+  MicState,
   NewRoom,
   OutboundData,
   OutboundEvent,
@@ -43,6 +47,11 @@ const REPORT_POLL_MS = 500;
 /** "ask tink ..." hands a job to Tink, as the host would. */
 const ASK_TINK = /^\s*ask tink\b[\s,:]*(?:to\s+)?/i;
 const LEVEL_MS = 33;
+/** The pretend microphone's first audio after a press, like AirPods; `?slowmic=1` holds it for screenshots. */
+const MIC_OPEN_MS = 500;
+const SLOW_MIC_MS = 60_000;
+/** After hold to talk is let go, the pretend stream keeps capturing this long, as the daemon's does. */
+const MIC_TAIL_MS = 400;
 
 const projectTool = (id: string, title: string, available: boolean): ToolRef => ({ id, title, available, built_in: false });
 
@@ -67,11 +76,19 @@ export class MockDaemon implements Daemon {
   private speaking: { timers: number[]; text: string; turn: string; done: (() => void) | null } | null = null;
   private turn = 0;
   private pending: number | null = null;
+  /** The start_project card waiting for a yes, and what a yes makes. */
+  private project: { gate: string; made: MockProject } | null = null;
   readonly automations = new MockAutomations({
     changed: (id) => this.emit("automation.changed", { id, change: "updated", automation: null }),
     perform: (a) => this.runAutomation(a),
   });
   readonly phone = new MockPhone();
+  /** Messages typed while the assistant answers; they go together when the turn ends (`?queue=1` plays it). */
+  readonly queue = new MockQueue((items) => this.emit("queue.changed", { items }));
+  /** A waiting message sent now: the next turn takes the ones up to it. */
+  private upto: string | null = null;
+  /** A turn is replacing the one in progress (or push to talk is held): what waits holds still. */
+  private holding = false;
   readonly library = new MockLibrary();
   readonly images = new MockImages();
   readonly proposals = new MockProposals({ emit: (type, data) => this.emit(type, data) });
@@ -94,9 +111,22 @@ export class MockDaemon implements Daemon {
     tools: (ids, agent) => (ids ? ids.flatMap((id) => MOCK_CATALOG.filter((t) => t.id === id).map((t) => ({ ...t }))) : agentTools(agent)),
     forgetAutomations: () => this.automations.clear(),
     forgetPhone: (removeToken) => this.phone.reset(removeToken),
-  }, (mode) => this.emit("brain.mode", mode));
+  }, (mode) => this.emit("brain.mode", mode), () => this.listenChanged());
+  /** The pretend microphone stream, as `voice.listen` reports it. */
+  private mic: MicState = "closed";
+  private micTimer: number | null = null;
 
-  constructor(private readonly store: Store) {}
+  private readonly micOpenMs: number;
+
+  constructor(private readonly store: Store) {
+    const params = new URLSearchParams(globalThis.location?.search ?? "");
+    this.micOpenMs = params.get("slowmic") === "1" ? SLOW_MIC_MS : MIC_OPEN_MS;
+    const preset = params.get("listen");
+    if (preset === "hold" || preset === "wake" || preset === "always") {
+      this.settings.preset(preset);
+      this.mic = preset === "hold" ? "closed" : "open";
+    }
+  }
 
   start(): void {
     this.store.dispatch({ kind: "connection", connection: "open" });
@@ -109,6 +139,7 @@ export class MockDaemon implements Daemon {
       budget: { month: "2026-11", spent_usd: 18.42, cap_usd: 150 },
       mode: this.settings.mode(),
       presence: this.phone.presence(),
+      listen: this.settings.listenView(this.mic),
     };
     this.store.dispatch({ kind: "snapshot", snapshot, initial: true });
     this.store.dispatch({ kind: "plan", plan: structuredClone(this.plan) });
@@ -127,7 +158,9 @@ export class MockDaemon implements Daemon {
         `The tests pass now. ${name("checker")} found one bad date format, and ${name("maker")} is fixing it in the ${workshop}.`,
       ),
     );
-    this.at(9000, () =>
+    const queueing = new URLSearchParams(location.search).get("queue") === "1";
+    // `?queue=1` keeps the scene to the conversation: no request card over it.
+    if (!queueing) this.at(9000, () =>
       this.emit("gate.request", {
         id: "gate-1",
         tool: "shell",
@@ -138,15 +171,26 @@ export class MockDaemon implements Daemon {
     );
     this.at(12_000, () => this.addScriptedRoom());
     if (new URLSearchParams(location.search).get("away") === "1") this.playAway();
+    if (queueing) this.at(2000, () => this.playQueue());
   }
 
   send(event: InboundEvent): void {
     switch (event.type) {
       case "input.text":
-        this.answerText(event.data.text, event.data.images ?? []);
+        this.answerText(event.data.text, event.data.images ?? [], event.data.now === true, event.data.id);
+        break;
+      case "input.take_back":
+        this.queue.takeBack(event.data.id);
+        break;
+      case "input.send_now":
+        if (!this.queue.has(event.data.id)) break;
+        this.upto = event.data.id;
+        this.interrupt();
         break;
       case "input.ptt":
+        this.holdMic(event.data.down);
         if (event.data.down) {
+          this.holding = true;
           this.interrupt();
           this.setState("listening");
         } else {
@@ -159,6 +203,10 @@ export class MockDaemon implements Daemon {
         break;
       case "gate.decision":
         if (this.jobs.decide(event.data.id, event.data.decision)) break;
+        if (this.project?.gate === event.data.id) {
+          this.projectDecided(event.data.decision);
+          break;
+        }
         this.emit("gate.resolved", { id: event.data.id, decision: event.data.decision });
         this.emit("notice", {
           level: "info",
@@ -225,6 +273,8 @@ export class MockDaemon implements Daemon {
       return Promise.resolve({ ok: false, message: `The house already has ${extras} extra rooms, the most it can hold.` });
     const folders = room.folders === undefined ? null : folderRefusal(room.folders, this.plan.max_room_folders);
     if (folders !== null) return Promise.resolve({ ok: false, message: folders });
+    const project = projectProblem(room.project ?? "");
+    if (project !== null) return Promise.resolve({ ok: false, message: project });
     if (!this.plan.free_slots.some(([x, y]) => x === room.at[0] && y === room.at[1]))
       return Promise.resolve({ ok: false, message: "That slot is not free." });
     const agent = this.plan.agents.find((a) => a.id === room.agent);
@@ -240,12 +290,43 @@ export class MockDaemon implements Daemon {
       agent: agent.id,
       model: room.model ?? agent.model,
       folders: (room.folders ?? []).map((f) => f.trim()),
+      project: room.project?.trim() || null,
       floor: "wood-floor",
       wall: "wallpaper",
       tools: room.tools ? room.tools.flatMap((id) => MOCK_CATALOG.filter((t) => t.id === id).map((t) => ({ ...t }))) : agentTools(agent.id),
       state: "idle",
     });
     return Promise.resolve({ ok: true });
+  }
+
+  // ---------------------------------------------------------------- the pretend microphone
+
+  /** The mode or voice changed: a listening mode keeps the stream open, hold closes it. */
+  private listenChanged(): void {
+    const view = this.settings.listenView(this.mic);
+    if (this.micTimer !== null) clearTimeout(this.micTimer);
+    this.mic = view.voice && view.mode !== "hold" ? "open" : "closed";
+    this.emit("voice.listen", this.settings.listenView(this.mic));
+  }
+
+  /** In hold, a press opens the stream (its first audio a moment later) and the release closes it after the tail. */
+  private holdMic(down: boolean): void {
+    const view = this.settings.listenView(this.mic);
+    if (!view.voice || view.mode !== "hold") return;
+    if (this.micTimer !== null) clearTimeout(this.micTimer);
+    if (down) {
+      if (this.mic === "open") return;
+      this.setMic("opening");
+      this.micTimer = this.at(this.micOpenMs, () => this.setMic("open"));
+    } else {
+      this.micTimer = this.at(MIC_TAIL_MS, () => this.setMic("closed"));
+    }
+  }
+
+  private setMic(mic: MicState): void {
+    if (mic === this.mic) return;
+    this.mic = mic;
+    this.emit("voice.listen", this.settings.listenView(mic));
   }
 
   // ---------------------------------------------------------------- script helpers
@@ -265,20 +346,49 @@ export class MockDaemon implements Daemon {
     if (hall) this.emit("room.state", { room: hall, state: state === "thinking" || state === "speaking" ? "active" : "idle" });
   }
 
-  /** Typed, perhaps with images. One the daemon no longer has stops the message, as on the daemon. */
-  private answerText(text: string, ids: readonly string[]): void {
+  /** Typed, perhaps with images. One the daemon no longer has stops the message, as on the daemon.
+   * While the assistant answers it waits, or with `now` stops the answer and goes with what waits. */
+  private answerText(text: string, ids: readonly string[], now = false, id = `m${Date.now()}`): void {
     const images = this.images.refs(ids);
     if (images === null) {
       this.emit("notice", { level: "warn", text: "An image in that message is no longer here; nothing was sent." });
       return;
     }
-    this.answer(text, "text", images);
+    if (!this.speaking && this.pending === null && this.queue.size === 0) return this.answer(text, "text", images, [id]);
+    if (!this.queue.add(text, images, id, now)) {
+      this.emit("notice", { level: "warn", text: "5 messages already wait for this reply, so that one was not sent. Take one back, or stop the reply to send them now." });
+      return;
+    }
+    if (now) {
+      this.upto = null;
+      this.interrupt();
+    }
   }
 
-  private answer(text: string, source: "voice" | "text", images: ImageRef[] = []): void {
+  /** What waits goes as one turn once nothing runs, in the order it was written. */
+  private next(): void {
+    if (this.holding || this.speaking || this.pending !== null || this.queue.size === 0) return;
+    const batch = this.queue.take(this.upto);
+    this.upto = null;
+    const text = batch.map((m) => m.text).filter(Boolean).join("\n\n");
+    this.answer(text, "text", batch.flatMap((m) => m.images), batch.map((m) => m.id), batch.length);
+    this.queue.publish();
+  }
+
+  private answer(text: string, source: "voice" | "text", images: ImageRef[] = [], ids: string[] = [], waited = 0): void {
+    this.holding = true;
     this.interrupt();
-    this.emit("user.utterance", { text, source, images });
+    this.holding = false;
+    this.emit("user.utterance", { text, source, images, ids });
     this.setState("thinking");
+    if (waited > 0) {
+      const these = waited === 1 ? "That came in while I was answering" : `Those ${waited} came in while I was answering`;
+      this.pending = this.at(900, () => {
+        this.pending = null;
+        this.say(`${these}, so I am taking them together: the CSV path first, then the export screen. Brass and Tink rely on it every Monday.`);
+      });
+      return;
+    }
     if (images.length > 0) {
       const seen = images.length === 1 ? "the image" : `the ${images.length} images`;
       this.pending = this.at(900, () => {
@@ -288,6 +398,7 @@ export class MockDaemon implements Daemon {
       return;
     }
     if (ASK_TINK.test(text)) return this.askTink(text.replace(ASK_TINK, ""));
+    if (START_PROJECT.test(text)) return this.startProject(text.replace(START_PROJECT, ""));
     // Asking for detail gets a reply several lines long, to exercise the caption.
     const long = /\b(more|detail|explain|why)\b/i.test(text);
     this.pending = this.at(900, () => {
@@ -304,6 +415,46 @@ export class MockDaemon implements Daemon {
     this.pending = this.at(700, () => {
       this.pending = null;
       this.say(reply);
+    });
+  }
+
+  /** The host's start_project: the card says what will happen; a yes adds the room and hands off the first job. */
+  private startProject(words: string): void {
+    const hall = hostRoom(this.plan);
+    const owners = cellOwners(this.plan);
+    // The free cell nearest the Hall's centre, as the house places a room.
+    const [hx, hy] = hall ? [hall.at[0] + (hall.size[0] - 1) / 2, hall.at[1] + (hall.size[1] - 1) / 2] : [0, 0];
+    const distance = ([x, y]: Cell): number => (x - hx) ** 2 + (y - hy) ** 2;
+    const slot = [...this.plan.free_slots].sort((a, b) => distance(a) - distance(b))[0];
+    if (!slot) return this.say("There is no free spot next to the house for a new room.");
+    const [x, y] = slot;
+    const around: Cell[] = [[x - 1, y], [x, y - 1], [x + 1, y], [x, y + 1]];
+    const beside = around.map(([cx, cy]) => owners.get(cellKey(cx, cy))).find((r) => r !== undefined);
+    const made = mockProject(words, this.plan, slot, beside?.name ?? null);
+    const gate = `gate-project-${++this.turn}`;
+    this.project = { gate, made };
+    this.pending = this.at(700, () => {
+      this.pending = null;
+      this.emit("gate.request", { id: gate, tool: "start_project", summary: "Start a new project", detail: made.detail, expires_at: Date.now() / 1000 + 60 });
+      this.setState("idle");
+    });
+  }
+
+  private projectDecided(decision: "allow" | "deny"): void {
+    const project = this.project;
+    if (!project) return;
+    this.project = null;
+    this.emit("gate.resolved", { id: project.gate, decision });
+    const { made } = project;
+    const name = this.plan.agents.find((a) => a.id === made.agent)?.name ?? made.agent;
+    if (decision === "deny") return this.say("Understood, I have not started it. Nothing was created.");
+    this.addRoom(structuredClone(made.room));
+    const job = this.jobs.firstJob(made.agent, made.room.id, made.firstJob);
+    const handed = typeof job === "string" ? ` The first job could not start: ${job}` : ` ${name} is writing a first plan there now; I will tell you when it is ready.`;
+    this.setState("thinking");
+    this.pending = this.at(600, () => {
+      this.pending = null;
+      this.say(`Done: "${made.room.name}" has its folder, ${made.room.folders[0] ?? ""}, and a new room in the house, run by ${name}.${handed}`);
     });
   }
 
@@ -366,13 +517,14 @@ export class MockDaemon implements Daemon {
     timers.push(this.at(total, () => this.finish()));
   }
 
-  private finish(): void {
+  private finish(cut = false): void {
     if (!this.speaking) return;
     const { text, turn, done } = this.speaking;
     this.speaking = null;
-    this.emit("vision.reply", { text: text.trim(), turn_id: turn });
+    this.emit("vision.reply", { text: text.trim(), turn_id: turn, status: cut ? "interrupted" : "ok" });
     this.setState("idle");
     done?.();
+    this.next();
   }
 
   private interrupt(): void {
@@ -380,11 +532,27 @@ export class MockDaemon implements Daemon {
       // A reply that was still being thought about is dropped, as the daemon drops it.
       clearTimeout(this.pending);
       this.pending = null;
-      if (!this.speaking) this.setState("idle");
+      if (!this.speaking) {
+        this.emit("vision.reply", { text: "", turn_id: `turn-${++this.turn}`, status: "interrupted" });
+        this.setState("idle");
+      }
     }
-    if (!this.speaking) return;
-    for (const t of this.speaking.timers) clearTimeout(t);
-    this.finish();
+    if (this.speaking) {
+      for (const t of this.speaking.timers) clearTimeout(t);
+      this.finish(true);
+    }
+    this.next();
+  }
+
+  /** `?queue=1`: once the opening reply is done, a long reply and two messages typed while it plays, one with an image. */
+  private playQueue(): void {
+    if (this.speaking || this.pending !== null || this.store.get().assistant !== "idle") {
+      this.at(200, () => this.playQueue());
+      return;
+    }
+    this.answerText("Explain the date parser rewrite in detail.", [], false, "q0");
+    this.at(1200, () => this.answerText("Keep it to the CSV part, that is what breaks on Mondays.", [], false, "q1"));
+    this.at(1500, () => void this.images.sketches().then((s) => this.answerText("And this is the export screen they use.", s.slice(0, 1).map((i) => i.id), false, "q2")));
   }
 
   /** `?away=1`: the owner locks the Mac, an automation runs and a job reports, and the owner comes back. */
@@ -414,6 +582,7 @@ export class MockDaemon implements Daemon {
       agent: scout.id,
       model: scout.model,
       folders: [],
+      project: null,
       floor: "wood-floor",
       wall: "wallpaper",
       tools: agentTools(scout.id),
@@ -456,14 +625,17 @@ export class MockDaemon implements Daemon {
   }
 }
 
-/** The sample house, with the Workshop already working in three project folders. */
+/** The sample house: the Workshop works in three project folders under a project name, the Garage in one folder with no name yet. */
 function mockPlan(): Plan {
   const plan = samplePlan();
   const workshop = plan.rooms.find((r) => r.id === "workshop");
   if (workshop) {
     workshop.folders = ["~/Projects/engine", "~/Projects/shop", "~/Notes/design"];
+    workshop.project = "Shop Engine";
     workshop.tools = [HOST_TOOLS[4], ...MOCK_PROPOSAL].filter((t): t is ToolRef => t !== undefined).map((t) => ({ ...t }));
   }
+  const garage = plan.rooms.find((r) => r.id === "garage");
+  if (garage) garage.folders = ["~/Projects/harbor-books-project"];
   return plan;
 }
 

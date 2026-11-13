@@ -52,10 +52,14 @@ class BrainConfig(_Section):
     """A Hugging Face repo for `mlx`, or the server's model name for `openai`."""
     local_base_url: str = "http://127.0.0.1:11434/v1"
     local_idle_unload_s: float = Field(default=600.0, gt=0)
-    """`mlx` only: free the model's memory after this long without a local turn."""
+    """`mlx` only: free the model's memory after this long without a local turn, while offline
+    mode is off (in offline mode the model stays loaded)."""
+    local_keep_loaded: Literal["idle", "always"] = "idle"
+    """`mlx` only, with offline mode off: `idle` frees the model after `local_idle_unload_s`,
+    `always` keeps it ready for the fallback."""
     local_context_tokens: int = Field(default=32_768, ge=1024)
     """`mlx` only: the most tokens of prompt and reply given to the model at once."""
-    max_output_tokens: int = 1024
+    max_output_tokens: int = 4096
     """Per-reply output limit (spec section 11, runaway spend)."""
     request_timeout_s: float = 30.0
     retry_claude_after_s: float = 300.0
@@ -172,6 +176,7 @@ class GateConfig(_Section):
             "list_jobs": "free",
             "job_details": "free",
             "cancel_job": "free",
+            "start_project": "ask",
             "note_progress": "free",
             "ask_resident": "free",
             "machine_status": "free",
@@ -232,6 +237,14 @@ class PresenceConfig(_Section):
     locked screen or a sleeping display, at once."""
 
 
+class ProjectsConfig(_Section):
+    """Where the host's `start_project` makes new project folders (`vision.projects`)."""
+
+    root: str = "~/Projects"
+    """The one folder new project folders are created in, as the owner wrote it. It must
+    exist; it may not be the disk or the home folder itself."""
+
+
 class PathsConfig(_Section):
     """Where runtime data lives. Relative paths are resolved against `home`."""
 
@@ -276,6 +289,7 @@ class Config(BaseModel):
     automations: AutomationsConfig = Field(default_factory=AutomationsConfig)
     jobs: JobsConfig = Field(default_factory=JobsConfig)
     presence: PresenceConfig = Field(default_factory=PresenceConfig)
+    projects: ProjectsConfig = Field(default_factory=ProjectsConfig)
     paths: PathsConfig
     agents: dict[str, Any] = Field(default_factory=dict)
     """Free-form; interpreted by `vision.house`, not validated here."""

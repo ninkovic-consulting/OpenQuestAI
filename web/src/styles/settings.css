@@ -639,6 +639,7 @@
 .settings {
   position: absolute;
   inset: 0;
+  padding-top: var(--safe-top);
   z-index: 5;
   background: var(--ground);
   container-type: inline-size;
@@ -1225,7 +1226,7 @@
   z-index: 6;
   display: grid;
   place-items: center;
-  padding: 16px;
+  padding: calc(16px + var(--safe-top)) 16px 16px;
   background: rgba(20, 9, 7, 0.72);
   animation: rise 0.3s ease-out;
 }
@@ -1599,4 +1600,53 @@
 
 .settings .away-time .away-minutes {
   width: 90px;
+}
+
+/* A room's project name: the field, and "Use this name" beside it while the field is empty. */
+.project-field {
+  min-width: 0;
+}
+
+.project-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-line input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.project-line .small {
+  flex: none;
+  padding: 8px 12px 7px;
+  background: none;
+  border: 1px solid var(--hairline-strong);
+  color: var(--muted-light);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.project-line .small:hover,
+.project-line .small:focus-visible {
+  border-color: var(--mustard);
+  color: var(--mustard);
+  outline: none;
+}
+
+.project-line .small[hidden] {
+  display: none;
+}
+
+.project-field .field-error {
+  margin-top: 8px;
+  letter-spacing: 0;
+  text-transform: none;
+  font-family: var(--sans);
+}
+
+.project-field .field-error[hidden] {
+  display: none;
 }

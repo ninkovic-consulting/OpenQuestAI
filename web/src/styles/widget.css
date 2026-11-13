@@ -226,6 +226,59 @@ body.widget-page {
   letter-spacing: 0.18em;
 }
 
+/* While it answers: what waits (the count and the newest) and Stop, on one line. */
+.w-busy {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.w-busy[hidden],
+.w-waiting[hidden],
+.w-stop[hidden] {
+  display: none;
+}
+
+.w-waiting {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 7px 10px 6px;
+  border: 1px solid var(--hairline-strong);
+  color: var(--mustard);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.w-stop {
+  flex: none;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 5px;
+  background: var(--scene);
+  border: 1px solid var(--hairline-strong);
+  color: var(--muted-light);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  cursor: pointer;
+}
+
+.w-stop .dot {
+  color: var(--alert);
+}
+
+.w-stop:hover,
+.w-stop:focus-visible {
+  border-color: var(--alert);
+  color: var(--text);
+  outline: none;
+}
+
 /* ---------------------------------------------------------------- the field and hold to talk, smaller */
 
 .widget .compose-row {
@@ -303,4 +356,10 @@ body.widget-page {
 
 .widget .attach-refusal {
   font-size: 12px;
+}
+
+/* The quick listening control, under the name and state. */
+.w-listen .listen-switch {
+  margin: 8px 0 0;
+  padding-left: 17px;
 }

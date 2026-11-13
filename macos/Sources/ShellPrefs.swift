@@ -43,10 +43,11 @@ enum Shortcuts {
     }
 }
 
-/// What the app shows when it opens.
+/// What the app shows when it opens: the house, only the widget, or only the menu bar item.
 enum OpenWith: String, Sendable {
     case house
     case widget
+    case menubar
 }
 
 /// The shell's own preferences, set in Settings, This Mac, "Widget and shortcuts".

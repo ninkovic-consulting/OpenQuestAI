@@ -4,8 +4,9 @@ Every resident gets its own notes (`remember`, `recall`), `note_progress`
 and `ask_resident` (not in a request from another resident), and the
 project tools of its room when the room has a project folder. Some get more
 (`EXTRA`). No resident ever gets a tool in `HOST_ONLY`: opening apps and
-links, the shell, changing automations and handing out work stay with the
-host. `vision.aware.limits` reads this to tell the host the truth.
+links, the shell, changing automations, handing out work and starting
+projects stay with the host. `vision.aware.limits` reads this to tell the
+host the truth.
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ HOST_ONLY = frozenset(
         "list_jobs",
         "job_details",
         "cancel_job",
+        "start_project",
     }
 )
 

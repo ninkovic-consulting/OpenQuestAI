@@ -34,8 +34,8 @@ HAND_OFF = (
     "along: when the work depends on one, write into the brief everything that matters in it "
     "(its text, numbers, names and what it shows). A resident may work in any room "
     "but the Hall, with that room's project folders and tools: when the work is about a project, "
-    "send the resident to the room that holds it (for example the checker to the Workshop to "
-    "test the maker's project). Leave room out to use the agent's own first room. Set careful "
+    "send the resident to the room that holds it, by room or project name (for example the "
+    "checker to the Workshop to test the maker's project). Leave room out to use the agent's own first room. Set careful "
     "only when the owner asks for extra care, since it uses a dearer model."
 )
 
@@ -122,7 +122,7 @@ def build_tools(board: Board) -> list[Tool]:
                         },
                         "room": {
                             "type": "string",
-                            "description": "The room to work in, by name or id: any room but the Hall. Optional.",
+                            "description": "The room to work in, by name, id or project name: any room but the Hall. Optional.",
                         },
                         "title": {"type": "string", "description": "A few words naming the job. Optional."},
                         "careful": {"type": "boolean", "description": "Use the agent's heavy model. Optional."},

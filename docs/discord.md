@@ -82,12 +82,13 @@ Everything happens in the direct message with your bot.
 | A voice note | It is turned into words on your Mac, shown back to you as "Heard: …", and answered. |
 | Images | Up to six per message, with or without text. Each is downloaded from Discord's attachment servers (`cdn.discordapp.com` or `media.discordapp.net`, never anywhere else, and without the bot token), checked and kept as a clean copy on your Mac like an image from the window, and all of them go with the message to the assistant. Images alone are asked about as "the owner sent this image". |
 | `status` | The assistant's state, whether Claude or the local model is answering, and this month's spend. |
-| `stop` | Stops the reply in progress and drops your waiting messages. |
+| `stop` | Stops the reply in progress and drops your waiting messages; nothing more is answered for them. |
 | `help` | A reminder of these commands. |
 
 Things to know:
 
-- **One at a time.** A message from the phone waits until the assistant is idle. Up to five can wait; after that the bot asks you to send it again in a moment.
+- **One at a time, and together.** A message from the phone waits until the assistant is idle. Up to five can wait; after that the bot asks you to send it again in a moment. When the assistant is free, everything that waited goes as one turn, in the order you sent it, with all its images, and you get one reply; the assistant is told the messages came one after another, so a later one can correct an earlier one. A message sent while the assistant is answering the phone waits for that reply, then goes the same way.
+- **The Mac goes first.** Messages typed at the Mac while the assistant was busy go before the phone's, and the two are never mixed into one turn: the Mac's turn, then the phone's. Job reports and automations wait for both. The window lists the phone's waiting messages too, labelled "You, from the phone".
 - **Same assistant, same memory.** Phone turns use the same memory, tools, budget and history as turns at the Mac. In the window they are labelled "You, from the phone".
 - **Quiet at home.** Replies to the phone are not spoken on the Mac unless you switch that on.
 - **Voice notes need the speech models.** Download them in **Settings, Voice**. Until then the bot says so and text still works.

@@ -3,7 +3,12 @@ import AppKit
 /// Owns the daemon, the window, the widget with its shortcuts, and the menu bar item.
 ///
 /// Closing the window or hiding the widget leaves the app and the assistant
-/// running. Quit stops the daemon only if this app started it.
+/// running. While the house window is closed the app lives in the menu bar
+/// only: its activation policy is `.accessory`, so it has no Dock icon and is
+/// not in the app switcher; opening the house makes it `.regular` again. The
+/// widget is a non-activating panel and the shortcuts are Carbon hot keys, so
+/// both work under either policy. Quit stops the daemon only if this app
+/// started it.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings: Settings
@@ -28,16 +33,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         window = MainWindow(settings: settings, supervisor: supervisor, fullScreen: selfTest == nil)
         window.onRestart = { [weak self] in self?.supervisor.start() }
+        window.onClosed = { NSApp.setActivationPolicy(.accessory) }
         // The self-test keeps its preferences in memory, so it never changes the owner's.
         background = Background(
             settings: settings, supervisor: supervisor, store: selfTest == nil ? .standard() : .inMemory()
         )
         background.openHouse = { [weak self] in self?.openWindow() }
+        background.goToBackground = { [weak self] in self?.closeWindow() }
         window.shell = background
         if selfTest == nil {
             menu = StatusMenu(
                 name: settings.name, open: #selector(openWindow), widget: #selector(toggleWidget),
                 widgetShown: { [weak self] in self?.background.widget.isVisible ?? false },
+                listen: #selector(chooseListen(_:)),
                 login: #selector(toggleLogin)
             )
         }
@@ -46,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.background.render(phase)
             self?.menu?.show(phase)
         }
+        supervisor.onListen = { [weak self] listen in self?.menu?.show(listen: listen) }
         supervisor.start()
         background.render(supervisor.phase)
         background.start()
@@ -81,8 +90,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func openWindow() {
+        NSApp.setActivationPolicy(.regular)
         window.show()
         window.render(supervisor.phase)
+    }
+
+    /// A listening mode chosen in the menu bar item's menu, through the daemon's settings.
+    @objc func chooseListen(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? String else { return }
+        Task {
+            guard let refused = await supervisor.setListen(mode) else { return }
+            let alert = NSAlert()
+            alert.messageText = "\(settings.name) cannot listen that way now"
+            alert.informativeText = refused
+            alert.runModal()
+        }
     }
 
     @objc func closeWindow() { window.close() }

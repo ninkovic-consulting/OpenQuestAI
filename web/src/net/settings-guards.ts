@@ -64,6 +64,8 @@ function isVoiceState(v: unknown): v is VoiceState {
     isStr(v["output_device"]) &&
     isStr(v["tts_voice"]) &&
     isNum(v["followup_s"]) &&
+    oneOf("hold", "wake", "always")(v["listen"]) &&
+    oneOf("wake", "always")(v["listening"]) &&
     isBool(v["models_downloaded"]) &&
     orNull(isNum)(v["models_size_bytes"])
   );
@@ -86,7 +88,7 @@ function isGate(v: unknown): boolean {
 
 export function asSettings(v: unknown): Settings | null {
   if (!isObj(v)) return null;
-  const { assistant, owner, models, budget, agents, voice, gate, key, setup } = v;
+  const { assistant, owner, models, budget, agents, voice, gate, projects, key, setup } = v;
   const local = isObj(models) ? models["local"] : null;
   const ok =
     isObj(assistant) &&
@@ -108,6 +110,8 @@ export function asSettings(v: unknown): Settings | null {
     isStr(local["server"]) &&
     orNull(isBool)(local["tools"]) &&
     isBool(local["offline"]) &&
+    (local["keep"] === "idle" || local["keep"] === "always") &&
+    isNum(local["idle_s"]) &&
     isObj(budget) &&
     isStr(budget["month"]) &&
     isNum(budget["spent_usd"]) &&
@@ -117,6 +121,8 @@ export function asSettings(v: unknown): Settings | null {
     agents.every(isAgent) &&
     isVoiceState(voice) &&
     isGate(gate) &&
+    isObj(projects) &&
+    isStr(projects["root"]) &&
     isObj(key) &&
     isBool(key["stored"]) &&
     isKeySource(key["source"]) &&

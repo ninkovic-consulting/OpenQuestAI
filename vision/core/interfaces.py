@@ -69,7 +69,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 from fastapi import APIRouter
 
-from vision.core.events import BrainName, GateOutcome, RoomLight, TurnSource
+from vision.core.events import BrainName, GateOutcome, ListenMode, MicState, RoomLight, TurnSource
 
 # ---------------------------------------------------------------- brain events
 
@@ -408,9 +408,11 @@ class Speaker(Protocol):
 class Voice(Protocol):
     """The microphone loop and the speaker, as one unit.
 
-    While running, the voice loop listens, decides what is addressed to Vision
-    (wake phrase, push to talk via `input.ptt`, or the follow-up window after
-    a `vision.reply`) and publishes `user.utterance` with `source="voice"`.
+    While running, the voice loop listens as its listening mode says (only
+    while push to talk is held, for its name, or to everything), decides what
+    is addressed to Vision (wake phrase, push to talk via `input.ptt`, the
+    follow-up window after a `vision.reply`, or in `always` anything worth a
+    turn) and publishes `user.utterance` with `source="voice"`.
     While Vision speaks it only listens for the stop phrases, publishing
     `input.interrupt` when it hears one, and ignores its own voice.
     """
@@ -418,6 +420,20 @@ class Voice(Protocol):
     @property
     def speaker(self) -> Speaker:
         """The speaker the session uses for replies."""
+        ...
+
+    @property
+    def mic(self) -> MicState:
+        """Whether a microphone stream is open now (`closed` while not running)."""
+        ...
+
+    @property
+    def mic_problem(self) -> str | None:
+        """Why the microphone last failed to open for push to talk, until it opens again."""
+        ...
+
+    def listen(self, mode: ListenMode) -> None:
+        """Change when the microphone is open (`hold`, `wake`, `always`), at once."""
         ...
 
     async def start(self) -> None:

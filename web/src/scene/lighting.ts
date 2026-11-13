@@ -12,6 +12,8 @@ const LEVEL: Record<RoomLight, number> = { dark: 0.32, idle: 0.75, active: 1 };
 /** The tower always smoulders, whatever its state. */
 const TOWER_FLOOR = 0.7;
 const EASE_PER_S = 2.2;
+/** A lamp this close to its level is there: it snaps, and stops asking for frames. */
+const SETTLED = 0.002;
 
 interface Lamp {
   view: RoomView;
@@ -64,13 +66,19 @@ export class Lighting {
     cam.updateProjectionMatrix();
   }
 
-  update(dt: number, lights: Record<string, RoomLight>, hostId: string | undefined, voice: number): void {
+  /** Ease each lamp toward its room's state; true while one is still changing. */
+  update(dt: number, lights: Record<string, RoomLight>, hostId: string | undefined, voice: number): boolean {
     const step = Math.min(1, dt * EASE_PER_S);
+    let changing = voice > 0;
     for (const lamp of this.lamps) {
       const room = lamp.view.room;
       let target = LEVEL[lights[room.id] ?? room.state];
       if (room.shape === "round") target = Math.max(target, TOWER_FLOOR);
-      lamp.level += (target - lamp.level) * step;
+      if (Math.abs(target - lamp.level) < SETTLED) lamp.level = target;
+      else {
+        lamp.level += (target - lamp.level) * step;
+        changing = true;
+      }
       const flicker = room.id === hostId ? 1 + voice * 0.18 : 1;
       const k = lamp.level * flicker;
       lamp.light.intensity = lamp.base * k;
@@ -78,5 +86,14 @@ export class Lighting {
       lamp.view.glow.emissiveIntensity = (round ? 1.15 : 2.2) * k;
       lamp.view.spill.opacity = (round ? 0.16 : 0.2) * k;
     }
+    return changing;
+  }
+
+  /** Give the moon's shadow map a new size, for a quality level. */
+  setShadowSize(size: number): void {
+    if (this.moon.shadow.mapSize.x === size) return;
+    this.moon.shadow.mapSize.set(size, size);
+    this.moon.shadow.map?.dispose();
+    this.moon.shadow.map = null;
   }
 }

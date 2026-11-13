@@ -327,7 +327,7 @@ def test_house(config: Config) -> None:
     assert "1 of 10 rooms" in checks.house(config, FakeSystem()).detail
     config.paths.house_file.write_text('[[rooms]]\nid = "garage"\nproject = "~/p"\n')
     old = checks.house(config, FakeSystem())
-    assert old.status == "missing" and "unknown setting 'project'" in old.detail and "folders = [" in old.detail
+    assert old.status == "missing" and "looks like a folder path" in old.detail and "put folders in folders" in old.detail
     config.paths.house_file.write_text('[[rooms]]\nid = "garage"\ntools = ["anvil"]\n')
     broken = checks.house(config, FakeSystem())
     assert broken.status == "missing" and "anvil" in broken.detail

@@ -106,8 +106,11 @@ export class CameraRig {
     return this.camera.position.distanceTo(this.controls.target);
   }
 
-  update(dt: number): void {
+  /** Advance the flight, the slide and the controls' damping; true when the camera moved. */
+  update(dt: number): boolean {
+    let moved = false;
     if (this.flight) {
+      moved = true;
       const f = this.flight;
       f.t = Math.min(1, f.t + dt / FLIGHT_S);
       const k = f.t < 0.5 ? 4 * f.t ** 3 : 1 - (-2 * f.t + 2) ** 3 / 2;
@@ -119,11 +122,12 @@ export class CameraRig {
       }
     }
     if (this.shift !== this.shiftTo) {
+      moved = true;
       this.shift += (this.shiftTo - this.shift) * (1 - Math.exp(-dt * 6));
       if (Math.abs(this.shiftTo - this.shift) < 0.5) this.shift = this.shiftTo;
       this.slide();
     }
-    this.controls.update(dt);
+    return this.controls.update(dt) || moved;
   }
 
   private slide(): void {

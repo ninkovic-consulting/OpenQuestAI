@@ -137,7 +137,7 @@ describe("editing a room", () => {
   const tool = (id: string) => ({ id, title: id, available: true, built_in: false });
 
   it("starts from the room, with the agent's model as its own", () => {
-    expect(roomEditFrom(plan, workshop)).toEqual({ name: "Workshop", agent: "maker", folders: [], model: "" });
+    expect(roomEditFrom(plan, workshop)).toEqual({ name: "Workshop", agent: "maker", project: "", folders: [], model: "" });
   });
 
   it("never offers the host for another room, and only the host for the Hall", () => {

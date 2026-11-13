@@ -18,6 +18,7 @@ WALL_HEIGHT_M = 2.6
 MAX_EXTRA_ROOMS = 20
 MAX_EXTRA_CELLS = 4
 MAX_ROOM_FOLDERS = 8
+MAX_PROJECT_NAME = 60
 TEXTURES = (
     "wallpaper",
     "teal-panel",
@@ -84,6 +85,8 @@ class Room:
     wall: str
     tools: tuple[str, ...] | None = None
     """The room's own tool ids; None to use the agent's."""
+    project: str | None = None
+    """What the owner calls the project the room holds (`Harbor Books`); None when unnamed."""
 
     def cells(self) -> list[Cell]:
         return rect(self.at, self.size)

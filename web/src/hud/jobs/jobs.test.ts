@@ -116,7 +116,7 @@ describe("keys while the Jobs panel is open", () => {
   it("the panel counts as an overlay, so the message field takes no keys and Escape steps back", () => {
     expect(OVERLAYS).toContain(".jobs:not([hidden])");
     const press = { key: "h", code: "KeyH", shift: false, ctrl: false, meta: false, alt: false, composing: false };
-    const open = { focus: "other" as const, overlay: true, fieldEmpty: true, speaking: false };
+    const open = { focus: "other" as const, overlay: true, fieldEmpty: true, answering: false };
     expect(routeKey(press, open)).toEqual({ kind: "none" });
     expect(routeKey({ ...press, key: " ", code: "Space" }, open)).toEqual({ kind: "none" });
     expect(routeKey({ ...press, key: "Escape", code: "Escape" }, open)).toEqual({ kind: "step-back" });

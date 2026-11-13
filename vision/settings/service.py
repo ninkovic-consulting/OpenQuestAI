@@ -30,6 +30,7 @@ from vision.settings.reset import Resetter
 from vision.settings.voice_control import VoiceControl
 from vision.setup import doctor
 from vision.setup.checks import run_checks
+from vision.voice.settings import LISTENING_MODES, listen_mode, listening_mode
 
 if TYPE_CHECKING:
     from vision.app import Daemon
@@ -115,6 +116,7 @@ class SettingsService:
                 "max_job_usd": c.jobs.max_job_usd,
                 "speak_results": c.jobs.speak_results,
             },
+            "projects": {"root": saved.projects.root},
             "key": {"stored": source is not None, "source": source},
             "setup": {"completed": completed, "first_run": source is None or not completed},
             "restart_pending": self.restart_pending(saved),
@@ -134,6 +136,8 @@ class SettingsService:
             "server": brain.local_base_url,
             "tools": self.daemon.local.known_tools(),
             "offline": brain.offline,
+            "keep": brain.local_keep_loaded,
+            "idle_s": brain.local_idle_unload_s,
         }
         return saved, local, self.voice.state(), self.outside.key_source()
 
@@ -164,9 +168,11 @@ class SettingsService:
             house = self.daemon.components.house
             agents = {a["id"] for a in house.plan()["agents"]}
             tools = {t["id"] for t in self._gate()["tools"]}
-            change = values.validate(body, agents=agents, tools=tools)
+            change = _remember_listening(values.validate(body, agents=agents, tools=tools))
             saved = await asyncio.to_thread(self.saved)
             changed = [f for f, v in change if self._current(f, saved) != v]
+            if "voice.listen" in changed and (said := await asyncio.to_thread(self.voice.listen_problem)):
+                raise values.Invalid([{"field": "voice.listen", "message": said}])
             agent_changes = _agent_changes([(f, v) for f, v in change if f in changed])
             path = self.config.paths.config_file
             original = await asyncio.to_thread(values.read_doc, path)
@@ -215,6 +221,10 @@ class SettingsService:
             _, agent_id, key = field.split(".", 2)
             plan = self.daemon.components.house.plan()["agents"]
             return next(a[key] for a in plan if a["id"] == agent_id)
+        if field == "voice.listen":
+            return listen_mode(saved)
+        if field == "voice.listening":
+            return listening_mode(saved)
         section, key = values.CONFIG_KEYS[field]
         return getattr(getattr(saved, section), key, None)
 
@@ -293,6 +303,15 @@ def _effort_problems(fresh: Config) -> list[dict[str, str]]:
         if said is not None:
             out.append({"field": field, "message": said})
     return out
+
+
+def _remember_listening(change: values.Change) -> values.Change:
+    """A listening mode chosen is also kept as the one the quick control goes back to."""
+    fields = dict(change)
+    listen = fields.get("voice.listen")
+    if listen in LISTENING_MODES and "voice.listening" not in fields:
+        return [*change, ("voice.listening", listen)]
+    return change
 
 
 def _agent_changes(change: values.Change) -> dict[str, dict[str, Any]]:

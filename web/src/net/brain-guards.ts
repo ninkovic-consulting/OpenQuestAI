@@ -77,6 +77,11 @@ export function asBrainMode(v: unknown): BrainMode | null {
     isStr(v["local_backend"]) &&
     isStr(v["local_model"]) &&
     orNull(isBool)(v["local_tools"]) &&
-    (v["local_images"] === undefined || isBool(v["local_images"]));
+    (v["local_images"] === undefined || isBool(v["local_images"])) &&
+    (v["local_state"] === undefined || oneOf("unloaded", "loading", "ready", "failed")(v["local_state"])) &&
+    (v["local_bytes"] === undefined || orNull(isNum)(v["local_bytes"])) &&
+    (v["local_cache_bytes"] === undefined || isNum(v["local_cache_bytes"])) &&
+    (v["local_reading"] === undefined || orNull((r) => Array.isArray(r) && r.length === 2 && r.every(isNum))(v["local_reading"])) &&
+    (v["local_problem"] === undefined || orNull(isStr)(v["local_problem"]));
   return ok ? (v as unknown as BrainMode) : null;
 }

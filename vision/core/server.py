@@ -15,7 +15,8 @@
 - `WS /ws`: the first message must be `hello` with the token, else the
   socket is closed with code 4401. Afterwards the server sends every
   daemon-to-window event and publishes every valid window-to-daemon event on
-  the bus.
+  the bus. A window that goes away while it holds push to talk lets go of
+  it, so a closed or reloaded page never leaves the microphone open.
 - Any request or socket with an `Origin` header that is not the server's own
   origin is refused (HTTP 403, WebSocket close 4403).
 """
@@ -43,6 +44,7 @@ from vision.core.events import (
     OUTBOUND_TYPES,
     EventError,
     Hello,
+    InputPtt,
     Notice,
     StateChanged,
     parse_event,
@@ -142,6 +144,8 @@ def create_app(daemon: Daemon) -> FastAPI:
             "jobs": [j.summary() for j in daemon.board.open_jobs()],
             "agents": daemon.board.agent_states(),
             "presence": daemon.presence.view(),
+            "listen": daemon.listen_view(),
+            "queue": daemon.waiting.view(),
         }
 
     @app.get("/api/history", dependencies=auth)
@@ -230,6 +234,7 @@ async def _serve_socket(websocket: WebSocket, daemon: Daemon) -> None:
             await websocket.send_text(event.to_json())
 
     sender = asyncio.create_task(pump())
+    held = False
     try:
         while True:
             raw = await websocket.receive_text()
@@ -241,6 +246,8 @@ async def _serve_socket(websocket: WebSocket, daemon: Daemon) -> None:
                 )
                 continue
             if event.TYPE in INBOUND_TYPES and not isinstance(event, Hello):
+                if isinstance(event, InputPtt):
+                    held = event.down
                 daemon.bus.publish(event)
             else:
                 await websocket.send_text(
@@ -249,6 +256,8 @@ async def _serve_socket(websocket: WebSocket, daemon: Daemon) -> None:
     except (WebSocketDisconnect, KeyError, RuntimeError):
         pass
     finally:
+        if held:
+            daemon.bus.publish(InputPtt(down=False))
         sub.close()
         sender.cancel()
         await asyncio.gather(sender, return_exceptions=True)

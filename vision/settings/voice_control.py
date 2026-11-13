@@ -1,7 +1,7 @@
 """Voice from the settings screen: its state, the devices, on and off, and the tests.
 
-Only `switch` and `test` ever open the microphone, and only when the user asks.
-`speak_test` only plays a sentence.
+Only `switch`, the listening mode and `test` ever open the microphone, and
+only when the user asks. `speak_test` only plays a sentence.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from vision.settings.values import KOKORO_VOICES
 from vision.setup.config_file import update_config
 from vision.voice.errors import MIC_SETTING
 from vision.voice.on_disk import missing_message
-from vision.voice.settings import VoiceSettings
+from vision.voice.settings import VoiceSettings, listen_mode, listening_mode
 
 if TYPE_CHECKING:
     from vision.app import Daemon
@@ -57,7 +57,11 @@ class VoiceControl:
         sizes = [outside.cached_size(repo) for repo in settings.model_repos()]
         have = [s for s in sizes if s is not None]
         error = d.voice_error if d.config.voice.enabled else None
-        mic, detail = self._last or classify(d.voice_running, error)
+        # In `hold` the microphone first opens at a press: a press that failed says more than the start.
+        pressed = d.components.voice.mic_problem
+        mic, detail = self._last or (
+            classify(False, pressed) if d.voice_running and pressed else classify(d.voice_running, error)
+        )
         return {
             "installed": outside.voice_installed(),
             "enabled": d.config.voice.enabled,
@@ -68,6 +72,8 @@ class VoiceControl:
             "output_device": settings.output_device,
             "tts_voice": settings.tts_voice,
             "followup_s": settings.followup_s,
+            "listen": listen_mode(d.config),
+            "listening": listening_mode(d.config),
             "models_downloaded": len(have) == len(sizes),
             "models_size_bytes": sum(have) if len(have) == len(sizes) else None,
         }
@@ -83,10 +89,27 @@ class VoiceControl:
         found = outside.audio_devices() if installed else []
         return {
             "installed": installed,
-            "inputs": [{"name": d.name, "default": d.default_input} for d in found if d.inputs],
-            "outputs": [{"name": d.name, "default": d.default_output} for d in found if d.outputs],
+            "inputs": [
+                {"name": d.name, "default": d.default_input, "bluetooth": d.bluetooth} for d in found if d.inputs
+            ],
+            "outputs": [
+                {"name": d.name, "default": d.default_output, "bluetooth": d.bluetooth} for d in found if d.outputs
+            ],
             "voices": list(KOKORO_VOICES),
         }
+
+    def listen_problem(self) -> str | None:
+        """Why the listening mode cannot be changed now, in words; None when it can. Reads the disk."""
+        d = self._daemon
+        outside = self._outside()
+        if not outside.voice_installed():
+            return "Voice is not installed. Run `uv sync --extra voice`, then restart the assistant."
+        if not d.config.voice.enabled:
+            return f"Voice is off. Turn it on first, then choose when {d.config.assistant.name} listens."
+        parts = VoiceSettings.from_config(d.config).parts()
+        if gone := [part for part, repo in parts.items() if outside.cached_size(repo) is None]:
+            return missing_message(gone)
+        return None
 
     async def switch(self, enabled: bool) -> None:
         """Save `[voice] enabled` and turn the microphone loop on or off now."""

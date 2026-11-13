@@ -18,6 +18,7 @@ import { mountGate } from "./hud/gate";
 import { mountInput } from "./hud/input";
 import { mountJobs } from "./hud/jobs/view";
 import { mountLabels } from "./hud/labels";
+import { mountListenSwitch } from "./hud/listen-switch";
 import { mountOfflineSwitch } from "./hud/offline-switch";
 import { mountPanel } from "./hud/panel";
 import { mountProposals } from "./hud/proposals/view";
@@ -26,12 +27,17 @@ import { mountRoomCard } from "./hud/rooms/card";
 import { RoomSelection } from "./hud/rooms/selection";
 import { mountSettings } from "./hud/settings/view";
 import { mountWizard } from "./hud/settings/wizard/wizard";
+import { insetParam, setSafeTop } from "./hud/safe-area";
 import { mountToasts } from "./hud/toasts";
 import { connect } from "./net/connect";
+import { nativeHelpers } from "./net/native";
 import { Store } from "./net/store";
 import { Stage } from "./scene/stage";
+import { runTour } from "./scene/tour";
 
 async function main(): Promise<void> {
+  const pretend = insetParam(location.search);
+  if (pretend !== null) setSafeTop(pretend);
   const store = new Store();
   const app = el("div", "app");
   document.body.append(app);
@@ -50,6 +56,7 @@ async function main(): Promise<void> {
 
   const daemon = await connect(store);
   if (!daemon) return;
+  if (pretend === null) void nativeHelpers().safeAreaTop?.().then(setSafeTop);
 
   const banner = el("div", "build-banner caps", "Build mode · choose a glowing slot");
   stageRoot.append(banner);
@@ -74,7 +81,11 @@ async function main(): Promise<void> {
 
   const wizard = mountWizard(stageRoot, { api: daemon.settings, store, models, propose });
   const view = mountSettings(stageRoot, { api: daemon.settings, automations: daemon.automations, phone: daemon.phone, library: daemon.library, store, models, propose, openWizard: () => wizard.open(),
-    onShown: (open) => panel.settingsToggle.classList.toggle("is-on", open),
+    onShown: (open) => {
+      panel.settingsToggle.classList.toggle("is-on", open);
+      // Settings covers the whole scene: nothing to draw behind it.
+      stage.setCovered(open);
+    },
   });
   const jobs = mountJobs(stageRoot, { api: daemon.jobs, store, onShown: (open) => panel.jobsToggle.classList.toggle("is-on", open) });
   const proposals = mountProposals(stageRoot, {
@@ -134,6 +145,7 @@ async function main(): Promise<void> {
     }
   });
 
+  mountListenSwitch(panel.modeSlot, store, daemon.settings);
   mountOfflineSwitch(panel.modeSlot, store, daemon.settings);
   mountGate(panel.foot, store, daemon);
   mountInput(stageRoot, store, daemon, [
@@ -150,6 +162,8 @@ async function main(): Promise<void> {
     () => stage.home(),
   ], () => daemon.history());
   daemon.start();
+  const params = new URLSearchParams(location.search);
+  if (params.get("mock") === "1" && params.get("tour") === "1") runTour(store, stage);
   void daemon.settings.settings().then((r) => {
     if (r.ok && r.value.setup.first_run) wizard.open();
   });

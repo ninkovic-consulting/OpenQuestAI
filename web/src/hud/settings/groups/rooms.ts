@@ -1,18 +1,21 @@
+import { projectProblem } from "../../../net/project-name";
 import type { Plan, Room } from "../../../net/types";
 import { agentChoice } from "../../agent-choice";
-import { toolsNote } from "../../build-form";
+import { PROJECT_NOTE, toolsNote } from "../../build-form";
 import { el } from "../../dom";
 import { mountFolderList } from "../../pickers/folder-list";
 import { mountModelPicker, OWN_MODEL } from "../../pickers/model-picker";
+import { mountProjectField } from "../../pickers/project-field";
 import { mountToolToggles } from "../../pickers/tool-toggles";
 import type { Group, SettingsContext } from "../context";
 import { button, confirmButton, fieldRow, note } from "../fields";
+import { projectsRootBlock } from "../projects-root";
 import { agentsFor, isHostRoom, roomEditFrom, roomPatch, type RoomEdit } from "../room-edit";
 
 export const roomsGroup: Group = {
   id: "rooms",
   title: "Rooms",
-  blurb: "Each room's name, who runs it, its project folders, model and tools. Saved per room; changes apply at once.",
+  blurb: "Each room's name, who runs it, its project name and folders, model and tools, and where new projects go. Saved per room; changes apply at once.",
   prefixes: [],
   render(ctx) {
     const root = el("div", "group-body");
@@ -36,6 +39,7 @@ export const roomsGroup: Group = {
     }
     root.append(list);
     if (chosen) root.append(roomEditor(ctx, plan, chosen));
+    root.append(projectsRootBlock(ctx));
     return root;
   },
 };
@@ -52,7 +56,7 @@ function roomEditor(ctx: SettingsContext, plan: Plan, room: Room): HTMLElement {
   const revert = button("Revert");
   const dirty = (): void => {
     const changed = Object.keys(roomPatch(before, edit, tools.picks(), toolsTouched, hostRoom)).length > 0;
-    save.disabled = !changed;
+    save.disabled = !changed || projectProblem(edit.project) !== null;
     revert.disabled = !changed;
     ctx.markDirty(changed);
   };
@@ -97,6 +101,14 @@ function roomEditor(ctx: SettingsContext, plan: Plan, room: Room): HTMLElement {
       dirty();
     },
   );
+  const project = mountProjectField({
+    value: edit.project,
+    folders: edit.folders,
+    onChange: (text) => {
+      edit.project = text;
+      dirty();
+    },
+  });
   const folders = mountFolderList({
     api: ctx.api,
     native: ctx.native,
@@ -105,6 +117,7 @@ function roomEditor(ctx: SettingsContext, plan: Plan, room: Room): HTMLElement {
     label: "Project folders",
     onChange: (list) => {
       edit.folders = list;
+      project.setFolders(list);
       tools.setFolders(list);
       dirty();
     },
@@ -125,6 +138,7 @@ function roomEditor(ctx: SettingsContext, plan: Plan, room: Room): HTMLElement {
     const patch = roomPatch(before, edit, tools.picks(), toolsTouched, hostRoom);
     save.disabled = true;
     folders.setError("");
+    project.setError("");
     result.textContent = "Saving…";
     void ctx.api.patchRoom(room.id, patch).then((r) => {
       if (r.ok) {
@@ -133,8 +147,10 @@ function roomEditor(ctx: SettingsContext, plan: Plan, room: Room): HTMLElement {
       } else {
         save.disabled = false;
         const refusal = r.errors.find((e) => e.field === "folders");
+        const named = r.errors.find((e) => e.field === "project");
         folders.setError(refusal?.message ?? "");
-        result.textContent = refusal ? "Not saved." : r.message;
+        project.setError(named?.message ?? "");
+        result.textContent = refusal || named ? "Not saved." : r.message;
       }
     });
   });
@@ -149,6 +165,7 @@ function roomEditor(ctx: SettingsContext, plan: Plan, room: Room): HTMLElement {
     head,
     fieldRow("Name", name),
     fieldRow("Agent", agentControl),
+    fieldRow("Project name", project.root, { note: PROJECT_NOTE }),
     fieldRow("Project folders", folders.root, { note: hostRoom ? "The Hall can work in folders too." : "" }),
     tools.root,
     fieldRow("Model", model.root),

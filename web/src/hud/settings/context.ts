@@ -12,7 +12,7 @@ import type { ProposeResult } from "../../net/types";
 import type { ModelSource } from "../pickers/model-picker";
 import type { Draft } from "./draft";
 
-export type GroupId = "assistant" | "library" | "models" | "agents" | "rooms" | "voice" | "asking" | "automations" | "phone" | "key" | "mac" | "reset";
+export type GroupId = "assistant" | "library" | "models" | "agents" | "rooms" | "voice" | "asking" | "automations" | "phone" | "key" | "mac" | "display" | "reset";
 
 export interface SettingsContext {
   api: SettingsApi;

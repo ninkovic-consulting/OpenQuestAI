@@ -24,6 +24,8 @@ interface PywebviewApi {
   dismissWidget?: () => Promise<unknown>;
   openHouse?: () => Promise<unknown>;
   fitWidget?: (height: number, handle: number[]) => Promise<unknown>;
+  goToBackground?: () => Promise<unknown>;
+  safeAreaTop?: () => Promise<unknown>;
 }
 
 interface PywebviewBridge {
@@ -78,6 +80,10 @@ export interface NativeHelpers {
   openHouse: (() => Promise<void>) | null;
   /** The widget page's height, and its drag handle as [x, y, width, height] from its top left. */
   fitWidget: ((height: number, handle: number[]) => Promise<void>) | null;
+  /** Minimize: close the house window and keep running in the menu bar only (no Dock icon); nothing stops. */
+  goToBackground: (() => Promise<void>) | null;
+  /** The top strip of the screen the window is on that a camera notch hides, in points; 0 without one. */
+  safeAreaTop: (() => Promise<number>) | null;
 }
 
 const MIC: ReadonlySet<string> = new Set<MicStatus>(["granted", "denied", "restricted", "undetermined"]);
@@ -97,7 +103,7 @@ export function nativeHelpers(): NativeHelpers {
   const api = window.pywebview?.api;
   if (!api) return withNone();
   const { chooseFolder, micStatus, requestMic, openSystemSettings, loginItemEnabled, setLoginItem, restartDaemon, appInfo, quit } = api;
-  const { widgetPrefs, setWidgetPrefs, showWidget, dismissWidget, openHouse, fitWidget } = api;
+  const { widgetPrefs, setWidgetPrefs, showWidget, dismissWidget, openHouse, fitWidget, goToBackground, safeAreaTop } = api;
   return {
     chooseFolder: chooseFolder
       ? async () => {
@@ -119,7 +125,14 @@ export function nativeHelpers(): NativeHelpers {
     dismissWidget: dismissWidget ? async () => void (await dismissWidget.call(api)) : null,
     openHouse: openHouse ? async () => void (await openHouse.call(api)) : null,
     fitWidget: fitWidget ? async (height, handle) => void (await fitWidget.call(api, height, handle)) : null,
+    goToBackground: goToBackground ? async () => void (await goToBackground.call(api)) : null,
+    safeAreaTop: safeAreaTop ? async () => asInset(await safeAreaTop.call(api)) : null,
   };
+}
+
+/** A safe-area inset in points: a finite number from 0 up, else 0. */
+export function asInset(v: unknown): number {
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0;
 }
 
 function withNone(): NativeHelpers {
@@ -139,5 +152,7 @@ function withNone(): NativeHelpers {
     dismissWidget: null,
     openHouse: null,
     fitWidget: null,
+    goToBackground: null,
+    safeAreaTop: null,
   };
 }

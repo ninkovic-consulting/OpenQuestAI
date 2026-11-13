@@ -214,6 +214,102 @@
   flex: 0 0 24px;
 }
 
+/* ---------------------------------------------------------------- what waits for the reply
+   Messages written while the assistant answers, in the order they will go:
+   a hollow mustard dot and a 1px border say "not sent yet". */
+
+.waiting-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: auto;
+  animation: rise 0.2s ease-out;
+}
+
+.waiting-list[hidden] {
+  display: none;
+}
+
+.waiting-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.75fr) 2fr;
+  gap: clamp(20px, 2.8vw, 40px);
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--hairline-strong);
+  background: rgba(28, 14, 11, 0.86);
+}
+
+.waiting-side .who {
+  color: var(--muted);
+  font-size: 10px;
+  margin-bottom: 4px;
+}
+
+.waiting-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--mustard);
+  font-size: 10px;
+}
+
+.waiting-note .dot {
+  background: transparent;
+  border: 1px solid currentColor;
+}
+
+.waiting-body {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.waiting-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--muted-light);
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.waiting-actions {
+  flex: none;
+  display: flex;
+  gap: 6px;
+}
+
+.waiting-actions button {
+  padding: 6px 10px 5px;
+  background: none;
+  border: 1px solid var(--hairline-strong);
+  color: var(--muted-light);
+  font-size: 10px;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+
+.waiting-actions button:hover,
+.waiting-actions button:focus-visible {
+  border-color: var(--mustard);
+  color: var(--mustard);
+  outline: none;
+}
+
+@media (max-width: 1000px) {
+  .waiting-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+
 /* ---------------------------------------------------------------- the message field */
 
 .compose-row {
@@ -290,6 +386,52 @@
 @media (min-width: 1200px) {
   .composer:focus-within.has-text .send-hint {
     display: block;
+  }
+}
+
+/* While the assistant answers, a plain way to stop it beside the field. */
+.stop-reply {
+  flex: none;
+  min-height: 49px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px;
+  background: rgba(28, 14, 11, 0.92);
+  border: 1px solid var(--hairline-strong);
+  color: var(--muted-light);
+  font-size: 11px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+
+.stop-reply[hidden] {
+  display: none;
+}
+
+.stop-reply .dot {
+  color: var(--alert);
+}
+
+.stop-reply:hover,
+.stop-reply:focus-visible {
+  border-color: var(--alert);
+  color: var(--text);
+  outline: none;
+}
+
+/* The hint bar's send hints sit among its other items. */
+.send-hints {
+  display: contents;
+}
+
+/* A narrow scene, while the assistant answers: what Enter does matters more than Space. */
+@media (max-width: 1180px) {
+  .hint-bar.is-busy .talk-hint {
+    display: none;
   }
 }
 

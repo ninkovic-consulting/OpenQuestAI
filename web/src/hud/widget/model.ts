@@ -1,10 +1,12 @@
 // What the widget shows, as pure functions of the store: the assistant's
-// name and state, the latest exchange, and the request that waits for a yes
-// (the oldest, with how many more wait; gate.ts decides that for the house
-// and the widget alike).
+// name and state, the latest exchange, what waits for the reply to end (the
+// count and the newest), and the request that waits for a yes (the oldest,
+// with how many more wait; gate.ts decides that for the house and the widget
+// alike).
 
 import type { Caption, ViewState } from "../../net/store";
 import { asOrigin, type HistoryTurn, type Origin } from "../chat/entries";
+import { waitingLine } from "../chat/queue";
 import { imageMark } from "../chat/thumbs";
 import { gateCard, type GateCard } from "../gate";
 
@@ -96,6 +98,8 @@ export interface WidgetView {
   name: string;
   state: WidgetState;
   exchange: Exchange | null;
+  /** What waits for the reply to end: "2 waiting · And short.", or null. */
+  waiting: string | null;
   /** The oldest request that waits for a yes, and how many more wait after it. */
   gate: GateCard | null;
 }
@@ -105,13 +109,9 @@ export function widgetView(s: ViewState, held: boolean, pending: string | null, 
     name: s.plan?.assistant.name ?? "",
     state: widgetState(s, held),
     exchange: latestExchange(s.caption, s.assistant, pending, earlier, pendingImages),
+    waiting: waitingLine(s.queue),
     gate: gateCard(s),
   };
-}
-
-/** The field's prompt. */
-export function placeholder(name: string): string {
-  return name ? `Write to ${name}` : "Write a message";
 }
 
 /** The top of the reply is where reading starts: a new turn, or a reply that started over, scrolls back up. */

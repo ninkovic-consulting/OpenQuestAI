@@ -3,10 +3,10 @@
 `AudioSource` and `AudioSink` are the seams the voice loop uses, so file mode
 (`vision.voice.filemode`) can stand in for the hardware.
 
-Playback runs one output stream per sentence with 20 ms blocks; `stop()` makes
-the next block silent and ends the stream, so speech stops within one block
-plus the device's latency, well inside 100 ms. `levels()` computes the output
-level envelope the speaker publishes while a sentence plays.
+Playback keeps one output stream open for a whole reply and queues its
+sentences into it back to back (`SpeakerOutput`); `stop()` aborts the stream,
+so speech stops at once whatever the device had buffered. `levels()` computes
+the output level envelope the speaker publishes while a sentence plays.
 
 PortAudio reads the device list once, when it initialises, so a device
 plugged in later (AirPods connected while the assistant runs) cannot be
@@ -19,7 +19,9 @@ connected falls back to the system default, and `on_missing` hears why.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
+from collections import deque
 from collections.abc import AsyncIterator, Callable
 from typing import Any, Literal, Protocol
 
@@ -27,6 +29,8 @@ import numpy as np
 
 from vision.voice.errors import VoiceUnavailable, mic_permission_hint, silent_mic_hint
 from vision.voice.vad import FRAME, SAMPLE_RATE
+
+log = logging.getLogger(__name__)
 
 LEVEL_RATE = 30
 """Level envelope frames per second."""
@@ -150,7 +154,12 @@ def resolve_device(spec: str, kind: Kind) -> tuple[int | None, str | None]:
 
 
 class Microphone:
-    """Captures 16 kHz mono in 32 ms chunks. Audio callbacks hand over to the loop."""
+    """Captures 16 kHz mono in 32 ms chunks. Audio callbacks hand over to the loop.
+
+    It can be opened again after it closes (push to talk opens it for each
+    press). Each opening gets its own queue, so the chunks of one stream never
+    run into the next.
+    """
 
     def __init__(
         self, device: str = "", wait_s: float = SOUND_WAIT_S, on_missing: Missing | None = None
@@ -173,11 +182,13 @@ class Microphone:
         if missing is not None and self._on_missing is not None:
             self._on_missing(missing)
         self.name = device_name(device, "input")
+        queue = self._queue = asyncio.Queue()
+        self._head = []
 
         def callback(indata: np.ndarray, frames: int, t: Any, status: Any) -> None:
             chunk = indata[:, 0].copy()
             try:
-                loop.call_soon_threadsafe(self._queue.put_nowait, chunk)
+                loop.call_soon_threadsafe(queue.put_nowait, chunk)
             except RuntimeError:  # the loop closed under us
                 pass
 
@@ -227,12 +238,10 @@ class Microphone:
         heard = "sends only silence" if got else "sends no audio"
         raise VoiceUnavailable(f"The microphone “{self.name}” {heard}. {silent_mic_hint()}")
 
-    async def chunks(self) -> AsyncIterator[np.ndarray]:
+    def chunks(self) -> AsyncIterator[np.ndarray]:
+        """The stream opened last, from its first audio until it closes."""
         head, self._head = self._head, []
-        for chunk in head:
-            yield chunk
-        while (chunk := await self._queue.get()) is not None:
-            yield chunk
+        return _drain(head, self._queue)
 
     async def close(self) -> None:
         stream, self._stream = self._stream, None
@@ -244,23 +253,70 @@ class Microphone:
         self._queue.put_nowait(None)
 
 
-class SpeakerOutput:
-    """Plays audio on the configured output device, stoppable mid-sentence.
+async def _drain(head: list[np.ndarray], queue: asyncio.Queue[np.ndarray | None]) -> AsyncIterator[np.ndarray]:
+    for chunk in head:
+        yield chunk
+    while (chunk := await queue.get()) is not None:
+        yield chunk
 
-    The device is looked up again for every sentence, so speech follows the
-    device list after a refresh, and falls back to the system default (saying
-    so once) while the chosen speakers are not connected.
+
+class _Segment:
+    """One sentence queued for the output stream. Only the audio callback moves `offset`."""
+
+    def __init__(self, audio: np.ndarray, loop: asyncio.AbstractEventLoop) -> None:
+        self.audio = audio
+        self.offset = 0
+        self.stopped = False
+        self._loop = loop
+        self.done = asyncio.Event()
+
+    def finish(self) -> None:
+        """From the audio thread: every sample went to the device."""
+        try:
+            self._loop.call_soon_threadsafe(self.done.set)
+        except RuntimeError:  # the loop closed under us
+            pass
+
+
+class SpeakerOutput:
+    """Plays a reply's sentences back to back on one output stream.
+
+    The stream opens with the first sentence and stays open while sentences
+    keep coming; it closes once nothing has been queued for `LINGER_S`. Each
+    sentence goes into the stream's queue the moment it is played, so the
+    next one follows without a gap as long as it is ready before the one
+    before ends. The audio callback only copies samples (and counts the
+    device's underruns); `play` returns when its sentence has gone to the
+    device. `LATENCY_S` and the device's own block size favour smooth
+    playback over the last few milliseconds of delay; `stop()` still cuts the
+    sound at once, because it aborts the stream, dropping what the device
+    had buffered.
+
+    Underruns (the device asked for audio before the callback gave it) and
+    gaps (the stream ran dry between two sentences of a reply) are counted
+    and logged once, when the stream closes. The device is looked up again
+    for every stream, so speech follows the device list after a refresh, and
+    falls back to the system default (saying so once) while the chosen
+    speakers are not connected.
     """
 
-    BLOCK_S = 0.02
+    LATENCY_S = 0.1
+    LINGER_S = 0.8
 
-    def __init__(self, device: str = "", on_missing: Missing | None = None) -> None:
+    def __init__(self, device: str = "", on_missing: Missing | None = None, linger_s: float = LINGER_S) -> None:
         self.device = device
         self._on_missing = on_missing
+        self._linger_s = linger_s
         self._said: str | None = None
-        self._stop = threading.Event()
-        self._played = 0
-        self._rate = 1
+        self._queue: deque[_Segment] = deque()
+        self._stream: Any = None
+        self._rate = 0
+        self._abort = False
+        self._dry = False
+        self._closing: asyncio.Task[None] | None = None
+        self._opening = asyncio.Lock()
+        self.underruns = 0
+        self.gaps = 0
 
     def open(self) -> None:
         """See the devices as they are now. Blocking."""
@@ -274,54 +330,110 @@ class SpeakerOutput:
         self._said = missing
         return index
 
+    @property
+    def streaming(self) -> bool:
+        """An output stream is open (a reply is playing, or just did)."""
+        return self._stream is not None
+
     def stop(self) -> None:
-        self._stop.set()
+        """Silence now: the queue is dropped and the stream aborted, buffered audio and all."""
+        self._abort = True
+        dropped = list(self._queue)
+        self._queue.clear()  # in place: the callback holds this very queue
+        for segment in dropped:
+            segment.stopped = True
+            segment.done.set()
+        if self._stream is not None:
+            self._linger(0)
 
     def position(self) -> float:
-        return self._played / self._rate
+        """Seconds of the sentence playing now that have gone to the device."""
+        current = self._queue[0] if self._queue else None
+        return current.offset / self._rate if current is not None and self._rate else 0.0
 
     async def play(self, audio: np.ndarray, sample_rate: int) -> bool:
-        stop = self._stop = threading.Event()
-        self._played, self._rate = 0, sample_rate
+        """Queue `audio` after whatever is queued; True once it has all gone to the device,
+        False when `stop()` dropped it. Calls made in order play in that order."""
+        if self._closing is not None:
+            self._closing.cancel()
+            self._closing = None
+        segment = _Segment(audio.astype(np.float32, copy=False), asyncio.get_running_loop())
+        if self._stream is not None and self._dry and not self._abort:
+            self.gaps += 1  # the stream ran dry before this sentence was ready
+        self._dry = False
+        self._queue.append(segment)
+        async with self._opening:
+            if self._stream is not None and (sample_rate != self._rate or self._abort):
+                await self._close()
+            if self._stream is None and not segment.stopped:
+                await self._open(sample_rate)
+        await segment.done.wait()
+        if not self._queue:
+            self._linger(self._linger_s)
+        return not segment.stopped
+
+    async def _open(self, sample_rate: int) -> None:
         sd = _sd()
-        loop = asyncio.get_running_loop()
-        done = asyncio.Event()
-        data = audio.astype(np.float32, copy=False)
+        self._rate, self._abort, self._dry = sample_rate, False, False
+        self.underruns = self.gaps = 0
+        queue = self._queue
 
         def callback(outdata: np.ndarray, frames: int, t: Any, status: Any) -> None:
-            chunk = data[self._played : self._played + frames]
-            if stop.is_set():
+            if status is not None and getattr(status, "output_underflow", False):
+                self.underruns += 1
+            if self._abort:
                 outdata.fill(0)
-                raise sd.CallbackStop
-            outdata[: len(chunk), 0] = chunk
-            outdata[len(chunk) :] = 0
-            self._played += len(chunk)
-            if len(chunk) < frames:
-                raise sd.CallbackStop
-
-        def finished() -> None:
-            try:
-                loop.call_soon_threadsafe(done.set)
-            except RuntimeError:
-                pass
+                raise sd.CallbackAbort
+            filled = 0
+            while filled < frames and queue:
+                segment = queue[0]
+                n = min(frames - filled, len(segment.audio) - segment.offset)
+                outdata[filled : filled + n, 0] = segment.audio[segment.offset : segment.offset + n]
+                segment.offset += n
+                filled += n
+                if segment.offset >= len(segment.audio):
+                    queue.popleft()
+                    segment.finish()
+            outdata[filled:] = 0
+            if filled < frames:
+                self._dry = True
 
         _count(+1)
         try:
-            stream = sd.OutputStream(
+            self._stream = sd.OutputStream(
                 samplerate=sample_rate,
                 channels=1,
                 dtype="float32",
-                blocksize=max(1, int(sample_rate * self.BLOCK_S)),
-                latency="low",
+                latency=self.LATENCY_S,
                 device=self._resolve(),
                 callback=callback,
-                finished_callback=finished,
             )
-            try:
-                await asyncio.to_thread(stream.start)
-                await done.wait()
-            finally:
-                await asyncio.to_thread(stream.close)
+            await asyncio.to_thread(self._stream.start)
+        except BaseException:
+            self._stream = None
+            _count(-1)
+            raise
+
+    def _linger(self, seconds: float) -> None:
+        if self._closing is None or self._closing.done():
+            self._closing = asyncio.get_running_loop().create_task(self._close_after(seconds))
+
+    async def _close_after(self, seconds: float) -> None:
+        await asyncio.sleep(seconds)
+        if not self._queue:
+            await self._close()
+
+    async def _close(self) -> None:
+        stream, self._stream = self._stream, None
+        if stream is None:
+            return
+        try:
+            await asyncio.to_thread(stream.close)
         finally:
             _count(-1)
-        return not stop.is_set()
+        if self.underruns or self.gaps:
+            log.info(
+                "a reply played with %d underrun(s) and %d gap(s) between sentences",
+                self.underruns,
+                self.gaps,
+            )

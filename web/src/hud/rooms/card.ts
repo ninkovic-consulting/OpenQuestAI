@@ -1,5 +1,5 @@
 // The card shown while the camera is inside a room: its current setup (who
-// runs it, on which model, the project folders, the tools), what is happening
+// runs it, on which model, the project's name, the project folders, the tools), what is happening
 // there now and the last jobs, a field to give the room's agent a job, and
 // "Edit room". It follows the room the selection names.
 
@@ -84,7 +84,7 @@ export function mountRoomCard(parent: HTMLElement, deps: RoomCardDeps): RoomCard
     if (shown !== model.id) card.scrollTop = 0;
     shown = model.id;
     title.textContent = model.name;
-    setupSlot.replaceChildren(setup(model));
+    setupSlot.replaceChildren(setup(model, () => deps.onEdit(model.id)));
     nowSlot.replaceChildren(kicker("Happening now"), happening(model, deps.onOpenJob));
     toolsSlot.replaceChildren(kicker("Tools"), ...tools(model));
     recentSlot.replaceChildren(kicker("Recent jobs"), recent(model, deps.onOpenJob));

@@ -27,6 +27,7 @@ function isRoom(v: unknown): v is Room {
     typeof r["wall"] === "string" &&
     Array.isArray(r["folders"]) &&
     r["folders"].every((f) => typeof f === "string") &&
+    (r["project"] === null || typeof r["project"] === "string") &&
     Array.isArray(r["tools"]) &&
     r["tools"].every(isToolRef)
   );

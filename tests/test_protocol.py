@@ -67,6 +67,7 @@ async def test_text_turn_event_sequence_and_log(fake_daemon: Daemon) -> None:
         "vision.reply",
         "state:idle",
     ]
+    assert len(events[0]["data"].pop("ids")) == 1  # the daemon names a message the window did not
     assert events[0]["data"] == {"text": "Hello there", "source": "text", "images": []}
     assert all(e["data"]["brain"] == "fake" for e in events if e["type"] == "state.changed")
     deltas = "".join(e["data"]["text"] for e in events if e["type"] == "vision.delta")

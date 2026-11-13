@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from vision.core.config import Config, Price, ceiling_price
-from vision.core.events import BrainName, RoomLight
+from vision.core.events import BrainName, ListenMode, MicState, RoomLight
 from vision.core.interfaces import (
     AuditRecord,
     BrainError,
@@ -210,15 +210,21 @@ class FakeSpeaker:
 
 
 class FakeVoice:
-    """No microphone; just a `FakeSpeaker`."""
+    """No microphone; just a `FakeSpeaker`. `listen` records the mode it was given."""
 
     def __init__(self, speaker: FakeSpeaker | None = None) -> None:
         self._speaker = speaker or FakeSpeaker()
         self.running = False
+        self.mic: MicState = "closed"
+        self.mic_problem: str | None = None
+        self.modes: list[ListenMode] = []
 
     @property
     def speaker(self) -> FakeSpeaker:
         return self._speaker
+
+    def listen(self, mode: ListenMode) -> None:
+        self.modes.append(mode)
 
     async def start(self) -> None:
         self.running = True
@@ -339,6 +345,7 @@ class FakeHouse:
                     "agent": "host",
                     "model": "claude-haiku-5-5",
                     "folders": [],
+                    "project": None,
                     "floor": "red-carpet",
                     "wall": "teal-panel",
                     "tools": [

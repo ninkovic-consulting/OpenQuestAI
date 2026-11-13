@@ -5,7 +5,8 @@
 import type { BrainMode, DeleteAnswer, LocalListing, ServerTest } from "./brain-types";
 import { applied, BRAIN_FIELDS, brainProblems, HF_REPO, SERVER_URL, valueProblem, type BrainState } from "./mock-brain-rules";
 import { effortProblem, levelTable } from "./mock-effort";
-import { folderRefusal } from "./mock-folders";
+import { folderRefusal, rootProblem } from "./mock-folders";
+import { projectProblem } from "./project-name";
 import { MockLocal } from "./mock-local";
 import { MOCK_SERVER } from "./mock-local-data";
 import { hostAgentId } from "./plan";
@@ -55,7 +56,7 @@ import type {
   VoiceState,
   VoiceTest,
 } from "./settings-types";
-import type { Plan, ToolRef } from "./types";
+import type { Listening, ListenMode, ListenView, MicState, Plan, ToolRef } from "./types";
 
 /** What the mock settings may do to the mock house. */
 export interface MockHouse {
@@ -93,9 +94,11 @@ interface Config {
   backend: string;
   server: string;
   offline: boolean;
+  keep: "idle" | "always";
   cap: number;
   voice: VoiceState;
   tiers: Record<string, Tier>;
+  projectsRoot: string;
   completed: boolean;
 }
 
@@ -109,9 +112,11 @@ const defaults = (): Config => ({
   backend: "mlx",
   server: MOCK_SERVER,
   offline: false,
+  keep: "idle",
   cap: 150,
   voice: { ...DEFAULT_VOICE },
   tiers: { ...DEFAULT_TIERS },
+  projectsRoot: "~/Projects",
   completed: false,
 });
 
@@ -131,11 +136,31 @@ export class MockSettings implements SettingsApi {
   private owner: Owner = emptyOwner();
   private backupList: Backup[] = OLD_BACKUPS.map((b) => ({ ...b, files: [...b.files] }));
 
-  /** `announce` hears every change of offline mode or of the local model, as `brain.mode`. */
+  /**
+   * `announce` hears every change of offline mode or of the local model, as
+   * `brain.mode`; `listened` every change to when voice listens, or to voice
+   * itself or the shell's tier, as `voice.listen` would announce it.
+   */
   constructor(
     private readonly house: MockHouse,
     private readonly announce: (mode: BrainMode) => void = () => {},
+    private readonly listened: () => void = () => {},
   ) {}
+
+  /** `voice.listen` as things are, with the pretend microphone's `mic`. */
+  listenView(mic: MicState): ListenView {
+    const v = this.config.voice;
+    return { mode: v.listen, mic: v.running ? mic : "closed", voice: v.running, listening: v.listening, shell_free: this.config.tiers["shell"] === "free" };
+  }
+
+  /** `?listen=hold|wake|always`: voice on and running, listening that way, for screenshots. */
+  preset(mode: ListenMode): void {
+    const v = this.config.voice;
+    v.enabled = true;
+    this.startVoice();
+    v.listen = mode;
+    if (mode !== "hold") v.listening = mode;
+  }
 
   /** Offline mode and the local model, as `GET /api/state` and `brain.mode` carry them. */
   mode(): BrainMode {
@@ -148,6 +173,12 @@ export class MockSettings implements SettingsApi {
       local_tools: c.backend === "mlx" ? MockLocal.tools(c.local) : true,
       // No local model in the catalog reads images yet, as on the daemon.
       local_images: false,
+      // Offline mode loads the model at once; the pretend one is in memory as soon as it is on.
+      local_state: c.backend === "mlx" && c.offline ? "ready" : "unloaded",
+      local_bytes: c.backend === "mlx" && c.offline ? this.local.bytes(c.local) : null,
+      local_cache_bytes: 0,
+      local_reading: null,
+      local_problem: null,
     };
   }
 
@@ -183,6 +214,8 @@ export class MockSettings implements SettingsApi {
           server: c.server,
           tools: c.backend === "mlx" ? MockLocal.tools(c.local) : true,
           offline: c.offline,
+          keep: c.keep,
+          idle_s: 600,
         },
       },
       budget: { month: "2026-11", spent_usd: this.spent, cap_usd: c.cap, warn_fraction: 0.8 },
@@ -194,6 +227,7 @@ export class MockSettings implements SettingsApi {
         never_free: [],
         free_at_the_mac_only: ["shell"],
       },
+      projects: { root: c.projectsRoot },
       key: { stored: this.key.stored, source: this.key.stored ? "keychain" : null },
       setup: { completed: c.completed, first_run: !this.key.stored || !c.completed },
       restart_pending: this.key.replaced ? [...pending, "key"] : pending,
@@ -206,11 +240,13 @@ export class MockSettings implements SettingsApi {
       const message = this.problem(field, value);
       return message ? [{ field, message }] : [];
     });
-    if (errors.length === 0) errors.push(...this.changeProblems(fields));
+    if (errors.length === 0) errors.push(...this.changeProblems(fields), ...this.listenProblems(fields));
     if (errors.length > 0) return Promise.resolve(refused(errors.map((e) => e.message).join(" "), errors));
     const before = JSON.stringify(this.mode());
+    const heard = JSON.stringify(this.listenView("closed"));
     const changed = fields.filter(([field, value]) => this.apply(field, value)).map(([field]) => field);
     if (JSON.stringify(this.mode()) !== before) this.announce(this.mode());
+    if (JSON.stringify(this.listenView("closed")) !== heard) this.listened();
     return Promise.resolve(
       ok({
         changed,
@@ -240,6 +276,16 @@ export class MockSettings implements SettingsApi {
       }
     }
     return errors;
+  }
+
+  /** Like the daemon: the listening mode changes only while voice is on with its speech models. */
+  private listenProblems(fields: readonly (readonly [string, Json])[]): FieldError[] {
+    const v = this.config.voice;
+    const asked = fields.find(([f]) => f === "voice.listen");
+    if (!asked || asked[1] === v.listen) return [];
+    if (!v.enabled) return [{ field: "voice.listen", message: `Voice is off. Turn it on first, then choose when ${this.config.name} listens.` }];
+    if (!v.models_downloaded) return [{ field: "voice.listen", message: MISSING_SPEECH }];
+    return [];
   }
 
   /** Why a value is refused, in the daemon's words; null when it is fine. */
@@ -275,8 +321,14 @@ export class MockSettings implements SettingsApi {
         return typeof value === "string" && VOICES.includes(value) ? null : `The voice must be one of: ${VOICES.join(", ")}.`;
       case "voice.followup_s":
         return isNum(value) && value >= 0 && value <= 300 ? null : "The follow-up window must be a number of seconds from 0 to 300.";
+      case "voice.listen":
+        return value === "hold" || value === "wake" || value === "always" ? null : "When it listens is hold (only while you hold to talk), wake (for its name) or always.";
+      case "voice.listening":
+        return value === "wake" || value === "always" ? null : "The listening mode is wake or always.";
       case "setup.completed":
         return typeof value === "boolean" ? null : "Send true or false.";
+      case "projects.root":
+        return typeof value === "string" ? rootProblem(value, isMockFolder) : "Choose the folder new projects go in, such as ~/Projects.";
       default:
         return "There is no such setting.";
     }
@@ -328,6 +380,8 @@ export class MockSettings implements SettingsApi {
         return set(c.backend, String(value), (v) => (c.backend = v));
       case "models.local_server":
         return set(c.server, String(value).trim().replace(/\/$/, ""), (v) => (c.server = v));
+      case "models.local_keep":
+        return set<Config["keep"]>(c.keep, value === "always" ? "always" : "idle", (v) => (c.keep = v));
       case "budget.cap_usd":
         return set(c.cap, Number(value), (v) => (c.cap = v));
       case "voice.input_device":
@@ -341,8 +395,17 @@ export class MockSettings implements SettingsApi {
         return set(c.voice.tts_voice, String(value), (v) => (c.voice.tts_voice = v));
       case "voice.followup_s":
         return set(c.voice.followup_s, Number(value), (v) => (c.voice.followup_s = v));
+      case "voice.listen":
+        return set(c.voice.listen, value as ListenMode, (v) => {
+          c.voice.listen = v;
+          if (v !== "hold") c.voice.listening = v;
+        });
+      case "voice.listening":
+        return set(c.voice.listening, value as Listening, (v) => (c.voice.listening = v));
       case "setup.completed":
         return set(c.completed, value === true, (v) => (c.completed = v));
+      case "projects.root":
+        return set(c.projectsRoot, String(value).trim(), (v) => (c.projectsRoot = v));
       default:
         return false;
     }
@@ -395,7 +458,10 @@ export class MockSettings implements SettingsApi {
     v.enabled = enabled;
     v.running = false;
     if (enabled) this.startVoice();
-    return wait(400).then(() => ok({ ...v }));
+    return wait(400).then(() => {
+      this.listened();
+      return ok({ ...v });
+    });
   }
 
   /** Open the pretend microphone; the webcam in privacy mode sends only silence. */
@@ -573,6 +639,8 @@ export class MockSettings implements SettingsApi {
     const host = hostAgentId(plan);
     const folders = patch.folders === undefined ? null : folderRefusal(patch.folders, plan.max_room_folders);
     if (folders !== null) return Promise.resolve(refused(folders, [{ field: "folders", message: folders }]));
+    const project = patch.project === undefined ? null : projectProblem(patch.project);
+    if (project !== null) return Promise.resolve(refused(project, [{ field: "project", message: project }]));
     if (patch.name !== undefined && !plainName(patch.name)) return Promise.resolve(refused("A room's name must be 1 to 40 characters of plain text."));
     if (patch.agent !== undefined && patch.agent !== room.agent) {
       if (room.id === "hall") return Promise.resolve(refused("The Hall is the host's room; its agent does not change."));
@@ -582,6 +650,7 @@ export class MockSettings implements SettingsApi {
     if (patch.name !== undefined) room.name = patch.name.trim();
     if (patch.agent !== undefined) room.agent = patch.agent;
     if (patch.folders !== undefined) room.folders = patch.folders.map((f) => f.trim());
+    if (patch.project !== undefined) room.project = patch.project.trim() || null;
     const agent = plan.agents.find((a) => a.id === room.agent);
     if (patch.model !== undefined || patch.agent !== undefined) {
       const own = patch.model === undefined ? null : patch.model;
@@ -617,6 +686,14 @@ export function flatten(patch: SettingsPatch): [string, Json][] {
   };
   for (const [section, values] of Object.entries(patch)) walk(section, values);
   return out;
+}
+
+/** Whether the made-up folder tree holds this folder. */
+export function isMockFolder(path: string): boolean {
+  if (path in FOLDERS) return true;
+  const cut = path.lastIndexOf("/");
+  const parent = cut <= 0 ? (path.startsWith("~") ? "~" : "/") : path.slice(0, cut);
+  return FOLDERS[parent]?.includes(path.slice(cut + 1)) ?? false;
 }
 
 /** `GET /api/fs/dirs` over the made-up folder tree, with the daemon's rules. */

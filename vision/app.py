@@ -45,7 +45,7 @@ import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import uvicorn
 
@@ -58,6 +58,7 @@ from vision import (
     memory,
     presence,
     procedures,
+    projects,
     proposals,
     remote,
     residents,
@@ -69,6 +70,7 @@ from vision.core.bus import Bus, Subscription
 from vision.core.config import Config
 from vision.core.events import (
     BudgetUpdate,
+    ListenMode,
     Notice,
     NoticeLevel,
     ProcedureChange,
@@ -76,12 +78,14 @@ from vision.core.events import (
     RoomLight,
     RoomState,
     StateChanged,
+    VoiceListen,
 )
 from vision.core.interfaces import AuditRecord, Brain, Budget, House, Memory, ToolHost, TurnRecord, Voice
 from vision.jobs.model import Job
 from vision.core.server import create_app
 from vision.core.session import Session
 from vision.core.snapshot import Snapshot
+from vision.core.waiting import WaitingBoard
 from vision.core.token import ensure_token
 from vision.gate.gate import Actor, JobHooks, ToolGate
 from vision.gate.tools import Tool
@@ -89,6 +93,7 @@ from vision.house.tools import load_catalog
 from vision.residents.client import ResidentClient
 from vision.scheduler.model import Automation, RunStatus
 from vision.testing.fakes import FakeBrain, FakeVoice
+from vision.voice.settings import listen_event
 
 log = logging.getLogger(__name__)
 
@@ -239,7 +244,7 @@ class Daemon:
                 board=self.board,
                 engine=self.local,
                 phone=self.phone,
-                own=self._host_learning(),
+                own=[*self._host_learning(), *self._host_projects()],
                 more=lambda: self.proposals.tools_for(self.host_context()),
                 fake_brain=fake_brain,
                 voice_factory=voice,
@@ -267,6 +272,8 @@ class Daemon:
         self.voice_error: str | None = None
         """Why voice last failed to start, or None."""
         self.snapshot = Snapshot(self.bus)
+        self.waiting = WaitingBoard(self.bus)
+        """What waits for the assistant, the window's messages and the phone's, as windows list it."""
         self.session: Session | None = None
         self._session_task: asyncio.Task[None] | None = None
         self._lights_task: asyncio.Task[None] | None = None
@@ -285,6 +292,12 @@ class Daemon:
             *procedures.build_tools(self.procedures, HOST),
             *self.proposals.agent_tools(self.host_context()),
         ]
+
+    def _host_projects(self) -> list[Tool]:
+        """`start_project`, on the house the daemon runs and `[projects] root` as saved now."""
+        return projects.build_tools(
+            lambda: self.components.house, self.board, lambda: projects.saved_root(self.config)
+        )
 
     def _procedure_changed(self, owner: str, name: str, change: str) -> None:
         """Called from the thread that wrote the procedure; the bus lives on the loop."""
@@ -320,6 +333,7 @@ class Daemon:
             self.voice_error = str(exc)
         else:
             self.voice_running = True
+        self.announce_listen()
         states = self.bus.subscribe({StateChanged.TYPE})
         self._lights_task = asyncio.create_task(self._light_the_hall(states))
         self.session = Session(
@@ -330,12 +344,13 @@ class Daemon:
             c.tools,
             surroundings=self.surroundings,
             images=self.images,
+            waiting=self.waiting,
         )
         self._session_task = asyncio.create_task(self.session.run())
-        runner = scheduler.Runner(self.config, self.automations, self._run_automation, self.busy)
+        runner = scheduler.Runner(self.config, self.automations, self._run_automation, self.busy_after_phone)
         self._runner_task = asyncio.create_task(runner.run())
         reporter = jobs.Reporter(
-            busy=self.busy,
+            busy=self.busy_after_phone,
             run_turn=self._report_job,
             speak=lambda: self.config.jobs.speak_results and self.voice_running,
             to_phone=self._job_to_phone,
@@ -367,14 +382,19 @@ class Daemon:
         )
 
     def busy(self) -> bool:
-        """An automation or a phone message waits while a turn runs, someone speaks,
-        or a gate request waits."""
+        """An automation or a phone message waits while a turn runs, messages typed at the
+        Mac wait for one, someone speaks, or a gate request waits."""
         session = self.session
         return (
             (session is not None and session.busy)
             or self.snapshot.state in ("listening", "transcribing")
             or self.components.tools.waiting
         )
+
+    def busy_after_phone(self) -> bool:
+        """Job reports and automations wait like the phone does, and for the phone's waiting
+        messages too: the owner's own words, typed at the Mac or sent from the phone, go first."""
+        return self.busy() or self.phone.channel.waiting > 0
 
     def _lent_tools(self) -> dict[str, Tool]:
         """The host's read-only tools that some residents also get (the steward's)."""
@@ -436,6 +456,20 @@ class Daemon:
             c.voice = new
             if self.session is not None:
                 self.session.speaker = new.speaker
+            self.announce_listen()
+
+    def listen_view(self) -> dict[str, Any]:
+        """When voice listens and whether a microphone stream is open: `listen` in `/api/state`."""
+        return listen_event(self.config, self.components.voice.mic, voice=self.voice_running).data()
+
+    def announce_listen(self) -> None:
+        """Publish `voice.listen` as things are now."""
+        self.bus.publish(VoiceListen(**self.listen_view()))
+
+    def set_listen(self, mode: ListenMode) -> None:
+        """Change when the microphone is open, at once; the models stay loaded."""
+        self.components.voice.listen(mode)
+        self.announce_listen()
 
     async def _light_the_hall(self, states: Subscription) -> None:
         """Keep the Hall `active` while thinking or speaking and `idle` otherwise."""

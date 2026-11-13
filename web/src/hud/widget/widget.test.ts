@@ -3,7 +3,7 @@ import { asWidgetPrefs, shortcutLine } from "../../net/shell-prefs";
 import { initialState, reduce, type Action, type ViewState } from "../../net/store";
 import type { GateRequest, OutboundData, OutboundEvent, OutboundType } from "../../net/types";
 import type { HistoryTurn } from "../chat/entries";
-import { latestExchange, placeholder, replyRestarted, whoLabel, widgetState, widgetView } from "./model";
+import { latestExchange, replyRestarted, whoLabel, widgetState, widgetView } from "./model";
 
 const ev = <K extends OutboundType>(type: K, data: OutboundData[K]): Action => ({
   kind: "event",
@@ -121,8 +121,6 @@ describe("requests waiting for a yes", () => {
 describe("the widget's name and field", () => {
   it("takes the assistant's name from the plan", () => {
     expect(widgetView(open(), false, null, null).name).toBe("");
-    expect(placeholder("")).toBe("Write a message");
-    expect(placeholder("Vision")).toBe("Write to Vision");
   });
 });
 
@@ -142,6 +140,7 @@ describe("the shell's preferences", () => {
       ...answer,
       shortcuts: [{ id: "option-space", label: "⌥ Space" }],
     });
+    expect(asWidgetPrefs({ ...answer, openWith: "menubar" })?.openWith).toBe("menubar");
     expect(asWidgetPrefs({ ...answer, openWith: "dock" })).toBeNull();
     expect(asWidgetPrefs(null)).toBeNull();
   });

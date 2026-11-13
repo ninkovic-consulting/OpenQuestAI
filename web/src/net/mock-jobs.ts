@@ -100,6 +100,11 @@ export class MockJobs implements JobsApi {
     });
   }
 
+  /** The first job of a project the host just started, in its new room. */
+  firstJob(agent: string, room: string, brief: string): JobDetails | string {
+    return this.handOff({ agent, room, brief }, "host", "text");
+  }
+
   /** The owner answered a request; true when it was one of the jobs'. */
   decide(gateId: string, decision: "allow" | "deny"): boolean {
     const w = this.waiting.get(gateId);

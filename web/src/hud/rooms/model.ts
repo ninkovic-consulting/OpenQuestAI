@@ -7,6 +7,7 @@ import type { Agent, Plan, Room, RoomLight, ToolRef } from "../../net/types";
 import type { Board } from "../../scene/residence";
 import { modelShort } from "../agent-choice";
 import { clock } from "../jobs/model";
+import { projectLine, type ProjectLine } from "./project";
 
 /** Built-in tools always run; a project tool needs its program on this Mac and at least one project folder on the room. */
 export type ToolState = "runs" | "waits" | "missing";
@@ -75,6 +76,8 @@ export interface RoomCardModel {
   /** The Hall is the host's: it is spoken to in the chat, and takes no jobs. */
   hall: boolean;
   agent: { id: string; name: string; /** The model it thinks with in this room, briefly. */ model: string; modelId: string };
+  /** What the card says of the project's name; null when the room has neither a name nor folders to suggest one from. */
+  project: ProjectLine;
   folders: string[];
   tools: { title: string; state: ToolState }[];
   /** Empty for the Hall. */
@@ -102,6 +105,7 @@ export function roomCardModel(plan: Plan, board: Board, roomId: string, now: num
     name: room.name,
     hall,
     agent: { id: room.agent, name: agent?.name ?? room.agent, model: modelShort(modelId), modelId },
+    project: projectLine(room),
     folders: [...room.folders],
     tools: room.tools.map((t) => ({ title: t.title, state: toolState(t, room.folders.length > 0) })),
     note: hall ? "" : toolsNote(room.folders.length > 0),
@@ -132,6 +136,8 @@ export const ROOM_STATE_WORD: Record<RoomState, string> = { ...PHASE_WORD, activ
 export interface AgentRoom {
   id: string;
   name: string;
+  /** The room's project name, shown beside its name. */
+  project: string | null;
   folders: number;
   state: RoomState;
   selected: boolean;
@@ -145,7 +151,7 @@ function roomState(room: Room, board: Board, lights: Readonly<Record<string, Roo
 export function agentRooms(plan: Plan, agent: string, board: Board, lights: Readonly<Record<string, RoomLight>>, selected: string | null): AgentRoom[] {
   return plan.rooms
     .filter((r) => r.agent === agent)
-    .map((r) => ({ id: r.id, name: r.name, folders: r.folders.length, state: roomState(r, board, lights), selected: r.id === selected }));
+    .map((r) => ({ id: r.id, name: r.name, project: r.project, folders: r.folders.length, state: roomState(r, board, lights), selected: r.id === selected }));
 }
 
 /** "No project folders", "1 project folder", "3 project folders". */

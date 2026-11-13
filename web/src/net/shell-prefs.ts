@@ -2,7 +2,8 @@
 // its bridge answers `widgetPrefs()` and `setWidgetPrefs(changes)`. The shell
 // stores them; the page only shows and changes them.
 
-export type OpenWith = "house" | "widget";
+/** What the app shows when it opens: the house, only the widget, or only its menu bar item. */
+export type OpenWith = "house" | "widget" | "menubar";
 
 export interface ShortcutOption {
   id: string;
@@ -58,7 +59,7 @@ export function asWidgetPrefs(v: unknown): WidgetPrefs | null {
   if (!r) return null;
   const { widget, openWith, summon, talk, shown } = r;
   if (typeof widget !== "boolean" || typeof summon !== "string" || typeof talk !== "string") return null;
-  if (openWith !== "house" && openWith !== "widget") return null;
+  if (openWith !== "house" && openWith !== "widget" && openWith !== "menubar") return null;
   const status = record(r["status"]);
   return {
     widget,

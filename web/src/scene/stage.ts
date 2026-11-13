@@ -1,4 +1,8 @@
-// The 3D stage: renderer, scene and the frame loop, wired to the store.
+// The 3D stage: renderer, scene and the frame loop, wired to the store. It
+// draws only when something changed or moves (pacer.ts), at a rate and
+// resolution set by the quality level, the automatic scaler and whether the
+// assistant is working on this Mac; the shadow map is redrawn only when
+// something that casts a shadow moved.
 
 import * as THREE from "three";
 import { hostRoom } from "../net/plan";
@@ -17,9 +21,24 @@ import { palette } from "./palette";
 import { Post, Streaks } from "./post";
 import { Props, PROPS_TOP } from "./props";
 import { Residents } from "./residents";
+import { displayPrefs, type DisplayPrefs } from "./display-prefs";
+import { activityOf, labelsDue, shadowsDue, type FrameSignals } from "./frame-rules";
+import { GpuTimer } from "./gpu-timer";
+import { FrameMeter } from "./meter";
+import { Pacer } from "./pacer";
+import { workingHere, type Activity } from "./pacing";
+import { LEVELS, pixelRatioRange, samplesFor, type QualityLevel } from "./quality";
+import { Readout } from "./readout";
+import { easeRatio, FRESH, scaleStep, type ScalerState } from "./scaler";
 
 /** Screen kept clear around the fitted house, in CSS pixels (the bottom at least a share of the height): the key hints above, the caption below. */
 const CLEAR = { top: 56, side: 24, bottom: 112, bottomShare: 0.12 };
+/** How long the owner's pointer or a resize keeps the scene at the interaction rate, in milliseconds. */
+const INPUT_MS = 400;
+/** The pixel ratio changes by one small step at most this often, in milliseconds. */
+const RATIO_STEP_MS = 100;
+/** The frame time the scaler holds the scene to: room to draw 60 frames a second. */
+const BUDGET_MS = 1000 / 60;
 
 export interface RoomAnchor {
   id: string;
@@ -41,14 +60,35 @@ export class Stage {
   private readonly streaks = new Streaks();
   private readonly build = new BuildMode();
   private readonly raycaster = new THREE.Raycaster();
-  private readonly clock = new THREE.Timer();
+  private readonly prefs = displayPrefs();
+  private readonly pacer: Pacer;
+  private readonly meter = new FrameMeter();
+  private readonly shadowMeter = new FrameMeter();
+  private readonly readout: Readout;
+  private readonly gpu: GpuTimer;
+  private readonly forceStats = new URLSearchParams(location.search).get("stats") === "1";
+  private level: QualityLevel;
+  private scaler: ScalerState = FRESH;
+  /** The pixel ratio drawn at now; it eases toward the target. */
+  private ratio: number;
+  private ratioAt = -Infinity;
+  /** Seconds of animation time, the sum of the steps of the frames drawn. */
+  private time = 0;
+  private shadowsForced = true;
+  private shadowAt = -Infinity;
+  private labelsStale = true;
+  private labelsAt = -Infinity;
+  private hasStreaks = false;
+  private readonly pointer = new THREE.Vector2();
+  private readonly anchorList: RoomAnchor[] = [];
+  private readonly anchorPoint = new THREE.Vector3();
   private plan: Plan | null = null;
   /** The house's bounding box, for framing and the miniature blur. */
   private houseBox = new THREE.Box3();
   private houseCorners: THREE.Vector3[] = [];
   private width = 1;
   private height = 1;
-  private down = new THREE.Vector2();
+  private readonly down = new THREE.Vector2();
   /** Called every frame with each room's label anchor on screen. */
   onFrame: (anchors: RoomAnchor[]) => void = () => {};
   /** Called when a glowing free slot is clicked in build mode. */
@@ -63,9 +103,15 @@ export class Stage {
     private readonly store: Store,
     notify: (text: string) => void,
   ) {
+    this.level = LEVELS[this.prefs.get().quality];
+    this.ratio = pixelRatioRange(this.prefs.get().quality, window.devicePixelRatio, false).max;
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance", stencil: false });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(this.ratio);
     this.renderer.shadowMap.enabled = true;
+    // The house stands still: the shadow map is redrawn only when something that casts moved (frame-rules.ts).
+    this.renderer.shadowMap.autoUpdate = false;
+    // Count every pass of a frame, not just the last.
+    this.renderer.info.autoReset = false;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -81,21 +127,35 @@ export class Stage {
     this.props = new Props(missing);
     this.residents = new Residents(this.house, missing);
     this.lighting = new Lighting(this.scene, this.renderer);
+    this.lighting.setShadowSize(this.level.shadowMapSize);
     this.grounds = new Grounds(mats);
-    this.post = new Post(this.renderer, this.scene, this.rig.camera);
+    this.post = new Post(this.renderer, this.scene, this.rig.camera, samplesFor(this.level, this.ratio));
+    this.post.setEffectScale(this.level.effectScale);
+    this.gpu = new GpuTimer(this.renderer.getContext() as WebGL2RenderingContext);
+    this.readout = new Readout(container);
+    this.pacer = new Pacer(
+      {
+        setLoop: (callback) => this.renderer.setAnimationLoop(callback),
+        draw: (dt, now) => this.frame(dt, now),
+        sample: (frameMs, cpuMs, now) => this.sample(frameMs, cpuMs, now),
+        idle: (now) => this.refreshReadout(now),
+      },
+      this.prefs.get().quality,
+    );
     this.scene.add(this.house.root, this.props.root, this.residents.root, this.grounds.root, this.streaks.mesh, this.build.root);
 
-    void this.props.load();
+    void this.props.load().then(() => this.forceShadows());
     this.listen();
     new ResizeObserver(() => this.resize()).observe(container);
     this.resize();
     store.subscribe((s, prev) => this.onState(s, prev));
     this.onState(store.get(), store.get());
+    this.prefs.subscribe((p) => this.applyPrefs(p));
+    this.applyPrefs(this.prefs.get());
   }
 
   start(): void {
-    this.clock.connect(document);
-    this.renderer.setAnimationLoop((t) => this.frame(t));
+    this.pacer.start();
   }
 
   /** Back to the whole-house view. Returns false when already there. */
@@ -105,6 +165,7 @@ export class Stage {
     this.rig.setShift(0);
     this.post.setMiniature(true);
     this.onRoom(null);
+    this.pacer.wake();
     return true;
   }
 
@@ -116,12 +177,41 @@ export class Stage {
     this.post.setMiniature(false);
     this.onRoom(view.room.id);
     this.rig.setShift(this.coverLeft() / 2);
+    this.pacer.wake();
     return true;
+  }
+
+  /** Settings (or anything else opaque) covers the whole scene, or no longer does. */
+  setCovered(on: boolean): void {
+    this.pacer.setCovered(on);
   }
 
   setBuildMode(on: boolean): void {
     this.build.setActive(on);
     if (on) this.home();
+    this.pacer.wake();
+  }
+
+  /** Take the window's display preferences: quality, the readout, stepping back. */
+  private applyPrefs(p: DisplayPrefs): void {
+    const level = LEVELS[p.quality];
+    if (level !== this.level) {
+      this.level = level;
+      this.scaler = FRESH;
+      this.post.setMultisampling(samplesFor(level, this.ratio));
+      this.post.setEffectScale(level.effectScale);
+      this.lighting.setShadowSize(level.shadowMapSize);
+      this.forceShadows();
+    }
+    this.pacer.setQuality(p.quality);
+    this.readout.show(p.readout || this.forceStats);
+    this.pacer.setStepBack(p.stepBack && workingHere(this.store.get()));
+    this.pacer.wake();
+  }
+
+  private forceShadows(): void {
+    this.shadowsForced = true;
+    this.pacer.wake();
   }
 
   private onState(s: ViewState, prev: ViewState): void {
@@ -129,6 +219,9 @@ export class Stage {
     const moved = s.roomLights !== prev.roomLights || s.agents !== prev.agents || s.jobs !== prev.jobs;
     if (s.plan && (s.plan !== prev.plan || moved)) this.residents.sync(s.plan, s.roomLights, s);
     this.props.setTalking(s.assistant === "speaking");
+    this.pacer.setStepBack(this.prefs.get().stepBack && workingHere(s));
+    this.labelsStale = true;
+    this.pacer.wake();
   }
 
   private rebuild(plan: Plan): void {
@@ -148,6 +241,8 @@ export class Stage {
     this.houseBox = houseBox(plan, bounds);
     this.houseCorners = boxCorners(this.houseBox);
     this.rig.frame(this.houseBox, this.clearWindow(), first);
+    this.hasStreaks = hostView !== undefined;
+    this.forceShadows();
   }
 
   /** The part of the scene the house is fitted into, in normalised device coordinates. */
@@ -166,15 +261,18 @@ export class Stage {
     this.height = Math.max(1, this.container.clientHeight);
     this.renderer.setSize(this.width, this.height, false);
     this.post.setSize(this.width, this.height);
+    this.labelsStale = true;
+    this.pacer.wake(INPUT_MS);
     this.rig.setAspect(this.width / this.height);
     this.rig.setSize(this.width, this.height);
     if (this.rig.room !== null) this.rig.setShift(this.coverLeft() / 2);
     if (this.plan) this.rig.frame(this.houseBox, this.clearWindow(), this.rig.room === null);
   }
 
+  /** The pointer in normalised device coordinates; the same vector each time. */
   private ndc(ev: MouseEvent): THREE.Vector2 {
     const rect = this.renderer.domElement.getBoundingClientRect();
-    return new THREE.Vector2(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1);
+    return this.pointer.set(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1);
   }
 
   private listen(): void {
@@ -186,47 +284,119 @@ export class Stage {
       const id = hit?.object.userData["roomId"] as string | undefined;
       if (id) this.focusRoom(id);
     });
-    dom.addEventListener("pointerdown", (ev) => this.down.set(ev.clientX, ev.clientY));
+    dom.addEventListener("pointerdown", (ev) => {
+      this.down.set(ev.clientX, ev.clientY);
+      this.pacer.wake(INPUT_MS);
+    });
+    dom.addEventListener("wheel", () => this.pacer.wake(INPUT_MS), { passive: true });
     dom.addEventListener("pointerup", (ev) => {
-      if (this.down.distanceTo(new THREE.Vector2(ev.clientX, ev.clientY)) > 5) return;
+      this.pacer.wake(INPUT_MS);
+      if (Math.hypot(ev.clientX - this.down.x, ev.clientY - this.down.y) > 5) return;
       const cell = this.build.pick(this.ndc(ev), this.rig.camera);
       if (cell) this.onSlot(cell);
     });
     dom.addEventListener("pointermove", (ev) => {
+      if (ev.buttons !== 0) this.pacer.wake(INPUT_MS);
+      if (!this.build.active) return;
       dom.style.cursor = this.build.hover(this.ndc(ev), this.rig.camera) ? "pointer" : "";
+      this.pacer.wake();
     });
   }
 
-  private frame(timestamp: number): void {
-    this.clock.update(timestamp);
-    const dt = Math.min(0.05, this.clock.getDelta());
-    const time = this.clock.getElapsed();
+  /** Draw one frame `dt` seconds after the last; answers how much of the scene is moving now. */
+  private frame(dt: number, now: number): Activity {
+    this.time += dt;
     const s = this.store.get();
     const hostId = this.plan ? hostRoom(this.plan)?.id : undefined;
-    this.rig.update(dt);
-    this.house.update(dt);
-    this.props.update(dt);
-    this.residents.update(dt, this.rig.camera);
-    this.lighting.update(dt, s.roomLights, hostId, s.voiceLevel);
-    this.streaks.update(time, dt, s.assistant === "speaking" ? s.voiceLevel : 0, this.rig.camera);
-    this.build.update(time);
-    this.post.render(dt, screenBand(this.houseCorners, this.rig.camera));
-    this.onFrame(this.anchors());
+    const camera = this.rig.update(dt);
+    const rising = this.house.update(dt);
+    const host = this.props.update(dt);
+    const figures = this.residents.update(dt, this.rig.camera);
+    const signals: FrameSignals = {
+      camera,
+      rising,
+      figuresMoving: figures === "moving",
+      figuresAnimating: figures === "animating" || host,
+      lights: this.lighting.update(dt, s.roomLights, hostId, s.voiceLevel),
+      voice: this.streaks.update(this.time, dt, s.assistant === "speaking" ? s.voiceLevel : 0, this.rig.camera),
+      blur: this.post.update(dt, screenBand(this.houseCorners, this.rig.camera)),
+      ambient: this.hasStreaks || this.build.active,
+    };
+    this.build.update(this.time);
+    const shadows = shadowsDue(signals, this.shadowsForced, now - this.shadowAt);
+    this.renderer.shadowMap.needsUpdate = shadows;
+    if (shadows) {
+      this.shadowsForced = false;
+      this.shadowAt = now;
+      this.shadowMeter.add(now, 0, 0);
+    }
+    this.renderer.info.reset();
+    this.gpu.begin();
+    this.post.render(dt);
+    this.gpu.end();
+    if (labelsDue(signals, this.labelsStale, now - this.labelsAt)) {
+      this.labelsStale = false;
+      this.labelsAt = now;
+      this.onFrame(this.anchors());
+    }
+    this.stepRatio(now);
+    return activityOf(signals);
   }
 
+  /** One drawn frame's time: for the readout, and for the scaler unless the scene has stepped back for the assistant. */
+  private sample(frameMs: number, cpuMs: number, now: number): void {
+    this.meter.add(now, frameMs, cpuMs);
+    if (!this.pacer.steppedBack) this.scaler = scaleStep(this.scaler, frameMs, Math.max(BUDGET_MS, this.pacer.tickMs()), this.level.minScale);
+    this.refreshReadout(now);
+  }
+
+  /** Move the drawn pixel ratio one small step toward where the quality, the scaler and stepping back put it. */
+  private stepRatio(now: number): void {
+    const range = pixelRatioRange(this.prefs.get().quality, window.devicePixelRatio, this.pacer.steppedBack);
+    const target = Math.max(range.min, range.max * this.scaler.scale);
+    if (Math.abs(target - this.ratio) < 0.01 || now - this.ratioAt < RATIO_STEP_MS) return;
+    this.ratio = easeRatio(this.ratio, target);
+    this.ratioAt = now;
+    this.renderer.setPixelRatio(this.ratio);
+    this.post.setMultisampling(samplesFor(this.level, this.ratio));
+    this.post.setSize(this.width, this.height);
+    this.pacer.wake();
+  }
+
+  private refreshReadout(now: number): void {
+    this.readout.refresh(now, () => {
+      const info = this.renderer.info.render;
+      return {
+        reading: this.meter.read(now),
+        pace: this.pacer.pace.label,
+        quality: this.level.label + (this.scaler.scale < 1 ? ` · scaled to ${Math.round(this.scaler.scale * 100)}%` : ""),
+        pixelRatio: this.ratio,
+        width: this.renderer.domElement.width,
+        height: this.renderer.domElement.height,
+        calls: info.calls,
+        triangles: info.triangles,
+        gpuMs: this.gpu.read(),
+        shadows: this.shadowMeter.read(now).fps,
+      };
+    });
+  }
+
+  /** Each room's label anchor on screen; the same objects each time. */
   private anchors(): RoomAnchor[] {
-    const v = new THREE.Vector3();
-    const out: RoomAnchor[] = [];
+    const v = this.anchorPoint;
+    const out = this.anchorList;
+    let i = 0;
     for (const view of this.house.rooms.values()) {
       v.copy(view.center).setY(view.wallTop + 0.5).add(view.group.position);
       v.project(this.rig.camera);
-      out.push({
-        id: view.room.id,
-        x: ((v.x + 1) / 2) * this.width,
-        y: ((1 - v.y) / 2) * this.height,
-        visible: v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05,
-      });
+      const a = out[i] ?? { id: "", x: 0, y: 0, visible: false };
+      a.id = view.room.id;
+      a.x = ((v.x + 1) / 2) * this.width;
+      a.y = ((1 - v.y) / 2) * this.height;
+      a.visible = v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05;
+      out[i++] = a;
     }
+    out.length = i;
     return out;
   }
 }

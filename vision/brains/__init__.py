@@ -2,8 +2,9 @@
 
 The composition root (`vision.app`) calls these factories. None does I/O;
 the brain loads its key and clients in `Brain.start()`, the budget reads its
-file on first use, and the local engine loads its model on the first
-generation. The engine is one per daemon: the host's local brain and the
+file on first use, and the local engine loads its model when offline mode is
+on (from the local brain's start) or on the first generation. The engine is
+one per daemon: the host's local brain and the
 residents' local jobs share it, so one generation runs at a time.
 """
 
@@ -30,7 +31,9 @@ def make_brain(
 ) -> Brain:
     """The router over Claude and the local model, which gets the same tools."""
     claude = ClaudeBrain(config, tools, memory, budget)
-    return Router(config, bus, claude, LocalBrain(config, memory, engine, tools), budget)
+    router = Router(config, bus, claude, LocalBrain(config, memory, engine, tools), budget)
+    engine.on_change = lambda: bus.publish(mode(config, router.name, engine))
+    return router
 
 
 def make_budget(config: Config, bus: Bus) -> Budget:
@@ -41,6 +44,7 @@ def make_budget(config: Config, bus: Bus) -> Budget:
 def mode(config: Config, answering: BrainName, engine: LocalEngine) -> BrainMode:
     """Offline or not, who answers the host now, and the local model: the `brain.mode` event,
     and `mode` in `GET /api/state`."""
+    status = engine.status()
     return BrainMode(
         offline=config.brain.offline,
         answering=answering,
@@ -48,4 +52,9 @@ def mode(config: Config, answering: BrainName, engine: LocalEngine) -> BrainMode
         local_model=engine.model,
         local_tools=engine.known_tools(),
         local_images=SEES_IMAGES,
+        local_state=status.state,
+        local_bytes=status.weights_bytes,
+        local_cache_bytes=status.cache_bytes,
+        local_reading=status.reading,
+        local_problem=status.problem,
     )

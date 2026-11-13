@@ -40,6 +40,7 @@ BUILT_IN = [
     "list_jobs",
     "job_details",
     "cancel_job",
+    "start_project",
     "update_profile",
     "list_documents",
     "read_document",

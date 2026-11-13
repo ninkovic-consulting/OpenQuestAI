@@ -7,7 +7,11 @@ runs. Of `[brain]`, offline mode, the local model and the host's efforts
 (`LIVE_BRAIN`) apply at once: the router reads `offline` on every turn, the
 residents on every job, the local engine follows the model on its next
 generation, and Claude reads the effort on every call. A change to offline
-mode or the local model is announced with `brain.mode` and a notice.
+mode or the local model is announced with `brain.mode` and a notice, and the
+engine follows it at once (`LocalEngine.follow`): in offline mode the model
+starts loading before the first message. A change
+of `[voice]` starts voice again with the new settings, except the listening
+mode, which the running voice takes at once without loading anything again.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from vision import brains
 from vision.core.config import Config
 from vision.core.events import BudgetUpdate
 from vision.house import HouseError
+from vision.voice.settings import LISTEN_KEYS, listen_mode, listening_mode
 
 if TYPE_CHECKING:
     from vision.app import Daemon
@@ -30,8 +35,10 @@ LIVE_SECTIONS = ("assistant", "budget", "voice", "gate", "automations", "jobs", 
 APPLIED_AT_ONCE = ("assistant", "voice", "gate", "automations", "jobs", "presence", "agents")
 BUDGET_AT_ONCE = ("monthly_cap_usd", "prices")
 LOCAL_BRAIN = ("offline", "local_backend", "local_model", "local_base_url")
-LIVE_BRAIN = (*LOCAL_BRAIN, "talk_effort", "heavy_effort")
-"""The `[brain]` keys that apply at once; a change to the local ones is announced."""
+KEEP_LOADED = ("local_keep_loaded", "local_idle_unload_s")
+LIVE_BRAIN = (*LOCAL_BRAIN, *KEEP_LOADED, "talk_effort", "heavy_effort")
+"""The `[brain]` keys that apply at once; a change to the local ones is announced, and the
+local engine follows them (and the keep-loaded ones) at once."""
 
 
 @runtime_checkable
@@ -79,14 +86,34 @@ async def apply(daemon: Daemon, fresh: Config) -> None:
         daemon.bus.publish(BudgetUpdate(**dataclasses.asdict(budget.status())))
     if any(getattr(old.brain, k) != getattr(live.brain, k) for k in LOCAL_BRAIN):
         announce_mode(daemon, was_offline=old.brain.offline)
+    if any(getattr(old.brain, k) != getattr(live.brain, k) for k in (*LOCAL_BRAIN, *KEEP_LOADED)):
+        daemon.local.follow()  # load the model now in offline mode; free a model no longer chosen
     if old.jobs != live.jobs:
         daemon.board.pump()  # a higher limit may let waiting jobs start
     if old.presence != live.presence:
         daemon.presence.check()  # announces the new away time, and away or back at once
     # A failed start is retried too: a new microphone is often the fix for the last failure.
     failed = live.voice.enabled and daemon.voice_error is not None
-    if (daemon.voice_running or failed) and (renamed or old.voice != live.voice):
+    if (daemon.voice_running or failed) and (renamed or _reload_part(old) != _reload_part(live)):
         await daemon.set_voice(True)
+    elif listen_mode(old) != listen_mode(live):
+        daemon.set_listen(listen_mode(live))
+    elif _listen_part(old) != _listen_part(live):
+        daemon.announce_listen()
+
+
+def _listen_part(config: Config) -> tuple[str, str, str]:
+    """What `voice.listen` shows from the config: the modes, and the shell's tier."""
+    gate = config.gate
+    return listen_mode(config), listening_mode(config), gate.tiers.get("shell", gate.default_tier)
+
+
+def _reload_part(config: Config) -> dict[str, Any]:
+    """The voice settings a change of which starts voice again; the listening modes apply without."""
+    dump = config.voice.model_dump(mode="json")
+    for key in LISTEN_KEYS:
+        dump.pop(key, None)
+    return dump
 
 
 def announce_mode(daemon: Daemon, *, was_offline: bool) -> None:

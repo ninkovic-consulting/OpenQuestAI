@@ -14,7 +14,19 @@ export interface BrainMode {
   local_tools: boolean | null;
   /** Whether the local model can read images; an older daemon leaves it out, which counts as no. */
   local_images?: boolean;
+  /** The in-process model: not in memory, being loaded, in memory, or its load failed. A server's model says `unloaded`. */
+  local_state?: LocalLoad;
+  /** The memory the loaded weights hold. */
+  local_bytes?: number | null;
+  /** The memory the prompts kept for the next turn hold. */
+  local_cache_bytes?: number;
+  /** While a long prompt is read before the first word: tokens read, tokens to read. */
+  local_reading?: readonly [number, number] | null;
+  /** Why the last load failed, in words for the owner. */
+  local_problem?: string | null;
 }
+
+export type LocalLoad = "unloaded" | "loading" | "ready" | "failed";
 
 export type Fit = "comfortable" | "tight" | "too_big";
 export type DownloadState = "idle" | "running" | "done" | "failed";

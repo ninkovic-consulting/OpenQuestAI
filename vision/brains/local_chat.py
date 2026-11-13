@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from vision.core.events import LocalLoad
 from vision.core.interfaces import ToolSpec
 
 Who = Literal["host", "job"]
@@ -61,6 +62,21 @@ class Reply:
     output_tokens: int = 0
     stop: str = "end_turn"
     """`end_turn`, `tool_use`, `max_tokens` or `interrupted`."""
+
+
+@dataclass(frozen=True, slots=True)
+class Status:
+    """The local model as the window shows it: in memory or not, and what it is doing."""
+
+    state: LocalLoad = "unloaded"
+    weights_bytes: int | None = None
+    """The memory the loaded weights hold."""
+    cache_bytes: int = 0
+    """The memory the kept prompts hold (`prompt_cache`)."""
+    reading: tuple[int, int] | None = None
+    """While a long prompt is read before the first word: tokens read and to read."""
+    problem: str | None = None
+    """Why the last load failed."""
 
 
 def openai_tools(specs: list[ToolSpec]) -> list[dict[str, Any]]:

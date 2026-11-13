@@ -1,5 +1,8 @@
 """`LocalVoice`: the models, the audio ends and the loop, as one `Voice`.
 
+The microphone opens and closes as the listening mode asks (`Ears`); the mode
+changes with `listen()` at once, without loading anything again.
+
 While it runs it also lends its models to the phone channel (`transcribe`,
 `synthesize`), on the same worker thread, so no model runs twice at once.
 """
@@ -7,6 +10,7 @@ While it runs it also lends its models to the phone channel (`transcribe`,
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import time
 from collections.abc import Callable
@@ -16,8 +20,10 @@ from typing import Protocol
 import numpy as np
 
 from vision.core.bus import Bus
-from vision.core.events import Notice
+from vision.core.events import ListenMode, MicState, Notice
 from vision.voice.audio_io import AudioSink, AudioSource
+from vision.voice.bluetooth import SETTLE_S
+from vision.voice.ears import Ears
 from vision.voice.errors import VoiceUnavailable
 from vision.voice.loop import VoiceLoop
 from vision.voice.on_disk import ModelMissing, require
@@ -87,6 +93,8 @@ class LocalVoice:
         source: AudioSource,
         sink: AudioSink,
         models: ModelLoader,
+        on_mic: Callable[[MicState], None] = lambda mic: None,
+        one_headset: Callable[[], bool] = lambda: False,
     ) -> None:
         self.bus = bus
         self.settings = settings
@@ -96,6 +104,10 @@ class LocalVoice:
         self._worker = Worker()
         self._speaker = TtsSpeaker(bus, sink, self._worker.run)
         self.loop: VoiceLoop | None = None
+        self.ears: Ears | None = None
+        self._on_mic = on_mic
+        self._one_headset = one_headset
+        """Blocking: whether the microphone and speakers are one Bluetooth headset."""
         self._loaded: Models | None = None
         self._tasks: list[asyncio.Task[None]] = []
 
@@ -103,33 +115,53 @@ class LocalVoice:
     def speaker(self) -> TtsSpeaker:
         return self._speaker
 
+    @property
+    def mic(self) -> MicState:
+        return self.ears.mic if self.ears is not None else "closed"
+
+    @property
+    def mic_problem(self) -> str | None:
+        return self.ears.problem if self.ears is not None else None
+
+    def listen(self, mode: ListenMode) -> None:
+        """Change when the microphone is open, now; before `start()`, from then on."""
+        self.settings = dataclasses.replace(self.settings, listen=mode)
+        if self.ears is not None:
+            self.ears.set_mode(mode)
+
     async def start(self) -> None:
         if not self.settings.enabled:
             raise VoiceUnavailable("Voice is turned off: [voice] enabled = false in config.toml.")
+        ears: Ears | None = None
         try:
             models = await self._worker.run(self._models)
             await asyncio.to_thread(self.sink.open)
-            await self.source.open()
+            loop = VoiceLoop(
+                self.bus,
+                self.settings,
+                models.detector,
+                models.transcriber,
+                self._speaker,
+                self._worker.run,
+            )
+            ears = Ears(self.source, loop, on_mic=self._on_mic, on_problem=self._said)
+            await ears.start()
         except BaseException:
+            if ears is not None:
+                await ears.stop()
             self._worker.close()
             raise
+        loop.on_ptt = ears.ptt
+        if await asyncio.to_thread(self._one_headset):
+            ears.settle_s = SETTLE_S
+            log.info("the microphone and speakers are one Bluetooth headset")
+        self._speaker.before_speaking = ears.quiet
         self._speaker.use(models.synth)
         self._loaded = models
+        self.loop, self.ears = loop, ears
         if models.degraded is not None:
             self.bus.publish(Notice(level="warn", text=models.degraded))
-        self.loop = VoiceLoop(
-            self.bus,
-            self.settings,
-            self.source,
-            models.detector,
-            models.transcriber,
-            self._speaker,
-            self._worker.run,
-        )
-        self._tasks = [
-            asyncio.create_task(self.loop.watch(), name="voice-watch"),
-            asyncio.create_task(self._listen(self.loop), name="voice-listen"),
-        ]
+        self._tasks = [asyncio.create_task(loop.watch(), name="voice-watch")]
 
     async def transcribe(self, audio: np.ndarray) -> str:
         """Text for 16 kHz mono float32 audio, on the model worker. Only while started."""
@@ -146,12 +178,8 @@ class LocalVoice:
             raise VoiceUnavailable("Voice is not running.")
         return self._loaded
 
-    async def _listen(self, loop: VoiceLoop) -> None:
-        try:
-            await loop.listen()
-        except Exception:
-            log.exception("the voice loop failed; voice input is off")
-            await self.source.close()
+    def _said(self, problem: str) -> None:
+        self.bus.publish(Notice(level="warn", text=f"{problem} Hold to talk tries the microphone again."))
 
     async def stop(self) -> None:
         await self._speaker.stop()
@@ -159,6 +187,9 @@ class LocalVoice:
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks = []
+        if self.ears is not None:
+            await self.ears.stop()
+            self.ears = None
         await self.source.close()
         self._loaded = None
         self._worker.close()

@@ -19,6 +19,8 @@ from vision.core import effort
 from vision.core.config import MAX_AWAY_S, MIN_AWAY_S, Config, PathsConfig
 from vision.gate.policy import NEVER_FREE
 from vision.memory import profile
+from vision.projects.names import RootProblem, projects_root
+from vision.voice.settings import LISTEN_MODES, LISTENING_MODES
 
 KOKORO_VOICES = (
     "af_heart",
@@ -39,9 +41,11 @@ MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,99}$")
 HF_REPO = re.compile(r"^[A-Za-z0-9][\w.-]{0,95}/[\w.-]{1,95}$")
 SERVER_URL = re.compile(r"^https?://[A-Za-z0-9.\-\[\]:]+(/[\w./-]*)?$")
 LOCAL_BACKENDS = ("mlx", "openai")
+KEEP_LOADED = ("idle", "always")
 MAX_CAP_USD = 1_000_000.0
 MAX_FOLLOWUP_S = 300.0
 DEVICE_MAX = 200
+PATH_MAX = 1024
 MIN_JOB_TIMEOUT_S = 30.0
 MAX_JOB_TIMEOUT_S = 14_400.0
 MAX_JOB_USD = 50.0
@@ -56,11 +60,14 @@ CONFIG_KEYS: dict[str, tuple[str, str]] = {
     "models.offline": ("brain", "offline"),
     "models.local_backend": ("brain", "local_backend"),
     "models.local_server": ("brain", "local_base_url"),
+    "models.local_keep": ("brain", "local_keep_loaded"),
     "budget.cap_usd": ("budget", "monthly_cap_usd"),
     "voice.input_device": ("voice", "input_device"),
     "voice.output_device": ("voice", "output_device"),
     "voice.tts_voice": ("voice", "tts_voice"),
     "voice.followup_s": ("voice", "followup_window_s"),
+    "voice.listen": ("voice", "listen"),
+    "voice.listening": ("voice", "listening"),
     "setup.completed": ("assistant", "setup_completed"),
     "jobs.max_running": ("jobs", "max_running"),
     "jobs.max_steps": ("jobs", "max_steps"),
@@ -68,6 +75,7 @@ CONFIG_KEYS: dict[str, tuple[str, str]] = {
     "jobs.max_job_usd": ("jobs", "max_job_usd"),
     "jobs.speak_results": ("jobs", "speak_results"),
     "presence.away_after_s": ("presence", "away_after_s"),
+    "projects.root": ("projects", "root"),
 }
 """Dotted field -> (section, key) in config.toml. Gate tiers go to `[gate.tiers]`."""
 
@@ -127,6 +135,12 @@ def _backend(value: Any) -> str:
     return str(value)
 
 
+def _keep(value: Any) -> str:
+    if value not in KEEP_LOADED:
+        raise _Bad("Keep the local model ready for a while after its last use (idle) or always.")
+    return str(value)
+
+
 def _server(value: Any) -> str:
     text = value.strip() if isinstance(value, str) else ""
     if not SERVER_URL.match(text):
@@ -160,6 +174,18 @@ def _followup(value: Any) -> float:
     return float(value)
 
 
+def _listen(value: Any) -> str:
+    if value not in LISTEN_MODES:
+        raise _Bad("When it listens is hold (only while you hold to talk), wake (for its name) or always.")
+    return str(value)
+
+
+def _listening(value: Any) -> str:
+    if value not in LISTENING_MODES:
+        raise _Bad("The listening mode is wake or always.")
+    return str(value)
+
+
 def _whole(what: str, low: int, high: int) -> Callable[[Any], int]:
     def check(value: Any) -> int:
         if not isinstance(value, int) or isinstance(value, bool) or not low <= value <= high:
@@ -188,6 +214,18 @@ def _away_after(value: Any) -> float:
     if not _is_number(value) or not MIN_AWAY_S <= value <= MAX_AWAY_S:
         raise _Bad(f"The away time must be a number of seconds from {MIN_AWAY_S:g} to {MAX_AWAY_S:g}.")
     return float(value)
+
+
+def _projects_root(value: Any) -> str:
+    """Where new projects go: an existing folder of its own, kept as the owner wrote it."""
+    text = value.strip() if isinstance(value, str) else ""
+    if not text or len(text) > PATH_MAX or "\0" in text:
+        raise _Bad("Choose the folder new projects go in, such as ~/Projects.")
+    try:
+        projects_root(text)
+    except RootProblem as exc:
+        raise _Bad(str(exc)) from None
+    return text
 
 
 def _flag(value: Any) -> bool:
@@ -225,6 +263,7 @@ SECTIONS: dict[str, dict[str, Callable[[Any], Any]]] = {
         "offline": _flag,
         "local_backend": _backend,
         "local_server": _server,
+        "local_keep": _keep,
     },
     "budget": {"cap_usd": _cap},
     "voice": {
@@ -232,6 +271,8 @@ SECTIONS: dict[str, dict[str, Callable[[Any], Any]]] = {
         "output_device": _device,
         "tts_voice": _tts_voice,
         "followup_s": _followup,
+        "listen": _listen,
+        "listening": _listening,
     },
     "setup": {"completed": _flag},
     "owner": {part: _owner(part) for part in profile.FIELDS},
@@ -243,6 +284,7 @@ SECTIONS: dict[str, dict[str, Callable[[Any], Any]]] = {
         "speak_results": _flag,
     },
     "presence": {"away_after_s": _away_after},
+    "projects": {"root": _projects_root},
 }
 
 

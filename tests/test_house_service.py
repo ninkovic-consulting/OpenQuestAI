@@ -39,6 +39,7 @@ ROOM_KEYS = {
     "floor",
     "wall",
     "tools",
+    "project",
     "state",
 }
 
@@ -96,6 +97,7 @@ def test_plan_shape_and_first_use(config: Config) -> None:
         "agent": "host",
         "model": "claude-haiku-5-5",
         "folders": [],
+        "project": None,
         "floor": "red-carpet",
         "wall": "teal-panel",
         "tools": [
@@ -120,6 +122,7 @@ def test_plan_shape_and_first_use(config: Config) -> None:
                 ("list_jobs", "List jobs"),
                 ("job_details", "Look at a job"),
                 ("cancel_job", "Cancel a job"),
+                ("start_project", "Start a new project"),
                 ("update_profile", "Update what it knows about you"),
                 ("list_documents", "List documents"),
                 ("read_document", "Read a document"),

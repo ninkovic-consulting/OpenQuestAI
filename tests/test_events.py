@@ -16,10 +16,11 @@ from vision.core.events import (
 SAMPLES: dict[str, dict[str, Any]] = {
     "state.changed": {"state": "thinking", "brain": "claude"},
     "budget": {"month": "2026-11", "spent_usd": 1.25, "cap_usd": 150.0},
-    "user.utterance": {"text": "What time is it?", "source": "voice", "images": []},
+    "user.utterance": {"text": "What time is it?", "source": "voice", "images": [], "ids": []},
     "vision.delta": {"text": "It is"},
-    "vision.reply": {"text": "It is noon.", "turn_id": "abc123"},
+    "vision.reply": {"text": "It is noon.", "turn_id": "abc123", "status": "interrupted"},
     "voice.level": {"level": 0.42},
+    "voice.listen": {"mode": "hold", "mic": "opening", "voice": True, "listening": "always", "shell_free": False},
     "room.state": {"room": "hall", "state": "active"},
     "gate.request": {
         "id": "g1",
@@ -40,6 +41,11 @@ SAMPLES: dict[str, dict[str, Any]] = {
         "local_model": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
         "local_tools": True,
         "local_images": False,
+        "local_state": "ready",
+        "local_bytes": 2_263_000_000,
+        "local_cache_bytes": 310_000_000,
+        "local_reading": [1200, 3400],
+        "local_problem": None,
     },
     "house.changed": {"revision": 3},
     "automation.changed": {
@@ -75,11 +81,19 @@ SAMPLES: dict[str, dict[str, Any]] = {
     "procedure.changed": {"owner": "maker", "name": "release-the-shop", "change": "saved"},
     "proposal.changed": {"id": "a1b2c3d4", "kind": "tool", "status": "waiting", "agent": "maker", "waiting": 1},
     "made_tool.changed": {"name": "count_lines", "change": "disabled", "enabled": False},
+    "queue.changed": {
+        "items": [
+            {"id": "m1", "preview": "And the tests?", "images": 0, "source": "text", "at": 1731400010.0},
+            {"id": "p1", "preview": "The phone's.", "images": 2, "source": "phone", "at": 1731400011.0},
+        ]
+    },
     "notice": {"level": "warn", "text": "Voice is off."},
     "hello": {"token": "t0k"},
-    "input.text": {"text": "hello", "images": []},
+    "input.text": {"text": "hello", "images": [], "now": True, "id": "m1"},
     "input.ptt": {"down": True},
     "input.interrupt": {},
+    "input.take_back": {"id": "m1"},
+    "input.send_now": {"id": "m1"},
     "gate.decision": {"id": "g1", "decision": "allow"},
 }
 
@@ -88,7 +102,15 @@ def test_every_type_has_a_sample() -> None:
     assert set(SAMPLES) == set(EVENT_TYPES)
     assert OUTBOUND_TYPES | INBOUND_TYPES == set(EVENT_TYPES)
     assert not OUTBOUND_TYPES & INBOUND_TYPES
-    assert INBOUND_TYPES == {"hello", "input.text", "input.ptt", "input.interrupt", "gate.decision"}
+    assert INBOUND_TYPES == {
+        "hello",
+        "input.text",
+        "input.ptt",
+        "input.interrupt",
+        "input.take_back",
+        "input.send_now",
+        "gate.decision",
+    }
 
 
 @pytest.mark.parametrize("type_", sorted(SAMPLES))

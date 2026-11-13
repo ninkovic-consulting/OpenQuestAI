@@ -30,6 +30,7 @@ from vision.house.model import (
     Room,
     RoomKind,
 )
+from vision.house.project import room_project
 from vision.house.tools import check_tool_ids, with_built_ins
 
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -47,6 +48,7 @@ ROOM_KEYS = {
     "floor",
     "wall",
     "tools",
+    "project",
 }
 PLACE_KEYS = ("at", "size", "shape")
 
@@ -229,6 +231,7 @@ def _room(table: dict[str, Any], kind: RoomKind, agents: dict[str, Agent]) -> Ro
         floor=floor,
         wall=wall,
         tools=check_tool_ids(table["tools"], where) if "tools" in table else None,
+        project=room_project(table, where),
     )
 
 
@@ -289,13 +292,8 @@ def _extra_id(table: dict[str, Any], taken: set[str]) -> str:
 def _no_unknown_keys(table: dict[str, Any], allowed: set[str], where: str) -> None:
     unknown = sorted(set(table) - allowed)
     if unknown:
-        hint = (
-            ' A room lists its project folders as folders = ["~/Projects/shop"].'
-            if unknown[0] == "project" and "folders" in allowed
-            else ""
-        )
         raise HouseError(
-            f"{where}: unknown setting {unknown[0]!r}. Allowed: {', '.join(sorted(allowed))}.{hint}"
+            f"{where}: unknown setting {unknown[0]!r}. Allowed: {', '.join(sorted(allowed))}."
         )
 
 

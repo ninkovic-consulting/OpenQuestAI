@@ -15,6 +15,9 @@ import { sanitizeModel } from "./sanitize";
 import type { Spot } from "./spot";
 
 /** Where a figure stands: a room, a spot on its floor, and the room's group, whose rise it follows. */
+/** What a figure did in a frame: nothing to see, played a clip in place, or moved across the floor (or faded). */
+export type FigureMotion = "none" | "animating" | "moving";
+
 export interface Placement {
   room: string;
   x: number;
@@ -141,7 +144,10 @@ export class Resident {
   }
 
   /** Advance the fades and the pacing; `animate` false skips the skeleton, for a figure no one can see. */
-  update(dt: number, animate: boolean): void {
+  update(dt: number, animate: boolean): FigureMotion {
+    const x = this.root.position.x;
+    const z = this.root.position.z;
+    const opacity = this.opacity;
     if (this.next) {
       this.fade(-dt / FADE_S);
       if (this.opacity === 0) {
@@ -162,7 +168,10 @@ export class Resident {
       this.move(dt);
     }
     if (this.placement) this.root.position.y = this.placement.group.position.y;
-    if (animate && this.root.visible) this.mixer.update(dt);
+    if (!animate || !this.root.visible) return opacity !== this.opacity ? "moving" : "none";
+    this.mixer.update(dt);
+    const moved = x !== this.root.position.x || z !== this.root.position.z || opacity !== this.opacity || this.next !== null;
+    return moved ? "moving" : "animating";
   }
 
   /** Pace while working; stand where it is while waiting; at its spot otherwise. */

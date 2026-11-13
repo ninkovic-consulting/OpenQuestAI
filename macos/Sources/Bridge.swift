@@ -49,6 +49,8 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
             openHouse: () => call("openHouse"),
             fitWidget: (height, handle) =>
               call("fitWidget", [Number(height), Array.isArray(handle) ? handle.map(Number) : []]),
+            goToBackground: () => call("goToBackground"),
+            safeAreaTop: () => call("safeAreaTop"),
           });
           Object.defineProperty(window, "pywebview", { value: Object.freeze({ api }) });
         })();
@@ -119,6 +121,12 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
         case "openHouse":
             try background().openHouse()
             return true
+        case "goToBackground":
+            try background().goToBackground()
+            return true
+        case "safeAreaTop":
+            guard let window = webView?.window else { return 0 }
+            return Double(SafeArea.top(of: window))
         case "fitWidget":
             let height = (args.first as? NSNumber)?.doubleValue ?? 0
             let handle = (args.dropFirst().first as? [NSNumber] ?? []).map(\.doubleValue)

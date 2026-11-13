@@ -15,9 +15,13 @@ from typing import Any
 
 
 def current() -> list[dict[str, Any]]:
-    """Every device with its channel counts and whether it is a system default."""
+    """Every device with its channel counts, whether it is a system default, and whether it is
+    connected over Bluetooth (`bluetooth.py`)."""
     import sounddevice
 
+    from vision.voice.bluetooth import bluetooth_names
+
+    bluetooth = bluetooth_names()
     default_in, default_out = sounddevice.default.device
     return [
         {
@@ -26,6 +30,7 @@ def current() -> list[dict[str, Any]]:
             "outputs": int(dev["max_output_channels"]),
             "default_input": index == default_in,
             "default_output": index == default_out,
+            "bluetooth": str(dev["name"]) in bluetooth,
         }
         for index, dev in enumerate(sounddevice.query_devices())
     ]

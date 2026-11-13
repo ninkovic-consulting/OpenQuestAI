@@ -4,9 +4,11 @@ import { MockLocal } from "../../net/mock-local";
 import { MockSettings } from "../../net/mock-settings";
 import { samplePlan } from "../../net/sample-plan";
 import type { ModelListing } from "../../net/settings-types";
+import { asBrainMode } from "../../net/brain-guards";
 import { jobModelName, localShort, offlineMark, offlineTitle } from "../mode";
 import { buildPatch, draftFrom, fieldLabel } from "./draft";
 import { droppedWords, fallbackLevel, levelsFor } from "./effort";
+import { loadLine } from "./local-load";
 import { anyRunning, chosenSize, chosenTitle, deleteBlock, deleteQuestion, downloadOf, fitTone, fitWords, inUse, memoryLine, offersDownload, orderBySize, toolsWords } from "./local-words";
 
 const QWEN4 = "mlx-community/Qwen3-4B-Instruct-2507-4bit";
@@ -129,6 +131,26 @@ describe("offline mode in words", () => {
     expect(offlineMark({ ...mode, offline: false })).toBeNull();
     expect(offlineMark(null)).toBeNull();
     expect(offlineTitle(mode)).toContain("cannot use tools");
+  });
+
+  it("says the model is loading or reading before its first word, there and in Settings", () => {
+    const loading = { ...mode, local_state: "loading" } as const;
+    expect(offlineMark(loading)).toBe("offline · Qwen3-4B-Instruct-2507 · loading");
+    expect(offlineTitle(loading)).toContain("a message sent now waits for it");
+    expect(loadLine(loading, "Qwen3 4B")).toEqual({ tone: "idle", text: "Loading Qwen3 4B into memory. A message sent now waits for it." });
+    const reading = { ...mode, local_state: "ready", local_reading: [0, 3200] } as const;
+    expect(offlineMark(reading)).toBe("offline · Qwen3-4B-Instruct-2507 · reading");
+    expect(loadLine(reading, "Qwen3 4B")?.text).toBe("Reading the conversation before the first word: 0 of 3,200 tokens.");
+    const ready = { ...mode, local_state: "ready", local_bytes: 2_260_000_000, local_cache_bytes: 310_000_000, local_reading: null } as const;
+    expect(offlineMark(ready)).toBe("offline · Qwen3-4B-Instruct-2507");
+    expect(loadLine(ready, "Qwen3 4B")).toEqual({ tone: "ok", text: "In memory and ready: 2.3 GB of memory, and 310 MB of conversation already read." });
+    const failed = { ...mode, local_state: "failed", local_problem: "It could not be loaded. Choose another." } as const;
+    expect(offlineMark(failed)).toBe("offline · Qwen3-4B-Instruct-2507 · not loaded");
+    expect(loadLine(failed, "Qwen3 4B")).toEqual({ tone: "bad", text: "It could not be loaded. Choose another." });
+    expect(loadLine({ ...mode, offline: false, local_state: "unloaded" }, "Qwen3 4B")?.text).toContain("loads for the first message");
+    expect(loadLine({ ...ready, local_backend: "openai" }, "x")).toBeNull();
+    expect(asBrainMode(ready)).not.toBeNull();
+    expect(asBrainMode({ ...ready, local_reading: [1] })).toBeNull();
   });
 
   it("names the model a job ran on, and keeps quiet before it started", () => {

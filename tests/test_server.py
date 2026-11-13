@@ -14,7 +14,7 @@ from websockets.exceptions import ConnectionClosed, InvalidStatus
 from vision.app import Components, Daemon
 from vision.core.bus import Bus
 from vision.core.config import Config
-from vision.core.events import Hello, InputText
+from vision.core.events import Hello, InputPtt, InputText
 from vision.core.server import WEB_DIST, allowed_origins
 from vision.core.token import ensure_token
 from vision.testing.fakes import FakeHouse
@@ -176,3 +176,14 @@ async def test_widget_page_is_served_beside_the_house(
         assert "house" in house.text and "widget" in widget.text
         foreign = await client.get("/widget.html", headers={"Origin": "http://evil.example"})
         assert foreign.status_code == 403
+
+
+async def test_a_window_that_goes_away_while_holding_to_talk_lets_go(daemon: Daemon) -> None:
+    presses = daemon.bus.subscribe({InputPtt.TYPE})
+    async with connect(f"ws://127.0.0.1:{daemon.port}/ws", origin=base(daemon)) as ws:  # type: ignore[arg-type]
+        await ws.send(Hello(token=daemon.token).to_json())
+        await ws.send(InputPtt(down=True).to_json())
+        first = await asyncio.wait_for(presses.get(), 2)
+    after = await asyncio.wait_for(presses.get(), 2)
+    assert isinstance(first, InputPtt) and first.down
+    assert isinstance(after, InputPtt) and not after.down

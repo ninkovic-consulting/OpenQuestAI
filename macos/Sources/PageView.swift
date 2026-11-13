@@ -12,6 +12,8 @@ final class PageView: NSObject, WKNavigationDelegate, WKUIDelegate {
     private let settings: Settings
     private let url: URL
     var onLoadFailed: (String) -> Void = { _ in }
+    /// The page finished loading (again, after a crash too).
+    var onLoaded: () -> Void = {}
 
     /// `path` is the page on the daemon's origin: `/` for the house, `/widget.html` for the widget.
     /// `makeView` builds the web view from its configuration.
@@ -73,6 +75,10 @@ final class PageView: NSObject, WKNavigationDelegate, WKUIDelegate {
             NSWorkspace.shared.open(url)
         }
         decisionHandler(.cancel)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        onLoaded()
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

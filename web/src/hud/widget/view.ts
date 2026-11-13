@@ -1,7 +1,10 @@
 // The widget: the Mac app's small floating window onto the assistant. The
 // name and state on top (the panel is dragged by them), a request waiting for
-// a yes, the latest exchange, and the message field with hold to talk. It
-// shares the house's store, connection, composer, keys and gate card; the
+// a yes, the latest exchange, what waits for the reply to end, and the message
+// field with Stop and hold to talk. Enter queues while the assistant answers
+// and Cmd+Enter sends at once, as in the house (chat/queue.ts). It
+// shares the house's store, connection, composer, keys, gate card and quick
+// listening control; the
 // shell sizes its panel to this page and calls `window.visionWidget` from its
 // global shortcuts.
 
@@ -15,11 +18,14 @@ import { makeComposer } from "../chat/composer";
 import type { HistoryTurn } from "../chat/entries";
 import { asTurns } from "../chat/history";
 import { routeKey } from "../chat/keys";
+import { answering, FULL_LINE, newMessageId, queueFull, queues } from "../chat/queue";
 import { SentLog } from "../chat/recall";
 import { Talk } from "../chat/talk";
 import { el, setText } from "../dom";
 import { mountGate } from "../gate";
-import { type Exchange, placeholder, replyRestarted, widgetView } from "./model";
+import { fieldPrompt, talkLabel } from "../listen";
+import { mountListenSwitch } from "../listen-switch";
+import { type Exchange, replyRestarted, widgetView } from "./model";
 
 /** What the shell calls: the summon shortcut, and push to talk held or let go. */
 export interface WidgetHooks {
@@ -60,6 +66,7 @@ export function mountWidget(parent: HTMLElement, store: Store, daemon: Daemon, p
   hide.addEventListener("click", () => void native.showWidget?.(false));
   actions.append(house, hide);
   head.append(id, actions);
+  const listen = el("div", "w-listen");
 
   const gateSlot = el("div", "w-gate");
   const exchange = el("section", "w-exchange");
@@ -70,6 +77,15 @@ export function mountWidget(parent: HTMLElement, store: Store, daemon: Daemon, p
   reply.tabIndex = 0;
   const status = el("p", "w-status caps");
   exchange.append(who, user, reply, status);
+  // What waits and Stop share one line: the field below keeps its width in the narrow panel.
+  const busy = el("div", "w-busy");
+  const waiting = el("p", "w-waiting caps");
+  waiting.setAttribute("aria-live", "polite");
+  const stop = button("w-stop caps", "", "Stop the reply");
+  stop.append(el("span", "dot"), "Stop");
+  stop.addEventListener("mousedown", (ev) => ev.preventDefault());
+  stop.addEventListener("click", () => daemon.send(envelope("input.interrupt", {})));
+  busy.append(waiting, stop);
 
   let pending: string | null = null;
   let pendingImages = 0;
@@ -80,14 +96,15 @@ export function mountWidget(parent: HTMLElement, store: Store, daemon: Daemon, p
     daemon.send(envelope("input.ptt", { down }));
     render();
   });
-  const composer = makeComposer(talk);
+  const composer = makeComposer(talk, () => daemon.send(envelope("input.interrupt", {})));
   const { field } = composer;
   const compose = el("div", "w-compose");
   compose.append(composer.row);
   const attach = mountAttach(composer, store, imageSource(daemon.images));
 
-  root.append(head, gateSlot, exchange, compose);
+  root.append(head, listen, gateSlot, exchange, busy, compose);
   parent.append(root);
+  mountListenSwitch(listen, store, daemon.settings);
   mountGate(gateSlot, store, daemon);
 
   function render(): void {
@@ -97,8 +114,8 @@ export function mountWidget(parent: HTMLElement, store: Store, daemon: Daemon, p
     setText(name, v.name);
     setText(word, v.state);
     document.title = v.name || document.title;
-    field.placeholder = placeholder(v.name);
-    composer.setListening(v.state === "listening");
+    composer.setTalk(talkLabel(s.listen, talk.held, v.name, true), v.state === "listening");
+    composer.setPrompt(fieldPrompt(s.listen, v.name, true));
     exchange.hidden = v.exchange === null;
     if (v.exchange) {
       setText(who, v.exchange.who);
@@ -110,6 +127,12 @@ export function mountWidget(parent: HTMLElement, store: Store, daemon: Daemon, p
       setText(status, v.exchange.status);
       status.hidden = v.exchange.status === "";
     }
+    const working = answering(s.assistant);
+    busy.hidden = v.waiting === null && !working;
+    waiting.hidden = v.waiting === null;
+    setText(waiting, v.waiting ?? "");
+    stop.hidden = !working;
+    composer.setBusy(queues(s), false);
     if (replyRestarted(shown, v.exchange)) reply.scrollTop = 0;
     shown = v.exchange;
     more();
@@ -133,16 +156,28 @@ export function mountWidget(parent: HTMLElement, store: Store, daemon: Daemon, p
   });
 
   const log = new SentLog();
-  const send = (): void => {
+  /** As in the house: at once when the assistant is free, else it waits; `now` stops the reply and sends. */
+  const send = (now: boolean): void => {
+    const s = store.get();
+    const busy = queues(s);
+    if (busy && !now && queueFull(s.queue)) return store.dispatch({ kind: "toast", level: "warn", text: FULL_LINE });
     const text = field.value.trim();
     // Nothing to send, or images that cannot go yet: the box says why.
     const images = attach.take(text);
     if (images === null) return;
-    const message = envelope("input.text", images.length > 0 ? { text, images: images.map((i) => i.id) } : { text });
+    const message = envelope("input.text", {
+      text,
+      id: newMessageId(),
+      ...(images.length > 0 ? { images: images.map((i) => i.id) } : {}),
+      ...(now && busy ? { now: true } : {}),
+    });
     // Not connected: the daemon client says so, and the draft stays.
-    if (store.get().connection !== "open") return daemon.send(message);
-    pending = text;
-    pendingImages = images.length;
+    if (s.connection !== "open") return daemon.send(message);
+    // A message that waits shows in the waiting line, not as the latest exchange.
+    if (!busy) {
+      pending = text;
+      pendingImages = images.length;
+    }
     daemon.send(message);
     if (text) log.remember(text);
     field.value = "";
@@ -158,12 +193,13 @@ export function mountWidget(parent: HTMLElement, store: Store, daemon: Daemon, p
   field.addEventListener("keydown", (ev) => {
     const action = routeKey(
       { key: ev.key, code: ev.code, shift: ev.shiftKey, ctrl: ev.ctrlKey, meta: ev.metaKey, alt: ev.altKey, composing: ev.isComposing },
-      { focus: "field", overlay: false, fieldEmpty: field.value === "", speaking: store.get().assistant === "speaking" },
+      { focus: "field", overlay: false, fieldEmpty: field.value === "", answering: answering(store.get().assistant) },
     );
     switch (action.kind) {
       case "send":
+      case "send-now":
         ev.preventDefault();
-        return send();
+        return send(action.kind === "send-now");
       case "recall":
         ev.preventDefault();
         field.value = log.recall();

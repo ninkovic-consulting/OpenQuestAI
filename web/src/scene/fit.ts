@@ -69,11 +69,14 @@ export function fitView(points: THREE.Vector3[], dir: THREE.Vector3, fovY: numbe
   return { target, distance };
 }
 
+/** Scratch for `screenBand`, which runs every frame. */
+const bandPoint = new THREE.Vector3();
+
 /** Where the points sit vertically on screen; null when one is behind the camera, so the span is unknown. */
 export function screenBand(points: THREE.Vector3[], camera: THREE.Camera): ScreenBand | null {
   let lo = Infinity;
   let hi = -Infinity;
-  const v = new THREE.Vector3();
+  const v = bandPoint;
   for (const p of points) {
     v.copy(p).applyMatrix4(camera.matrixWorldInverse);
     if (v.z >= 0) return null;

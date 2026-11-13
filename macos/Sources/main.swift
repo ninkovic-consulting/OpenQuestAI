@@ -32,6 +32,7 @@ MainActor.assumeIsolated {
     let app = NSApplication.shared
     let delegate = AppDelegate(settings: settings, selfTest: selfTest)
     app.delegate = delegate
-    app.setActivationPolicy(.regular)
+    // In the menu bar only until the house opens (`AppDelegate.openWindow`).
+    app.setActivationPolicy(.accessory)
     withExtendedLifetime(delegate) { app.run() }
 }

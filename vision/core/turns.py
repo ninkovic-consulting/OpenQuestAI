@@ -13,6 +13,13 @@ paired phone says it came from there, and a job report says a resident's
 work ended and that nobody asked anything. The same goes for the short summary
 of the house: it rides on the user's message, so the cached prefix never
 changes.
+
+Two notes ride on the message too, on that turn only. When several messages
+waited while the assistant was busy and go as one turn, it is told so
+(`waited_note`): they may add to or correct what it just said. When the
+owner cut the last reply off, the next turn says what they heard of it
+(`cut_note`), so the assistant neither repeats it nor carries on as if it had
+finished.
 """
 
 from __future__ import annotations
@@ -63,13 +70,74 @@ def mentions_time(text: str) -> bool:
 
 
 def brain_text(
-    text: str, origin: TurnOrigin, now: datetime, surroundings: str = "", *, images: int = 0
+    text: str,
+    origin: TurnOrigin,
+    now: datetime,
+    surroundings: str = "",
+    *,
+    images: int = 0,
+    waited: int = 0,
+    cut: str = "",
 ) -> str:
     """What the brain is sent for this turn: the words, with the local time when it helps,
     and `surroundings` (a few lines about the house) when the session has new ones. A message
-    of `images` with no words is put as the owner sending them, so the brain is asked about them."""
+    of `images` with no words is put as the owner sending them, so the brain is asked about them.
+    `waited` counts the messages that waited and go together (`waited_note`); `cut` is the
+    note about the reply the owner cut off (`cut_note`), or empty."""
     said = _with_time(text or image_only(images), origin, now)
+    notes = [n for n in (cut, waited_note(waited, origin.source)) if n]
+    if notes:
+        said = f"{said}\n\n" + "\n".join(notes)
     return f"{said}\n\n[{surroundings}]" if surroundings else said
+
+
+def waited_note(count: int, source: str) -> str:
+    """Says the words came while the assistant was busy. Typed at the Mac they came while it
+    replied, even one; from the phone only several sent in a row need it."""
+    if source == "phone":
+        if count < 2:
+            return ""
+        return (
+            f"[The owner sent these {count} messages one after another while you were busy, in "
+            "this order. Answer them together, in one reply: a later one may add to or correct "
+            "an earlier one.]"
+        )
+    if count < 1:
+        return ""
+    if count == 1:
+        return (
+            "[The owner wrote this while you were replying. It may add to or correct what you "
+            "just said.]"
+        )
+    return (
+        f"[The owner wrote these {count} messages while you were replying, in this order. Answer "
+        "them together, in one reply: they may add to or correct what you just said.]"
+    )
+
+
+CUT_WORDS = 25
+"""How much of a cut reply the note quotes: its last words, where the owner stopped hearing."""
+
+
+def cut_note(heard: str, asked: str) -> str:
+    """The note for the turn after the owner cut a reply off: what they heard of it, or,
+    when they heard nothing, what it was answering (the brain may not have kept that)."""
+    said = heard.split()
+    if said:
+        tail = " ".join(said[-CUT_WORDS:])
+        quoted = tail if len(said) <= CUT_WORDS else f"…{tail}"
+        return (
+            f'[The owner interrupted your last reply. They heard it only up to: "{quoted}". Do '
+            "not carry on from there or repeat it unless they ask; answer what follows.]"
+        )
+    words = asked.split()
+    if not words:
+        return "[The owner interrupted your last reply before they heard any of it.]"
+    quoted = " ".join(words[:CUT_WORDS]) + ("…" if len(words) > CUT_WORDS else "")
+    return (
+        f'[The owner interrupted you before you answered "{quoted}", so they heard no reply to '
+        "it. Answer what follows; take the earlier message up only if it still matters.]"
+    )
 
 
 def image_only(images: int) -> str:

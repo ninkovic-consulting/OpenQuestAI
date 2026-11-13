@@ -24,6 +24,34 @@ final class Supervisor {
     private var watcher: Task<Void, Never>?
     private(set) var phase: Phase = .starting { didSet { if phase != oldValue { onChange(phase) } } }
     var onChange: (Phase) -> Void = { _ in }
+    /// How the assistant listens, from the last poll; nil while it does not answer.
+    private(set) var listen: Listen? { didSet { if listen != oldValue { onListen(listen) } } }
+    var onListen: (Listen?) -> Void = { _ in }
+
+    /// The daemon's token while it answers.
+    var token: String? {
+        if case .ready(let token, _) = phase { return token }
+        return nil
+    }
+
+    /// Asks the daemon to listen in `mode`; nil when it did, else why not.
+    func setListen(_ mode: String) async -> String? {
+        guard let token else { return "\(settings.name) is not running." }
+        let refused = await client.setListen(mode, token: token)
+        if refused == nil { await refresh(token: token) }
+        return refused
+    }
+
+    /// Reads the state now rather than at the next poll.
+    func refresh() async {
+        if let token { await refresh(token: token) }
+    }
+
+    private func refresh(token: String) async {
+        guard let now = await client.assistantState(token: token) else { return }
+        phase = .ready(token: token, state: now.state)
+        listen = now.listen
+    }
 
     var startedDaemon: Bool { child != nil }
 
@@ -108,12 +136,14 @@ final class Supervisor {
         while !Task.isCancelled {
             try? await Task.sleep(for: Self.pollInterval)
             if Task.isCancelled { return }
-            if let state = await client.assistantState(token: token) {
+            if let now = await client.assistantState(token: token) {
                 misses = 0
-                phase = .ready(token: token, state: state)
+                phase = .ready(token: token, state: now.state)
+                listen = now.listen
             } else {
                 misses += 1
                 if misses >= 2 {
+                    listen = nil
                     phase = .stopped("\(settings.name) stopped answering.")
                     return
                 }
@@ -123,6 +153,7 @@ final class Supervisor {
 
     private func childExited(_ status: Int32) {
         child = nil
+        listen = nil
         watcher?.cancel()
         phase = .stopped("\(settings.name) stopped (exit status \(status)). Its log is \(settings.log.path).")
     }

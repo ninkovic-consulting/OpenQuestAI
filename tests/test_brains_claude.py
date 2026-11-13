@@ -12,6 +12,8 @@ import pytest
 from anthropic.types.beta import BetaMessage
 
 from vision.brains.claude import (
+    NOTHING_SAID,
+    OUT_OF_ROOM,
     FALLBACK_BETA,
     REFUSAL_LINE,
     ClaudeBrain,
@@ -250,6 +252,19 @@ async def test_refusal_is_spoken_and_partial_discarded(config: Config) -> None:
     assert events[-1].stop_reason == "refusal"
     assert events[:2] == [TextDelta("Part"), TextDelta(" " + REFUSAL_LINE)]
     assert brain._history[0][1]["content"][0]["text"] == REFUSAL_LINE
+
+
+async def test_a_reply_cut_at_the_limit_says_so(config: Config) -> None:
+    """Thinking counts toward the limit, so a turn can end with no words; silence looks like a fault."""
+    silent = message([], stop="max_tokens")
+    brain, _, _, _ = await make_brain(config, [StubStream([], silent)])
+    events = await collect(brain, "a long question")
+    assert events[0] == TextDelta(NOTHING_SAID) and events[-1].stop_reason == "max_tokens"
+
+    partial = message([{"type": "text", "text": "The first half"}], stop="max_tokens")
+    brain, _, _, _ = await make_brain(config, [StubStream(["The first half"], partial)])
+    events = await collect(brain, "a long question")
+    assert events[:2] == [TextDelta("The first half"), TextDelta(" " + OUT_OF_ROOM)]
 
 
 async def test_truncated_tool_call_is_not_run(config: Config) -> None:

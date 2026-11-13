@@ -10,6 +10,8 @@ import { pickedIds, type ToolPicks } from "../room-form";
 export interface RoomEdit {
   name: string;
   agent: string;
+  /** The project's name; "" for none. */
+  project: string;
   /** The room's project folders; the first is where programs run. */
   folders: string[];
   /** "" is the agent's own model. */
@@ -19,7 +21,7 @@ export interface RoomEdit {
 /** A room's values; a model equal to its agent's counts as the agent's own. */
 export function roomEditFrom(plan: Plan, room: Room): RoomEdit {
   const agent = plan.agents.find((a) => a.id === room.agent);
-  return { name: room.name, agent: room.agent, folders: [...room.folders], model: agent && room.model === agent.model ? "" : room.model };
+  return { name: room.name, agent: room.agent, project: room.project ?? "", folders: [...room.folders], model: agent && room.model === agent.model ? "" : room.model };
 }
 
 /** The Hall belongs to the host and keeps it. */
@@ -34,7 +36,8 @@ export function agentsFor(plan: Plan, room: Room): Agent[] {
 }
 
 /**
- * The body for `PATCH /api/house/rooms/{id}`. The folders go whole; detaching
+ * The body for `PATCH /api/house/rooms/{id}`. An emptied project name is sent
+ * as "", which clears it. The folders go whole; detaching
  * every folder clears the project tools too. Tools are sent when the folders
  * changed or a toggle was pressed, and only for a proposal of these folders.
  */
@@ -44,6 +47,7 @@ export function roomPatch(before: RoomEdit, edit: RoomEdit, picks: ToolPicks | n
   const folders = cleanFolders(edit.folders);
   const foldersChanged = !sameFolders(folders, before.folders);
   if (name !== before.name) patch.name = name;
+  if (edit.project.trim() !== before.project) patch.project = edit.project.trim();
   if (!hostRoom && edit.agent !== before.agent) patch.agent = edit.agent;
   if (edit.model !== before.model) patch.model = edit.model === "" ? null : edit.model;
   if (foldersChanged) patch.folders = folders;

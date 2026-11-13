@@ -35,9 +35,9 @@ from vision.house.tools import tool_refs
 log = logging.getLogger(__name__)
 
 POLL_S = 1.0
-ADD_KEYS = {"id", "name", "at", "size", "agent", "model", "folders", "floor", "wall", "tools"}
-EDIT_KEYS = {"name", "agent", "model", "folders", "floor", "wall", "at", "size", "tools"}
-CLEARABLE = {"model", "folders", "tools"}
+ADD_KEYS = {"id", "name", "at", "size", "agent", "model", "folders", "floor", "wall", "tools", "project"}
+EDIT_KEYS = {"name", "agent", "model", "folders", "floor", "wall", "at", "size", "tools", "project"}
+CLEARABLE = {"model", "folders", "tools", "project"}
 AGENT_EDIT_KEYS = {"name", "model", "effort", "heavy_effort"}
 
 Mutation = Callable[[dict[str, Any], Layout], str | None]
@@ -122,6 +122,7 @@ class GridHouse:
                     "floor": r.floor,
                     "wall": r.wall,
                     "tools": tool_refs(agents[r.agent].tools if r.tools is None else r.tools),
+                    "project": r.project,
                     "state": self._states.get(r.id, "idle" if r.id == HALL else "dark"),
                 }
                 for r in layout.rooms
@@ -173,7 +174,7 @@ class GridHouse:
             if fields.get("id") in {r.id for r in layout.rooms}:
                 raise HouseError(f"Room id {fields['id']!r} is already taken; ids must be unique.")
             _check_new_folders(fields, (), f"Room {fields.get('name', fields.get('id', '?'))!r}")
-            entry = {k: v for k, v in fields.items() if v is not None}
+            entry = {k: v for k, v in fields.items() if not _clears(k, v)}
             doc.setdefault("rooms", []).append(entry)
             return None
 
@@ -195,7 +196,7 @@ class GridHouse:
             _check_new_folders(fields, room.folders, f"Room {room.name!r}")
             entry = _entry(doc, room_id)
             for key, value in fields.items():
-                if value is None and key in CLEARABLE:
+                if _clears(key, value) and key in CLEARABLE:
                     entry.pop(key, None)
                 elif value is None:
                     raise HouseError(f"{key} cannot be empty.")
@@ -371,6 +372,11 @@ def _check_keys(fields: dict[str, Any], allowed: set[str]) -> None:
     unknown = sorted(set(fields) - allowed)
     if unknown:
         raise HouseError(f"Unknown setting {unknown[0]!r}. Allowed: {', '.join(sorted(allowed))}.")
+
+
+def _clears(key: str, value: Any) -> bool:
+    """Whether a sent value means "none": null, or for the project name an empty string."""
+    return value is None or (key == "project" and isinstance(value, str) and not value.strip())
 
 
 def _entry(doc: dict[str, Any], room_id: str) -> dict[str, Any]:

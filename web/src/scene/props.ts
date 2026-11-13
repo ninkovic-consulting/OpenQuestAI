@@ -78,8 +78,10 @@ export class Props {
     else this.talk.fadeOut(FADE_S);
   }
 
-  update(dt: number): void {
+  /** Play the host figure's clips; true while it is there to animate. */
+  update(dt: number): boolean {
     this.mixer?.update(dt);
+    return this.mixer !== null;
   }
 
   private async piece(name: Piece): Promise<THREE.Object3D> {

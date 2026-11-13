@@ -1,7 +1,12 @@
 // Post-processing and the signal streaks. One render pass, a guard that zeroes
 // non-finite colour, a tilt-shift for the miniature look, then bloom, tone
-// mapping, vignette and film grain in a single merged effect pass. The streaks are thin lines of light rising above
-// the host room whose brightness and speed follow the voice level.
+// mapping, vignette and film grain in a single merged effect pass. The
+// tilt-shift's blur and the bloom run at half the frame's resolution (a
+// quarter on Low). The tilt-shift keeps its own pass: merged with the bloom,
+// the bloom would read the unblurred frame and glow harder in the blurred
+// parts. The grain moves only when a frame is drawn. The streaks are thin
+// lines of light rising above the host room whose brightness and speed follow
+// the voice level.
 
 import {
   BloomEffect,
@@ -27,25 +32,39 @@ const SHARP_SHARE = 0.55;
 const FEATHER_SHARE = 0.5;
 /** Inside a room, or when the house is partly behind the camera, nearly the whole screen is sharp. */
 const ROOM_BAND: ScreenBand = { center: 0, half: 1.6 };
+/** The miniature blur this close to its target is there. */
+const BLUR_SETTLED = 0.001;
 
 export class Post {
   readonly composer: EffectComposer;
   private readonly tilt: TiltShiftEffect;
+  private readonly bloom: BloomEffect;
   private miniature = 1;
   private miniatureTarget = 1;
 
-  constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) {
-    this.composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType, multisampling: 4 });
+  constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, multisampling: number) {
+    this.composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType, multisampling });
     this.composer.addPass(new RenderPass(scene, camera));
     this.composer.addPass(new EffectPass(camera, new FiniteEffect()));
     this.tilt = new TiltShiftEffect({ focusArea: 0.5, feather: 0.32 });
-    this.composer.addPass(new EffectPass(camera, this.tilt));
-    const bloom = new BloomEffect({ luminanceThreshold: 0.9, luminanceSmoothing: 0.2, intensity: 1.05, radius: 0.72, mipmapBlur: true });
+    this.bloom = new BloomEffect({ luminanceThreshold: 0.9, luminanceSmoothing: 0.2, intensity: 1.05, radius: 0.72, mipmapBlur: true });
     const tone = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });
     const vignette = new VignetteEffect({ offset: 0.28, darkness: 0.72 });
     const grain = new NoiseEffect({ premultiply: true, blendFunction: BlendFunction.ADD });
     grain.blendMode.opacity.value = 0.55;
-    this.composer.addPass(new EffectPass(camera, bloom, tone, vignette, grain));
+    this.composer.addPass(new EffectPass(camera, this.tilt));
+    this.composer.addPass(new EffectPass(camera, this.bloom, tone, vignette, grain));
+  }
+
+  /** Multisampling of the scene's render, for a quality level and pixel ratio. */
+  setMultisampling(samples: number): void {
+    if (this.composer.multisampling !== samples) this.composer.multisampling = samples;
+  }
+
+  /** Resolution of the tilt-shift blur and the bloom, as a share of the frame's, for a quality level. */
+  setEffectScale(scale: number): void {
+    if (this.tilt.resolution.scale !== scale) this.tilt.resolution.scale = scale;
+    if (this.bloom.resolution.scale !== scale) this.bloom.resolution.scale = scale;
   }
 
   setSize(width: number, height: number): void {
@@ -59,15 +78,21 @@ export class Post {
     this.miniatureTarget = on ? 1 : 0.25;
   }
 
-  /** `house` is where the house sits vertically on screen, or null when that is unknown. */
-  render(dt: number, house: ScreenBand | null): void {
-    this.miniature += (this.miniatureTarget - this.miniature) * Math.min(1, dt * 2.5);
+  /** Ease the blur; `house` is where the house sits vertically on screen, or null when that is unknown. True while it is still easing. */
+  update(dt: number, house: ScreenBand | null): boolean {
+    const easing = Math.abs(this.miniatureTarget - this.miniature) > BLUR_SETTLED;
+    this.miniature = easing ? this.miniature + (this.miniatureTarget - this.miniature) * Math.min(1, dt * 2.5) : this.miniatureTarget;
     const band = house ?? ROOM_BAND;
     const m = this.miniature;
     const half = THREE.MathUtils.lerp(ROOM_BAND.half, THREE.MathUtils.clamp(band.half, 0.2, ROOM_BAND.half), m);
     this.tilt.offset = band.center * m;
     this.tilt.feather = half * FEATHER_SHARE;
     this.tilt.focusArea = half * (SHARP_SHARE + FEATHER_SHARE);
+    return easing;
+  }
+
+  /** Draw the frame; `dt` moves the grain on. */
+  render(dt: number): void {
     this.composer.render(dt);
   }
 }
@@ -170,12 +195,14 @@ export class Streaks {
     this.mesh.material.uniforms["uBase"]!.value = wallTop + 0.4;
   }
 
-  update(time: number, dt: number, level: number, camera: THREE.Camera): void {
-    this.level += (level - this.level) * Math.min(1, dt * 12);
+  /** Move the pulses on; true while they follow the voice. */
+  update(time: number, dt: number, level: number, camera: THREE.Camera): boolean {
+    this.level = Math.abs(level - this.level) < 0.001 ? level : this.level + (level - this.level) * Math.min(1, dt * 12);
     const u = this.mesh.material.uniforms;
     u["uTime"]!.value = time;
     u["uLevel"]!.value = this.level;
     (u["uRight"]!.value as THREE.Vector3).setFromMatrixColumn(camera.matrixWorld, 0).setY(0).normalize();
+    return this.level > 0;
   }
 }
 

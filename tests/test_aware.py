@@ -105,7 +105,7 @@ async def test_its_own_status_tells_the_truth_and_no_secret(daemon: Daemon) -> N
     assert "API key: stored." in text and GOOD_KEY not in text
     assert "Spend this month" in text and "of the $150.00 cap" in text
     assert "Phone channel (Discord): not set up (no bot token); not paired." in text
-    assert "Tools that ask first: delete_automation, edit_file, remove_document, run_program, shell, write_file." in text
+    assert "Tools that ask first: delete_automation, edit_file, remove_document, run_program, shell, start_project, write_file." in text
     assert "Residents' jobs: 0 at work, 0 waiting" in text
     assert f"Data lives in {daemon.config.paths.home}" in text
     assert "Automations: 0; none due." in text
@@ -115,10 +115,10 @@ async def test_the_new_tools_are_free_and_audited(daemon: Daemon) -> None:
     for name in ("house_overview", "room_details", "assistant_status"):
         assert daemon.config.gate.tiers[name] == "free"
     names = [s.name for s in daemon.components.tools.specs()]
-    assert names[-15:] == [
+    assert names[-16:] == [
         "house_overview", "room_details", "assistant_status", "hand_off", "list_jobs", "job_details", "cancel_job",
         "send_to_phone", "save_procedure", "list_procedures", "read_procedure", "remove_procedure",
-        "propose_tool", "propose_change", "my_proposals",
+        "propose_tool", "propose_change", "my_proposals", "start_project",
     ]
 
 

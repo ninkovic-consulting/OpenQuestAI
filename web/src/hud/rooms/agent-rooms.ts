@@ -17,7 +17,9 @@ export function agentRoomList(rooms: AgentRoom[], agentName: string, focus: (roo
     b.dataset["focus"] = `r:${room.id}`;
     if (room.selected) b.setAttribute("aria-current", "true");
     const text = el("span", "agent-room-text");
-    text.append(el("span", "agent-room-name", room.name), el("span", "agent-room-meta", `${folderWords(room.folders)} · ${ROOM_STATE_WORD[room.state]}`));
+    const name = el("span", "agent-room-name", room.name);
+    if (room.project) name.append(el("span", "agent-room-project", room.project));
+    text.append(name, el("span", "agent-room-meta", `${folderWords(room.folders)} · ${ROOM_STATE_WORD[room.state]}`));
     b.append(el("span", room.state === "dark" || room.state === "idle" ? "dot hollow" : "dot"), text);
     b.addEventListener("click", () => focus(room.id));
     const item = el("li");

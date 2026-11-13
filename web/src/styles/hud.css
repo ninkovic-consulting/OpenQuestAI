@@ -39,7 +39,7 @@ select {
   background: var(--ground);
   display: flex;
   flex-direction: column;
-  padding: var(--panel-pad-y) var(--panel-pad-x);
+  padding: calc(var(--panel-pad-y) + var(--safe-top)) var(--panel-pad-x) var(--panel-pad-y);
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
@@ -276,12 +276,29 @@ select {
   background: var(--alert);
 }
 
-/* The build, jobs and settings controls share a row under the budget; a narrow panel wraps them into even rows. */
+/* The panel's actions under the budget, two to a row: Build and Jobs,
+   Proposals and Settings, Minimize and Quit. */
 .panel-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin-top: clamp(18px, 3.5vh, 26px);
+}
+
+.panel-actions > [hidden] {
+  display: none;
+}
+
+/* A narrow panel gives Proposals (with its count) and Settings a row each, so no label spills out. */
+@container (max-width: 300px) {
+  .panel-actions > button {
+    padding-inline: 8px;
+  }
+
+  .panel-actions > .proposals-toggle,
+  .panel-actions > .settings-toggle {
+    grid-column: 1 / -1;
+  }
 }
 
 .build-toggle,
@@ -312,7 +329,8 @@ select {
   color: var(--mustard);
 }
 
-/* Quit sits with the other actions, quieter until it is pointed at. */
+/* Minimize and Quit sit with the other actions, quieter until they are pointed at. */
+.minimize-toggle,
 .quit-toggle {
   flex: 1 1 auto;
   background: none;
@@ -323,6 +341,12 @@ select {
   transition:
     border-color 0.2s,
     color 0.2s;
+}
+
+.minimize-toggle:hover,
+.minimize-toggle:focus-visible {
+  border-color: var(--mustard);
+  color: var(--mustard);
 }
 
 .quit-toggle:hover,
@@ -455,6 +479,11 @@ select {
   scrollbar-color: var(--hairline-strong) transparent;
 }
 
+.gate-detail.is-long {
+  font-size: 12px;
+  max-height: min(340px, 46vh);
+}
+
 .gate-detail:focus-visible {
   outline: 1px solid var(--text);
   outline-offset: 1px;
@@ -510,6 +539,23 @@ select {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* The scene's performance readout (?stats=1, or Settings › Display). */
+.scene-readout {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  margin: 0;
+  padding: 8px 10px;
+  font: 11px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted-light);
+  background: rgb(20 9 7 / 0.78);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  pointer-events: none;
+  white-space: pre;
 }
 
 .labels {
@@ -573,7 +619,7 @@ select {
 
 .hint-bar {
   position: absolute;
-  top: 22px;
+  top: calc(22px + var(--safe-top));
   left: clamp(16px, 2vw, 28px);
   display: flex;
   gap: clamp(12px, 1.6vw, 22px);
@@ -602,7 +648,7 @@ select {
 
 .toasts {
   position: absolute;
-  top: 20px;
+  top: calc(20px + var(--safe-top));
   right: 20px;
   display: flex;
   flex-direction: column;
@@ -614,7 +660,7 @@ select {
 /* Where the scene is too narrow for both, the toasts drop below the key hints. */
 @media (max-width: 1180px) {
   .toasts {
-    top: 52px;
+    top: calc(52px + var(--safe-top));
   }
 }
 
@@ -657,7 +703,7 @@ select {
 
 .build-banner {
   position: absolute;
-  top: 64px;
+  top: calc(64px + var(--safe-top));
   left: 50%;
   transform: translateX(-50%);
   padding: 8px 16px 7px;
@@ -673,11 +719,11 @@ select {
 
 .build-form {
   position: absolute;
-  top: 50%;
+  top: calc(50% + var(--safe-top) / 2);
   left: 50%;
   transform: translate(-50%, -50%);
   width: min(380px, calc(100% - 32px));
-  max-height: calc(100% - 32px);
+  max-height: calc(100% - 32px - var(--safe-top));
   overflow-y: auto;
   background: var(--ground);
   border: 1px solid var(--hairline-strong);
@@ -843,4 +889,135 @@ select {
   font-size: 12px;
   line-height: 1.45;
   color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- the quick listening control */
+
+.listen-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-bottom: 8px;
+  padding-left: 19px;
+}
+
+.listen-switch[hidden] {
+  display: none;
+}
+
+.listen-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 4px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--muted-light);
+  font-size: 10px;
+  letter-spacing: var(--tracking-label);
+  cursor: pointer;
+}
+
+.listen-toggle .dot {
+  width: 6px;
+  height: 6px;
+  background: transparent;
+  border: 1px solid currentColor;
+}
+
+.listen-toggle:hover:not(:disabled),
+.listen-toggle:focus-visible {
+  border-color: var(--muted);
+  color: var(--text);
+}
+
+.listen-toggle:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.listen-switch.is-listening .listen-toggle {
+  border-color: var(--mustard);
+  color: var(--mustard);
+}
+
+.listen-switch.is-listening .listen-toggle .dot {
+  background: currentColor;
+}
+
+.listen-switch.is-off .listen-toggle {
+  color: var(--muted);
+}
+
+.mic-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mustard);
+  font-size: 9px;
+  letter-spacing: var(--tracking-label);
+}
+
+.mic-mark::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mustard);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+.mic-mark.is-opening::before {
+  background: transparent;
+  border: 1px solid var(--mustard);
+}
+
+.mic-mark[hidden] {
+  display: none;
+}
+
+.listen-confirm {
+  flex-basis: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--alert);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.listen-confirm[hidden] {
+  display: none;
+}
+
+.listen-confirm p {
+  margin: 0 0 10px;
+}
+
+.listen-confirm .row-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.listen-confirm button {
+  padding: 5px 10px 4px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text);
+  font-size: 10px;
+  letter-spacing: var(--tracking-label);
+  cursor: pointer;
+}
+
+.listen-confirm button.danger {
+  border-color: var(--alert);
+  color: var(--alert);
+}
+
+/* "Hold [Space] to talk": the key inside the words. */
+.hint-bar kbd.inline {
+  margin: 0 4px;
 }

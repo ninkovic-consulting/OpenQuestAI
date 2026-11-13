@@ -120,17 +120,31 @@ With the virtual environment activated (`source .venv/bin/activate`), you can dr
 The packaged app is macOS only for now; Windows and Linux are planned. It is a small Swift shell around the assistant, the window and a small floating widget, named after the assistant ("Vision" by default).
 
 - **Opening it** shows the house full screen on the screen with the pointer. If no assistant is answering yet, the app starts one and shows a loading screen until it answers. If the assistant stops, the window says so and offers to restart it.
-- **Closing the window** (Cmd+W) leaves the app, the widget and the assistant running. The armchair in the menu bar shows the assistant's state, opens the house again (**Open the house**) and shows or hides the widget. **Ctrl+Cmd+F** switches between full screen and a normal window.
+- **Minimize** (in the window's left panel, beside Quit) or **closing the window** (Cmd+W) puts the app in the menu bar: the house window closes, the Dock icon goes and the app leaves the app switcher, while the assistant, automations, the phone, the shortcuts and the widget (if it is on) keep running. Opening the house again (the menu bar item, the widget's **House**, or opening the app) brings the window and the Dock icon back. **Ctrl+Cmd+F** switches between full screen and a normal window. On a MacBook with a camera notch, full screen keeps the hints, the panel and every view below the notch; the house itself still fills the screen.
+- **The menu bar item** (the armchair, with a small dot while a microphone stream is open) shows the assistant's name and state, then **Open the house**, **Show widget** or **Hide widget**, the three listening modes with a check on the current one (changeable from there), **Start at login** and **Quit**.
 - **The widget** is a small window that floats above every app, on every desktop and over full-screen apps, without taking the keyboard from the app you are in until you click it. It shows the assistant's name and state, the latest exchange, any request waiting for your yes (the oldest, with Yes, Not now and how many more wait), a message field and hold to talk. **House** opens the house; **Hide** hides it, which never stops the assistant. Drag it by its name to put it anywhere; it remembers its place for each arrangement of screens.
-- **Two shortcuts** work in any app, with no Accessibility permission: **Option+Space** brings up the widget with the cursor in its field (press it again to send it away), and **Control+Option+Space** held is push to talk (let go to stop). Choose others from a short list, or turn them off, in **Settings, This Mac, Widget and shortcuts**; if one is taken by another app or by macOS, that block says so. The same block turns the widget on or off and sets what the app shows when it opens: the house, or only the widget.
+- **Two shortcuts** work in any app, with no Accessibility permission: **Option+Space** brings up the widget with the cursor in its field (press it again to send it away), and **Control+Option+Space** held is push to talk (let go to stop). Choose others from a short list, or turn them off, in **Settings, This Mac, Widget and shortcuts**; if one is taken by another app or by macOS, that block says so. The same block turns the widget on or off and sets what the app shows when it opens: the house, only the widget, or only the menu bar.
 - **Images.** Paste an image into the message field, drop one on the window, or choose files with **Image** (the widget has paste and Image too). Thumbnails of what will be sent sit above the field, each with a remove button; Enter sends the words and the images together, and an image can go alone. PNG, JPEG, GIF and WebP are accepted, up to 15 MB, 50 megapixels and six per message; anything else is refused beside the field with the reason. Each image is kept as a clean copy, scaled to at most 1,568 px on its long side with all metadata (location included) stripped, in `~/.vision/images/`, and shows in the thread with your message, larger on click, after a reload too. Claude reads them; the local model cannot, so in offline mode Image says so, and an image that reaches the local model gets a plain answer that it cannot see it. Residents get no images: the assistant describes what matters in the brief.
+- **Talking while it answers.** The message field never blocks. While the assistant thinks, uses a tool or speaks, Enter queues: the message shows under the conversation as "Sends after this reply", with **Send now** and **Take back** (taken back, its words return to an empty field). Up to five wait; a sixth is refused with a line saying so. When the reply ends, however it ends, everything waiting goes as one message, in the order you wrote it, with its images, and the assistant is told you wrote it while it was replying, so it can treat it as an addition or a correction. **Cmd+Enter** stops the reply and sends at once (with anything already waiting ahead of it), so does **Send now**; **Escape** or the **Stop** button beside the field stops the reply, and what was waiting then goes at once. What the assistant had said stays in the conversation marked **Stopped**, and the next answer is told where you cut it off, so it neither repeats itself nor carries on as if it had finished. The key hints say what Enter does at that moment. The assistant holds what waits, so a reload or a second window shows the same list. A yes or no typed while a request card waits still answers the card. Your waiting words go before anything else that waits: then the phone's messages, then job reports and automations. The widget shows how many wait, the newest, and Stop.
 - **Quitting** (the **Quit** button in the window's left panel or in **Settings, This Mac**, Cmd+Q, or Quit in the menu bar item) stops the assistant, but only if the app started it. The button asks first.
 - **Start at login** is a checkmark in the menu bar item, and a switch in Settings. The app then opens hidden at login: the assistant runs and the window stays closed; with the widget on, the widget shows.
 - **Permissions** are asked for under the app's name.
 
+## Voice: when it listens
+
+With voice on, **Settings, Voice, When it listens** decides when the microphone is open (`[voice] listen` in `config.toml`):
+
+- **Hold to talk** (`hold`, the default, also for a config without the key): the microphone is closed until you hold Space in the window (with the message field empty), the talk control in the house or the widget, or the global talk shortcut, and it closes again about 0.4 seconds after you let go. Between presses no input stream is open, so macOS shows no microphone indicator and nothing is heard. The window says "Opening the microphone" until the first sound arrives (AirPods take about half a second) and "Listening" from then on. While the assistant speaks the microphone is closed, so pressing to talk or Escape interrupts it; a request that needs a yes can be answered by voice only while holding.
+- **Wake word** (`wake`): the microphone stays open and only what starts with the assistant's name is taken ("Vision, what's the time", or "hey Vision, ..."), plus anything in the follow-up window after an answer. Saying the name with something after it while the assistant speaks ("Vision, wait, the other one") stops the reply and is taken as your next message; its own voice saying its name never does (the echo guard).
+- **Always** (`always`): the microphone stays open and everything you say is taken without the name, except the assistant's own voice (the echo guard) and anything shorter than three words or about 0.6 seconds of speech, so coughs and keys do not start turns. While it speaks, only the stop words and its name (as in wake word) cut in. With shell commands set to Free this lets anything said in the room run commands, so choosing one with the other asks first.
+
+Hold to talk works in every mode, and pressing it while the assistant answers stops the reply and listens. A spoken message goes at once, on its own; typed messages that were waiting go right after it. The quick control under the state in the left panel, and in the widget, shows the mode and switches between hold to talk and the listening mode last chosen (wake word by default) in one press, with a small "mic" mark while a stream is open. Changing the mode applies at once without loading the speech models again, and is refused while voice is off or the speech models are missing. Speech recognition stays on this Mac, and nothing is recorded or kept.
+
+A reply is spoken on one output stream from its first sentence to its last, each sentence made while the one before plays, so it does not stall between sentences. A Bluetooth headset that is both microphone and speakers plays in its low-quality call mode while its microphone is open; in hold to talk the microphone is closed before a reply starts, and in the listening modes Settings, Voice says so.
+
 ## Settings
 
-**Settings** (Cmd+, or Ctrl+,) holds everything you can change, in twelve groups:
+**Settings** (Cmd+, or Ctrl+,) holds everything you can change, in thirteen groups:
 
 | Group | What it holds |
 |---|---|
@@ -139,13 +153,16 @@ The packaged app is macOS only for now; Windows and Linux are planned. It is a s
 | Models | The talk and heavy models with their thinking effort, the monthly cap, offline mode, and the local model: the catalog marked for this Mac, downloads, deleting, or a local server. |
 | Agents | The other agents' names, models and thinking effort. |
 | Rooms | Each room's name, agent, project folders, tools and model. |
-| Voice | On or off, the microphone permission, devices (listed fresh each time, with Refresh), the speaking voice with a test sentence, the follow-up window, downloads and a three-second test. A chosen device that is not connected shows as such, and the system default is used with a notice. A microphone that opens but sends only silence is named, with the likely causes first (muted, asleep, covered, a closed laptop lid) and Try again. |
+| Voice | On or off, when it listens (hold to talk, wake word or always, each with what it does to the microphone), the microphone permission, devices (listed fresh each time, with Refresh), the speaking voice with a test sentence, the follow-up window, downloads and a three-second test. A chosen device that is not connected shows as such, and the system default is used with a notice. A microphone that opens but sends only silence is named, with the likely causes first (muted, asleep, covered, a closed laptop lid) and Try again. |
 | Asking first | Free, ask or never for each tool. |
 | Automations | Your automations. |
 | Phone | The Discord bot token, pairing, what is sent to the phone (always, when away or never, per kind), the away time with whether you are here now, and which tools the phone may approve. |
 | API key | Where the key is kept, and a field to add or replace it. |
-| This Mac | Start at login, the widget and its two shortcuts (in the Mac app only), restart, run setup again, and the doctor's checklist with fix buttons. |
+| This Mac | Start at login, the widget and its two shortcuts, what the app shows when it opens, and that closing the house keeps it in the menu bar (in the Mac app only), restart, run setup again, and the doctor's checklist with fix buttons. |
+| Display | The house's quality (Low, Balanced or High), stepping back while the assistant works on this Mac, and the frame readout. Kept by the window itself. |
 | Reset | The three reset levels and your backups. |
+
+**What the house costs the Mac.** The 3D house draws only when something changes or moves, not at the display's full rate: about 24 frames a second while it only idles (figures breathing, the faint streaks), 60 while a figure walks, the display's own rate only while you move the view, and nothing at all while the window is hidden, minimised or covered by Settings. The static house costs no shadow work; the shadow map is redrawn only when a figure moves. The sharpness drops a step by itself when frames run late and comes back when there is room. While the voice speaks or a local model answers, the house steps back (12 to 30 frames a second, standard resolution) so they get the graphics chip, and eases back afterwards. Settings, Display chooses Low, Balanced (the default, which looks the same as High) or High, turns the stepping back off, and shows a readout of frames, frame time, resolution and draw calls (`?stats=1` shows it too). These choices belong to the window and are kept in its own storage, so they survive a restart of the app but not a reset of the web view's data.
 
 Each group saves on its own. Most changes apply at once, offline mode and the local model among them. A change of Claude model, or a replaced API key, says it needs a restart.
 
@@ -214,7 +231,7 @@ The daemon listens on `127.0.0.1` only, and every request must carry the token, 
 
 ## The gate
 
-The assistant has nineteen tools of its own, and every call passes through a gate that decides by tier:
+The assistant has twenty tools of its own, and every call passes through a gate that decides by tier:
 
 | Tool | Tier | What it does |
 |---|---|---|
@@ -233,6 +250,7 @@ The assistant has nineteen tools of its own, and every call passes through a gat
 | `hand_off` | free | Gives a job to a resident (see Agents at work). |
 | `list_jobs`, `job_details` | free | Read the job board. |
 | `cancel_job` | free | Stops a job. |
+| `start_project` | ask, always | Starts a new project: its folder, a room run by a resident, and a first job (see Starting a new project). |
 | `send_to_phone` | free | Messages your paired phone now, when you ask or an automation should ping you. The host's only. |
 | `save_procedure`, `list_procedures`, `read_procedure`, `remove_procedure` | free | Its own written procedures (see How agents learn and extend themselves). Every resident has them too. |
 | `propose_tool`, `propose_change`, `my_proposals` | free | Proposes a new tool or a change to itself (or a resident); a proposal does nothing until you approve it in the window. Every resident has them too. |
@@ -245,7 +263,7 @@ The tiers work like this:
 - An **ask** tool shows a card in the window and waits for your yes, by click or by voice. No answer within 60 seconds is a no.
 - A **never** tool is refused.
 
-A resident's `run_program` always asks, even if `config.toml` tries to make it free. `shell` asks by default. You can make it free in Settings, Asking first (the window asks you to confirm, because a free shell command runs at once, without a card, and can do anything on the Mac). Free holds only for turns you typed or said at the Mac: during an automation's run, a job report or a message from your phone, `shell` still asks first, at the Mac, since nobody may be watching and those turns can carry words you did not write. It is never approved from the phone. You set the tiers in Settings, Asking first, or in `[gate.tiers]` in `config.toml`. Every call and decision, a free shell command's included, is written to the audit log.
+A resident's `run_program` and the assistant's `start_project` always ask, even if `config.toml` tries to make them free. `shell` asks by default. You can make it free in Settings, Asking first (the window asks you to confirm, because a free shell command runs at once, without a card, and can do anything on the Mac). Free holds only for turns you typed or said at the Mac: during an automation's run, a job report or a message from your phone, `shell` still asks first, at the Mac, since nobody may be watching and those turns can carry words you did not write. It is never approved from the phone. You set the tiers in Settings, Asking first, or in `[gate.tiers]` in `config.toml`. Every call and decision, a free shell command's included, is written to the audit log.
 
 Spending is bounded too: a monthly cap (150 dollars by default) moves talk to the local model when it is reached, with a notice at 80 percent.
 
@@ -292,6 +310,7 @@ If you cannot open a direct message with the bot after step 2, make a private se
 
 - Send text, a voice note (transcribed on the Mac when the speech models are installed), or images (up to six per message, with or without words).
 - The words `status`, `stop` and `help` work as commands.
+- Messages sent while the assistant is busy wait (up to five) and then go together as one turn, with one reply; `stop` drops them and stops the reply. They never share a turn with messages typed at the Mac: those go first, then the phone's.
 - What you type on the phone is answered on the phone and kept in the app; what you type or say at the Mac is answered at the Mac, never on the phone; anything the assistant does by itself reaches both, whether you are at the Mac or not: automation results, every job result, warnings and errors, requests that need your yes, and messages it sends on purpose (`send_to_phone`, for "send that to my phone" or an automation that should ping you).
 - For less on the phone, each of those kinds can be set to **When away** or **Never** in Settings, Phone (default **Always**); switches from an older `phone.json` carry over (on is always, off is never). Away means no keyboard, mouse or voice at the Mac for `[presence] away_after_s` (default 300 seconds), a locked screen or a sleeping display, read through CoreGraphics with no macOS permission; if the Mac will not say, you count as here. It matters only for a kind set to When away.
 - Each message is sent once; one that does not arrive is tried again a few times, then dropped with a note in the app. In the window, what came while you were not looking sits under **While you were away** until you have seen it.
@@ -323,7 +342,7 @@ You can rename them and change their models in Settings, Agents. The assistant's
 3. Optionally, choose one or more project folders with the folder picker, and a model.
 4. Once you choose project folders, the tools they look like they need appear as toggles. Switch off any you do not want.
 
-Double-click a room to fly into it and see its agent, model, project folders and tools. You can add more folders to a room later, in Settings, Rooms.
+Double-click a room to fly into it and see its agent, model, project name, project folders and tools. You can add more folders to a room later, in Settings, Rooms.
 
 **Project folders.** A room can have up to eight project folders, so one room can hold a project made of several repositories, such as an app and its API. Each is a full path (starting with `/` or `~`). A folder cannot be the disk, your home folder or a folder above it, cannot be listed twice, and cannot sit inside another folder of the same room. A folder you add must exist; one that goes missing later (a disconnected disk, say) stays listed, and a job in the room says it is not there and works in the others.
 
@@ -335,13 +354,14 @@ Residents know each folder by a short name, its own name: `~/Projects/shop` is `
 [[rooms]]
 name = "Studio"
 agent = "maker"                      # any agent but the host
+project = "My App"                   # optional: what you call the project, up to 60 characters
 folders = ["~/Projects/my-app", "~/Projects/my-app-api"]   # optional
 tools = ["git", "gh", "npm"]         # optional; without it the room uses its agent's tools
 ```
 
 **With setup:** `vision setup` lists the rooms, lets you add a project folder to any of them (one at a time, added to the room's list), and proposes tools for it.
 
-A room in the file names its folders with `folders`; there is no `project` setting. A file that uses `project` is not applied: the default house is used until you fix it, and a notice says to write `folders = [...]` instead.
+**Project name.** A room can have a project name, such as the product's name: plain text on one line, up to 60 characters, set in Settings, Rooms, in the new-room form, in the first-start wizard, or as `project` in the file. It is what you call the project; the places go in `folders`, and a `project` that starts with `/` or `~` is refused with a message that says so. When a room has folders and no name, the window offers the first folder's name, tidied (`harbor-books-project` becomes "Harbor Books Project") with a "Use this name" button; nothing is saved until you save the room. The room card shows the name above the folders, and the assistant and the residents know it: a resident is told which project its room holds, and the assistant can send a job to a room by its project name. Two rooms may share a name, but a job sent by it is then refused, naming both rooms.
 
 Tools come from the catalog in `house/tools.toml`:
 
@@ -349,6 +369,28 @@ Tools come from the catalog in `house/tools.toml`:
 - project tools such as `git`, `gh`, `npm`, `maven`, `gradle`, `python`, `docker`, `xcode`, `unity` and `godot`.
 
 A proposal looks only at the names of files and folders in a folder's top two levels, and at the remote's host in `.git/config`. A room's project tools run in its resident's jobs, in the room's project folders; see Agents at work.
+
+## Starting a new project
+
+Ask the assistant to start a project, in your own words: "Start a new project for me: a small tool that renames photos by the date they were taken, and have whoever suits it write a first plan." It calls `start_project`, which always asks first: the card shows exactly what a yes will do, before anything happens:
+
+- the project's name and your description;
+- the agent it chose and why (Tink the maker for software, Rook the scout for research, Wren the envoy for writing, Brass the steward for upkeep; Tock the checker reviews rather than owns; name an agent and it follows you);
+- the folder it will create, as a full path, and that it will hold a `README.md` with the name and description and become a git repository (when git is installed);
+- the room it will add and where, run by that agent, and the room's tools (Git, plus a hint such as Python or npm when the kind of project is known);
+- the first job, as the whole brief, when there is one.
+
+On a yes it creates the folder, writes the README, runs `git init` with the same clean environment the project tools use, adds the room, and hands the first job to that agent in the new room. The assistant tells you what was made, and later reports the first job like any other.
+
+**Where new projects go.** `[projects] root` in `config.toml`, or Settings, Rooms, Where new projects go: `~/Projects` by default. It must be an existing folder that is not the disk or your home folder itself. On a fresh Mac without `~/Projects`, the assistant says so and creates nothing; create the folder or choose another.
+
+**The folder name** comes from the project's name: lowercase letters and digits joined by dashes, accents dropped, at most 48 characters ("Photo Date Renamer!" becomes `photo-date-renamer`), so it can only be a folder directly inside the root. A name with no letters or digits is refused, and so is a name whose folder already exists: nothing is ever created over something that is there. To use an existing folder instead, say so; it is attached as it is, and nothing inside it changes.
+
+**When the house is full** (20 extra rooms), the project goes into one of that agent's rooms that holds no project yet, and the card says which; if there is none, the assistant says so and what you can do: remove an extra room, clear one of the agent's rooms, or give the project to another agent.
+
+**When something fails partway** (the room cannot be added, say), nothing is deleted: the assistant says what exists now and what does not, so you can attach the folder later.
+
+From the phone, the card can be approved like any tool the phone may approve; a card too long for a message (a long first job) is approved at the Mac. During an automation it asks like any other tool, and nobody answering means nothing is made.
 
 ## Agents at work
 
@@ -431,6 +473,8 @@ The assistant can run on a model on this Mac instead of Claude. It does so by it
 
 A local model is downloaded, kept and removed only by your choice: only when you click Download (or answer yes in the first-start wizard or `vision setup`), with its size and progress, and only Delete removes one (not the model offline mode is using). The recommendation is a suggestion and changes nothing by itself, a fresh install downloads nothing, and resets and restores never touch downloaded models. If the assistant needs the local model (offline mode, or Claude cannot be used) and none is on this Mac, it fetches nothing: the answer, and a notice, say that no local model is downloaded and to choose one in Settings, under Models. You can type any other Hugging Face repo in MLX format, or use a local server that speaks the OpenAI format (LM Studio, Ollama and the like): choose the server backend, give its address and the model's name, and Test lists the server's models. A changed model is used from the next answer on.
 
+**When the model is in memory, and what the first message costs.** Turning offline mode on starts loading the chosen model at once (so does starting the assistant with offline mode on), and it stays in memory for as long as offline mode is on. The state line says `offline · <model> · loading` meanwhile, Settings says the same, and a message sent during the load waits for that load. When Claude answers and the local model is only the stand-in, it loads for the first message it answers and is freed after ten minutes without one (`[brain] local_idle_unload_s`); Settings, under Models, **Keep it ready** can keep it in memory always instead (`[brain] local_keep_loaded = "always"`). Changing the model frees the old one before the new one loads. Settings shows how much memory the loaded model holds (2.3 GB for the default Qwen3 4B) and how much the conversation it has already read holds. Before its first word a model reads its whole prompt (the memory, its rules, the tools and the conversation so far, about 2,200 tokens for the 4B model with its short tool list); what it has read is kept for the next message, so only what is new is read again. Measured on the M1 Max with the default model: about 2 seconds to load, about 5 seconds to the first word of the first message (while the state line says `reading`), then about 0.2 seconds for each message after it. Kept conversations hold memory too (about 150 KB per token for the 4B model, at most 2 GB in all).
+
 **What works offline.** Nothing is sent to Anthropic and nothing is charged. The assistant answers on the local model, and with a model that can use tools it remembers and recalls, opens apps and links, runs shell commands after your yes, and hands work to the residents, who do it on the same model through the same job board, gate, project tools and audit. One answer is generated at a time: the assistant's turns go first, and the residents' steps wait their turn (`max_running` still says how many jobs may be open at once). A job already running when you switch finishes where it started, except that a job on Claude stops before its next call when offline mode comes on.
 
 **What does not.** Web search and loading web pages need Anthropic, so the scout cannot reach the web offline. A model whose chat template has no tool format (gpt-oss and Llama 3.3 with the mlx-lm installed here) can only talk: the assistant says what it cannot do, and hand-offs are refused with the reason. Offline mode cannot be turned on until the chosen model is downloaded (or the server answers with it). Small models call tools less reliably: the 4B models are offered a short list of tools and a short prompt, and a call they write wrongly is answered with an error and never run on a guess. For offline work with tools, a 9B model or larger is the better choice.
@@ -457,7 +501,7 @@ To check a built app end to end, run its self-test:
 dist/Vision.app/Contents/MacOS/Vision --self-test /tmp/result.json
 ```
 
-It uses a throwaway home, the fake brain and no microphone, and opens a normal window and the widget. It quits within about 30 seconds and writes whether the house and the widget connected, whether the widget showed and hid, and whether each shortcut registered (or why not). To test a build without touching `dist/`, build it elsewhere with `vision app build --out <folder>`.
+It uses a throwaway home, the fake brain and no microphone, and opens a normal window and the widget. It quits within about 30 seconds and writes whether the house and the widget connected, whether the widget showed and hid, whether Minimize put the app in the menu bar (no Dock icon) and opening the house brought it back, whether each shortcut registered (or why not), and the notch inset of each screen. To test a build without touching `dist/`, build it elsewhere with `vision app build --out <folder>`.
 
 To work on the window without a daemon, run `npm run dev` in `web/` and open the page with `?mock=1`, which plays a scripted conversation; the widget is `widget.html?mock=1`.
 

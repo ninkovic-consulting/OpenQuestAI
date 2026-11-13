@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -14,6 +15,7 @@ from vision.core.bus import Bus
 from vision.core.events import GateRequest
 from vision.attachments.clean import clean
 from vision.core.interfaces import AuditRecord, Picture, TurnRecord
+from vision.core.waiting import Waiting
 from vision.presence import Seen
 from vision.remote.channel import PhoneChannel
 from vision.remote.host import Status, TurnsBusy
@@ -91,6 +93,10 @@ class FakeHost:
     turns: list[tuple[str, bool]] = field(default_factory=list)
     pictures: list[tuple[Picture, ...]] = field(default_factory=list)
     """The images that went with each turn, in step with `turns`."""
+    waited: list[int] = field(default_factory=list)
+    """How many waiting messages went in each turn, in step with `turns`."""
+    shown: list[list[str]] = field(default_factory=list)
+    """Every list of waiting messages shown to the windows, as their previews."""
     kept: list[Picture] = field(default_factory=list)
     audits: list[AuditRecord] = field(default_factory=list)
     pending: dict[str, GateRequest] = field(default_factory=dict)
@@ -129,7 +135,18 @@ class FakeHost:
         self.kept.append(picture)
         return picture
 
-    async def run_turn(self, text: str, *, speak: bool, images: tuple[Picture, ...] = ()) -> TurnRecord:
+    def show_waiting(self, items: Sequence[Waiting]) -> None:
+        self.shown.append([m.view().preview for m in items])
+
+    async def run_turn(
+        self,
+        text: str,
+        *,
+        speak: bool,
+        images: tuple[Picture, ...] = (),
+        waited: int = 0,
+        ids: Sequence[str] = (),
+    ) -> TurnRecord:
         if self.busy():
             raise TurnsBusy
         self.running += 1
@@ -145,6 +162,7 @@ class FakeHost:
                 pass
             self.turns.append((text, speak))
             self.pictures.append(tuple(images))
+            self.waited.append(waited)
         finally:
             self.running -= 1
         reply = f"Echo: {text}" if status == "ok" else "Echo"

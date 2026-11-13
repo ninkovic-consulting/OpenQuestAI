@@ -4,7 +4,16 @@ from __future__ import annotations
 
 import pytest
 
-from vision.voice.wake import Addressing, StopMatcher, WakeMatcher, residual, sounds_like
+from vision.voice.wake import (
+    ALWAYS_MIN_VOICED_S,
+    ALWAYS_MIN_WORDS,
+    Addressing,
+    StopMatcher,
+    WakeMatcher,
+    enough_for_always,
+    residual,
+    sounds_like,
+)
 
 
 @pytest.fixture
@@ -144,3 +153,56 @@ def test_push_to_talk(wake: WakeMatcher) -> None:
     assert a.decide("Lights off.", started_at=13.5, now=15) is None
     a.ptt(True, now=20)
     assert a.decide("Hey Vision, lights off.", started_at=19, now=21) == "Lights off."
+
+
+# ---------------------------------------------------------------- listening modes
+
+
+def test_the_name_alone_or_after_hey_wakes_it() -> None:
+    a = Addressing(WakeMatcher("Vision"), window_s=20)
+    assert a.decide("Vision, what's the time?", started_at=0, now=1) == "What's the time?"
+    assert a.decide("Hey Vision, what's the time?", started_at=0, now=1) == "What's the time?"
+    assert a.decide("Vision what's the time", started_at=0, now=1) == "What's the time"
+
+
+def test_another_name_is_the_one_listened_for() -> None:
+    a = Addressing(WakeMatcher("Ada Lovelace"), window_s=20)
+    assert a.decide("Ada Lovelace, what's the time?", started_at=0, now=1) == "What's the time?"
+    assert a.decide("Hey Ada Lovelace, what's the time?", started_at=0, now=1) == "What's the time?"
+    assert a.decide("Vision, what's the time?", started_at=0, now=1) is None
+
+
+def test_hold_takes_only_what_is_said_while_holding() -> None:
+    a = Addressing(WakeMatcher("Vision"), window_s=20, mode="hold")
+    assert a.decide("Vision, lights on.", started_at=0, now=1) is None
+    a.open_window(1)
+    assert a.decide("And tomorrow?", started_at=2, now=3) is None  # no follow-up window in hold
+    a.ptt(True, 5)
+    assert a.decide("Vision, lights on.", started_at=5, now=6) == "Lights on."
+    a.ptt(False, 7)
+    assert a.decide("Lights off.", started_at=6.5, now=8) == "Lights off."  # the tail of the hold
+
+
+def test_always_takes_what_clears_the_floor_without_the_name() -> None:
+    a = Addressing(WakeMatcher("Vision"), window_s=20, mode="always")
+    assert a.decide("What is on my calendar today?", started_at=0, now=2, voiced_s=1.4) == "What is on my calendar today?"
+    assert a.decide("Okay thanks.", started_at=0, now=2, voiced_s=0.9) is None  # two words
+    assert a.decide("(coughs) (coughs) (coughs)", started_at=0, now=2, voiced_s=0.9) is None
+    assert a.decide("[keyboard clicking sounds]", started_at=0, now=2, voiced_s=0.9) is None
+    assert a.decide("Um what now", started_at=0, now=2, voiced_s=0.3) is None  # too little speech
+    assert a.decide("Vision, stop.", started_at=0, now=2, voiced_s=0.3) == "Stop."  # the name always counts
+
+
+def test_always_takes_a_short_answer_in_the_follow_up_window() -> None:
+    a = Addressing(WakeMatcher("Vision"), window_s=20, mode="always")
+    a.open_window(10)
+    assert a.decide("Yes please.", started_at=12, now=13, voiced_s=0.5) == "Yes please."
+    assert a.decide("Yes please.", started_at=40, now=41, voiced_s=0.5) is None
+
+
+def test_the_floor() -> None:
+    assert enough_for_always("Turn the lights on", ALWAYS_MIN_VOICED_S)
+    assert not enough_for_always("Turn the lights on", ALWAYS_MIN_VOICED_S - 0.01)
+    assert not enough_for_always("Lights on", 2.0)
+    assert not enough_for_always("*typing* *typing* *typing*", 2.0)
+    assert ALWAYS_MIN_WORDS == 3
