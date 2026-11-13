@@ -60,10 +60,10 @@ The token is stored in the macOS Keychain. Vision never shows it again, and it i
 ### 5. Pair your phone
 
 1. Still in **Settings, Phone**, press **Show a pairing code**. You get six digits that are valid for ten minutes.
-2. In Discord on your phone, open a direct message with your bot (see below) and send the six digits.
+2. In Discord on your phone, open a direct message with your bot (see below) and send those six digits as a message, for example `482913`. The code is shown on the Mac; the words "Show a pairing code" are the button's name, not something to send.
 3. The bot answers "Paired. This chat now talks to …", and Settings shows who is paired.
 
-**Opening a direct message with your bot.** After step 2 the bot is one of your apps. Open its profile in Discord and choose **Message**. If Discord does not offer that, use the fallback:
+**Opening a direct message with your bot.** After step 2 the bot is one of your apps, and you can message it without sharing a server with it. Open its profile in Discord and choose **Message**, or type its name into **Find or start a conversation**. If Discord does not offer that, use the fallback:
 
 1. Create a private server of your own (the **+** in Discord's server list).
 2. Add the bot to it by opening this link and choosing that server:
@@ -143,7 +143,7 @@ All under **Settings, Phone**. Changes apply at once.
 | The bot answers "This is a private assistant and does not answer here." | You are not paired, or you are writing from a different account. Send the six digits from **Show a pairing code**. |
 | The code is not accepted | It expired after ten minutes or was used up by five wrong tries. Press **Show a pairing code** again. |
 | "Store the bot token first." | Pairing needs a stored token; do step 4. |
-| No answer at all | Check that Vision is running on the Mac, that the channel is on, and that the status line says Connected. Send `status`. |
+| No answer at all, and the bot shows as offline in Discord | The bot is not connected. Check that Vision is running on the Mac, that the token is saved (step 4), that the channel is on, and that the status line says Connected. A connected bot always answers something, even to a stranger. |
 | "I can't listen to voice notes yet" | Download the speech models in **Settings, Voice**, or type. |
 | You cannot find where to message the bot | Use the private-server fallback in step 5. |
 
