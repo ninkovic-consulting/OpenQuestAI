@@ -1,10 +1,10 @@
 # Talk to your assistant from your phone (Discord)
 
-You can message your assistant from your phone through a Discord bot that belongs to you. You type or send a voice note in a direct message; the assistant on your Mac answers there. What you type on the phone is answered on the phone and kept in the app; what you type at the Mac is answered at the Mac; anything the assistant does by itself (automations, finished work, warnings, requests for your yes, messages to you) reaches both.
+You can message your assistant from your phone through a Discord bot that belongs to you. You type, send a voice note or send images in a direct message; the assistant on your Mac answers there. What you type on the phone is answered on the phone and kept in the app; what you type at the Mac is answered at the Mac; anything the assistant does by itself (automations, finished work, warnings, requests for your yes, messages to you) reaches both.
 
 This guide is for anyone running Vision on their own Mac. It takes about ten minutes.
 
-> **Status.** Pairing, text messages, handing work off from the phone and that work's report have been run against the live Discord. Voice notes and the Yes and Not now buttons have not yet; they are tested against a local stand-in for Discord. If a step does not behave as written here, please open an issue and say which step.
+> **Status.** Pairing, text messages, handing work off from the phone and that work's report have been run against the live Discord. Voice notes, images and the Yes and Not now buttons have not yet; they are tested against a local stand-in for Discord. If a step does not behave as written here, please open an issue and say which step.
 
 ## How it works, in short
 
@@ -80,6 +80,7 @@ Everything happens in the direct message with your bot.
 |---|---|
 | Any text | It becomes a turn for the assistant, exactly as if you had typed it at the Mac. The reply comes back as a message. |
 | A voice note | It is turned into words on your Mac, shown back to you as "Heard: …", and answered. |
+| Images | Up to six per message, with or without text. Each is downloaded from Discord's attachment servers (`cdn.discordapp.com` or `media.discordapp.net`, never anywhere else, and without the bot token), checked and kept as a clean copy on your Mac like an image from the window, and all of them go with the message to the assistant. Images alone are asked about as "the owner sent this image". |
 | `status` | The assistant's state, whether Claude or the local model is answering, and this month's spend. |
 | `stop` | Stops the reply in progress and drops your waiting messages. |
 | `help` | A reminder of these commands. |
@@ -90,7 +91,7 @@ Things to know:
 - **Same assistant, same memory.** Phone turns use the same memory, tools, budget and history as turns at the Mac. In the window they are labelled "You, from the phone".
 - **Quiet at home.** Replies to the phone are not spoken on the Mac unless you switch that on.
 - **Voice notes need the speech models.** Download them in **Settings, Voice**. Until then the bot says so and text still works.
-- **Only text and voice notes are read.** Other attachments are ignored, and the bot tells you.
+- **Text, voice notes and images are read.** Images must be PNG, JPEG, GIF or WebP (read from the file itself), up to 15 MB and 50 megapixels each; one that is not gets a line saying why, and the rest of the message still goes. A message with nothing the bot can read gets "I can read text, voice notes and images (PNG, JPEG, GIF or WebP); other attachments are not read." Images need Claude: on the local model the assistant answers that it cannot see them.
 
 ### What the assistant sends you
 

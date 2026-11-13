@@ -123,6 +123,7 @@ The packaged app is macOS only for now; Windows and Linux are planned. It is a s
 - **Closing the window** (Cmd+W) leaves the app, the widget and the assistant running. The armchair in the menu bar shows the assistant's state, opens the house again (**Open the house**) and shows or hides the widget. **Ctrl+Cmd+F** switches between full screen and a normal window.
 - **The widget** is a small window that floats above every app, on every desktop and over full-screen apps, without taking the keyboard from the app you are in until you click it. It shows the assistant's name and state, the latest exchange, any request waiting for your yes (the oldest, with Yes, Not now and how many more wait), a message field and hold to talk. **House** opens the house; **Hide** hides it, which never stops the assistant. Drag it by its name to put it anywhere; it remembers its place for each arrangement of screens.
 - **Two shortcuts** work in any app, with no Accessibility permission: **Option+Space** brings up the widget with the cursor in its field (press it again to send it away), and **Control+Option+Space** held is push to talk (let go to stop). Choose others from a short list, or turn them off, in **Settings, This Mac, Widget and shortcuts**; if one is taken by another app or by macOS, that block says so. The same block turns the widget on or off and sets what the app shows when it opens: the house, or only the widget.
+- **Images.** Paste an image into the message field, drop one on the window, or choose files with **Image** (the widget has paste and Image too). Thumbnails of what will be sent sit above the field, each with a remove button; Enter sends the words and the images together, and an image can go alone. PNG, JPEG, GIF and WebP are accepted, up to 15 MB, 50 megapixels and six per message; anything else is refused beside the field with the reason. Each image is kept as a clean copy, scaled to at most 1,568 px on its long side with all metadata (location included) stripped, in `~/.vision/images/`, and shows in the thread with your message, larger on click, after a reload too. Claude reads them; the local model cannot, so in offline mode Image says so, and an image that reaches the local model gets a plain answer that it cannot see it. Residents get no images: the assistant describes what matters in the brief.
 - **Quitting** (the **Quit** button in the window's left panel or in **Settings, This Mac**, Cmd+Q, or Quit in the menu bar item) stops the assistant, but only if the app started it. The button asks first.
 - **Start at login** is a checkmark in the menu bar item, and a switch in Settings. The app then opens hidden at login: the assistant runs and the window stays closed; with the widget on, the widget shows.
 - **Permissions** are asked for under the app's name.
@@ -173,7 +174,7 @@ Settings, Reset offers three levels:
 
 - **Settings**: back to the built-in defaults (removes `config.toml`).
 - **House**: back to the default house (removes `house.toml`).
-- **Everything**: both of the above, plus memory (with what it knows about you and your library), the conversation log, this month's spend record and your automations. This level asks you to type the assistant's name to confirm, can also delete the API key from the Keychain, and opens the wizard again.
+- **Everything**: both of the above, plus memory (with what it knows about you and your library, and the agents' procedures), the conversation log with the images you sent, this month's spend record, your automations, and the agents' proposals and the tools they made. This level asks you to type the assistant's name to confirm, can also delete the API key from the Keychain, and opens the wizard again.
 
 Every reset first copies what it is about to change into `~/.vision/backups/<date>-<time>-<level>/`. Settings lists the backups, and any of them can be restored. A restore backs up the current files first, so it can be undone too. The API key is never backed up. Backups are kept until you delete them yourself.
 
@@ -185,11 +186,14 @@ Everything personal lives in `~/.vision/`, never in the repo or the app:
 |---|---|
 | `config.toml` | Your settings over the built-in defaults: name, models, cap, voice, gate tiers, automations, whether setup is done. |
 | `house.toml` | Your house: agent names and models, rooms, project folders and tools. Created from the default house on first run. |
-| `house/` | The memory, as plain Markdown you can read and edit: personas in `agents/` (`host.md` is the assistant's), notes by day in `notes/`, your documents in `library/`, what it knows about you in `owner.md`, and each resident's own notes in `agents/<id>/notes/`. |
-| `log.db` | Every conversation turn and every tool call with the gate's decision. |
+| `house/` | The memory, as plain Markdown you can read and edit: personas in `agents/` (`host.md` is the assistant's), notes by day in `notes/`, your documents in `library/`, what it knows about you in `owner.md`, each resident's own notes in `agents/<id>/notes/`, each agent's procedures in `agents/<id>/procedures/` and the shared ones in `procedures/`. |
+| `log.db` | Every conversation turn (with the images it carried) and every tool call with the gate's decision. |
+| `images/` | The images you sent, as clean copies (no metadata), each named by a random id. Backed up and reset with the log. |
 | `budget.json` | This month's spend. |
 | `automations.json` | Your automations and their last results. |
 | `jobs.json` | The job board: work handed to the residents, with each job's steps and result (the newest 200 ended jobs are kept). |
+| `proposals.json` | What the agents proposed (new tools, changes to themselves) and what you decided (every waiting one and the newest 200 decided). |
+| `made-tools/` | The tools agents wrote that you approved: per tool a `manifest.json` that pins each version's hash, `versions/<n>.py` or `.sh` with the exact text you approved, and `runs.json` with the newest 50 runs. |
 | `backups/` | Copies made before each reset or restore. |
 | `logs/` | The daemon's logs: `app-daemon.log` when the app starts it, `daemon.*.log` under the LaunchAgent. |
 | `token` | The secret the window uses to talk to the daemon (readable only by you). |
@@ -230,6 +234,8 @@ The assistant has nineteen tools of its own, and every call passes through a gat
 | `list_jobs`, `job_details` | free | Read the job board. |
 | `cancel_job` | free | Stops a job. |
 | `send_to_phone` | free | Messages your paired phone now, when you ask or an automation should ping you. The host's only. |
+| `save_procedure`, `list_procedures`, `read_procedure`, `remove_procedure` | free | Its own written procedures (see How agents learn and extend themselves). Every resident has them too. |
+| `propose_tool`, `propose_change`, `my_proposals` | free | Proposes a new tool or a change to itself (or a resident); a proposal does nothing until you approve it in the window. Every resident has them too. |
 
 The residents' tools pass through the same gate, with the same tiers; see Agents at work.
 
@@ -284,7 +290,7 @@ If you cannot open a direct message with the bot after step 2, make a private se
 
 **After pairing.** Only your account is answered. Anyone else gets one fixed line, and the attempt is written to the audit log.
 
-- Send text, or a voice note (transcribed on the Mac when the speech models are installed).
+- Send text, a voice note (transcribed on the Mac when the speech models are installed), or images (up to six per message, with or without words).
 - The words `status`, `stop` and `help` work as commands.
 - What you type on the phone is answered on the phone and kept in the app; what you type or say at the Mac is answered at the Mac, never on the phone; anything the assistant does by itself reaches both, whether you are at the Mac or not: automation results, every job result, warnings and errors, requests that need your yes, and messages it sends on purpose (`send_to_phone`, for "send that to my phone" or an automation that should ping you).
 - For less on the phone, each of those kinds can be set to **When away** or **Never** in Settings, Phone (default **Always**); switches from an older `phone.json` carry over (on is always, off is never). Away means no keyboard, mouse or voice at the Mac for `[presence] away_after_s` (default 300 seconds), a locked screen or a sleeping display, read through CoreGraphics with no macOS permission; if the Mac will not say, you count as here. It matters only for a kind set to When away.
@@ -381,6 +387,33 @@ No resident can open apps or links, use the shell, change automations or hand ou
 **Web work goes to the scout by itself.** When you ask the assistant to look at, check, read or research a website, a link or anything that needs the web, it hands the work to Rook at once and tells you it is under way; it does not ask first. Rook loads the page itself, each page is a step on the job ("Fetched a page: https://example.com"), and a page that could not be loaded is named with the reason. Tests and reviews go to Tock and code to Tink the same way. The assistant cannot see web pages itself; `open_url` only puts a page on the Mac's screen.
 
 Residents work on Claude, and on the local model in offline mode (below). When the month's budget is used up or no API key is stored, a job runs on the local model if it is downloaded and can use tools; otherwise the assistant refuses new hand-offs and says why. Cancelling a job (ask the assistant, or `POST /api/jobs/<id>/cancel`) stops it and any request it made. A job the daemon did not see to the end is marked failed at the next start.
+
+## How agents learn and extend themselves
+
+Every agent, the assistant and the five residents, can get better at its work, always under your control. There are three levels, and only the first needs nobody's yes.
+
+**1. Procedures: how it did something, written down.** After work that went well and is likely to come again, an agent saves the steps as a named procedure (`save_procedure`), and before doing that kind of work again it opens it (`read_procedure`) and follows it, improving it when it learns something. Each agent's prompt lists the names and "when to use it" lines of its own procedures and the shared ones. A procedure is a plain Markdown file you can read and edit: a title, "When to use", the author, when it last changed, how often it was opened, and the steps, in `~/.vision/house/agents/<id>/procedures/`. An agent may share one so every agent sees it (`~/.vision/house/procedures/`); a shared one can be changed only by its author or the assistant. In the window, Proposals, Procedures lists them per agent, and you can read, edit or delete any of them.
+
+**2. New tools, approved by you.** An agent may write a small script, in Python with the standard library only or in POSIX shell, and propose it as a new tool (`propose_tool`): its name, a one-line description, its inputs, the script, what it needs to reach (which of its room's project folders to read, and whether it needs the network) and why. A proposal runs nothing. It waits in Proposals in the window, and the left panel's Proposals control shows how many wait; a notice says one arrived and, with a phone paired, the phone gets a short line saying to look at the Mac. You approve or decline it at the Mac only: the window shows the whole script, its reach, who proposed it and why. A press on the phone, a typed "yes" or a spoken "yes" never approves a proposal; only the window's Approve does. When you approve, you choose who may use it (that agent only, or every agent) and how it runs (ask each time, the default, or free).
+
+- An approved tool is `made_<name>` to the agents. Its exact text is stored with its hash pinned. If the file changes on disk, the tool is turned off with a warning, and you can go back to a version whose hash still matches. If an agent proposes a new version (only its author or the assistant may), the tool is off until you decide; declining puts it back as it was, and approving keeps the old version so you can compare and go back.
+- Each run goes through the gate at the tier you chose, with a card showing the tool, its input and what it can reach; runs of a made tool are approved at the Mac only, never from the phone. Every run is written to the audit log with the script's hash, and the tool keeps its last 50 runs, which the window shows. A run gets its input as JSON on stdin, the folders it may read in `FOLDERS` (JSON, short name to path), an empty scratch folder as its working folder, 30 seconds and 20,000 bytes of output.
+- A resident's made tool never reaches more than the room it runs in: it may read the folders you approved that are also folders of the room the job is in, and nothing else. The assistant itself has no project folders, so its runs read none.
+- You can turn any made tool off or on, change its tier or who may use it, go back to a version, or delete it, under Proposals, Tools.
+
+**What the confinement enforces.** Each run is confined by macOS itself, with a `sandbox-exec` profile built for that run (the same mechanism Apple uses for its own services; it needs no new permission and nothing to install). Tests in `tests/test_proposals_sandbox.py` try to break out of it, each beside a control run without it:
+
+- Writing is possible only in the run's own scratch folder, which is deleted afterwards; not elsewhere, and not in the folders it may read.
+- Reading is possible only for macOS system files, the Python runtime, the scratch folder and the approved folders. The assistant's own folder (`~/.vision`), `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, `~/.docker`, `~/.kube`, `~/.netrc` and the like, the Keychains and cookies are never readable, nor protected files (`.env`, private keys, credential and secrets files) inside an approved folder.
+- Without network approval no connection can be opened, not even to this Mac; with it, connections can go out but nothing can listen. Local sockets, the Keychain, the clipboard, Apple Events and opening apps are closed in both cases.
+- The environment holds no secrets. The time is limited, and CPU time, the size of each file, open files and the number of processes are capped. Any process the script leaves behind, even a detached one, is found through the sandbox and killed when the run ends.
+- Where macOS cannot confine a run (no `sandbox-exec`, or the self-check fails), made tools do not run at all; they never run unconfined.
+
+**What rests on you reading the code.** What the script does with what it may read (it can print any of it back to the agent); with network approval, where it connects (anywhere, so it could send what it read); memory use and the scratch folder's total size; seeing whether files exist and their sizes and dates almost anywhere (only reading contents is confined); reading the system's own files such as the list of user accounts; timing and other side channels and flaws in macOS. Apple marks `sandbox-exec` as deprecated; it works on this macOS, and if a future one removes it, made tools stop rather than run unconfined.
+
+**3. Changes to itself, as proposals.** An agent may propose a new persona, model or thinking level for itself, with its reason (`propose_change`); the assistant may also propose one for a resident. Nothing else can be proposed: the code refuses anything outside those three. Proposals shows the before and after in full; you approve or decline at the Mac only. An approved change goes through the same checks as Settings (a model must be one the assistant knows), the previous value is kept so Restore puts it back, and approving, declining and restoring are each written to the audit log. A resident's change applies from its next job; the assistant's model and thinking level apply at once, and its own persona once the assistant restarts (it keeps its system prompt for the conversation).
+
+**The hard line.** An agent may try another approach, ask another agent, or report what blocked it, but it never looks for another route to something that was refused or needs your yes. No agent can change the approval rules, its own permissions or tiers, spending caps, keys, the phone's approval list, or the app's own code. One limit is worth knowing: if you make `shell` free, the assistant's shell runs as you, and could in principle edit files under `~/.vision` (a made tool's script and its manifest together, say) or call the daemon's own routes with its token. That is why `shell` asks by default.
 
 ## Local models and offline mode
 
