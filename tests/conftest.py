@@ -1,6 +1,10 @@
 """Shared fixtures. Every test runs with a temp `VISION_HOME`, a temp `.env`
-path, a temp Hugging Face cache and no Keychain, so nothing touches the real
-home, a real model or the repo's `.env`.
+path, a temp Hugging Face cache and a Keychain that lives in memory, so nothing
+touches the real home, a real model, the repo's `.env` or the owner's Keychain.
+
+The Keychain stand-in is installed when this file is imported and replaced by
+an empty one for each test: reading, storing and deleting all stay in memory.
+Programs a test starts get no Keychain at all (`PYTHON_KEYRING_BACKEND`).
 
 No test opens the microphone or loads speech models unless it asks to: the
 daemon's voice factory gives a silent `FakeVoice` unless `VISION_TEST_VOICE=1`.
@@ -17,8 +21,11 @@ import socket
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
+import keyring
+import keyring.backend
 import pytest
 import uvicorn
+from keyring.errors import PasswordDeleteError
 
 from vision.app import Components, Daemon
 from vision.core.bus import Bus
@@ -35,6 +42,45 @@ from vision.testing.fakes import (
 
 if importlib.util.find_spec("mlx_audio") is None:
     collect_ignore_glob = ["test_voice_*.py"]
+
+
+class MemoryKeyring(keyring.backend.KeyringBackend):
+    """The Keychain for tests: a dictionary. It behaves as the macOS one does for a missing entry."""
+
+    priority = 1  # type: ignore[assignment]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.entries: dict[tuple[str, str], str] = {}
+
+    def get_password(self, service: str, username: str) -> str | None:
+        return self.entries.get((service, username))
+
+    def set_password(self, service: str, username: str, password: str) -> None:
+        self.entries[(service, username)] = password
+
+    def delete_password(self, service: str, username: str) -> None:
+        if (service, username) not in self.entries:
+            raise PasswordDeleteError("Password not found")
+        del self.entries[(service, username)]
+
+
+NO_KEYCHAIN = "keyring.backends.null.Keyring"
+"""For programs a test starts: they read nothing and store nothing."""
+
+# Before any test or fixture runs, so nothing that is collected can reach the real one.
+keyring.set_keyring(MemoryKeyring())
+os.environ["PYTHON_KEYRING_BACKEND"] = NO_KEYCHAIN
+
+
+@pytest.fixture(autouse=True)
+def memory_keychain(monkeypatch: pytest.MonkeyPatch) -> Iterator[MemoryKeyring]:
+    """An empty Keychain in memory for each test; the owner's is never read, written or deleted from."""
+    memory = MemoryKeyring()
+    keyring.set_keyring(memory)
+    monkeypatch.setenv("PYTHON_KEYRING_BACKEND", NO_KEYCHAIN)
+    yield memory
+    keyring.set_keyring(MemoryKeyring())
 
 
 @pytest.fixture(autouse=True)
@@ -59,7 +105,6 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Pa
     monkeypatch.setenv("VISION_ENV_FILE", str(tmp_path / "missing.env"))
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hf-hub"))
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.setattr("keyring.get_password", lambda service, account: None)
     yield home
 
 

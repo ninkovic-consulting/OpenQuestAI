@@ -7,10 +7,13 @@ import time
 import tomllib
 
 import pytest
+from conftest import MemoryKeyring
 from settings_fakes import FakeOutside, client, use
 
 from vision.app import Daemon
 from vision.core.interfaces import TurnRecord
+from vision.core.secrets import KEYRING_SERVICE
+from vision.remote.token import KEYRING_ACCOUNT as BOT_TOKEN
 from vision.settings import backups
 
 
@@ -68,8 +71,9 @@ async def test_house_reset_reloads_the_house(daemon: Daemon) -> None:
     assert "Den" not in daemon.config.paths.house_file.read_text()
 
 
-async def test_everything_reset_and_restore(daemon: Daemon) -> None:
+async def test_everything_reset_and_restore(daemon: Daemon, memory_keychain: MemoryKeyring) -> None:
     fake = use(daemon, FakeOutside(key="sk-ant-old"))
+    memory_keychain.set_password(KEYRING_SERVICE, BOT_TOKEN, "a-bot-token-for-tests")
     memory = daemon.components.memory
     await memory.remember("The boat is blue.")
     await memory.log_turn(turn("hello"))
@@ -84,6 +88,7 @@ async def test_everything_reset_and_restore(daemon: Daemon) -> None:
     assert set(backup["files"]) == {"config.toml", "house.toml", "house", "log.db", "budget.json"}
     assert answer["restart"] is True and "Keychain" in answer["message"]
     assert fake.key is None and "delete_key" in fake.calls
+    assert memory_keychain.entries == {}  # the bot token went with the key, from the test's Keychain
     assert settings["setup"] == {"completed": False, "first_run": True}
     assert settings["budget"]["spent_usd"] == 0
     assert await memory.history(10) == []
@@ -103,11 +108,13 @@ async def test_everything_reset_and_restore(daemon: Daemon) -> None:
     assert getattr(daemon.config.assistant, "setup_completed", False) is True
 
 
-async def test_key_is_kept_unless_asked(daemon: Daemon) -> None:
+async def test_key_is_kept_unless_asked(daemon: Daemon, memory_keychain: MemoryKeyring) -> None:
     fake = use(daemon, FakeOutside(key="sk-ant-old"))
+    memory_keychain.set_password(KEYRING_SERVICE, BOT_TOKEN, "a-bot-token-for-tests")
     async with client(daemon) as http:
         await http.post("/api/reset", json={"level": "everything"})
     assert fake.key == "sk-ant-old" and "delete_key" not in fake.calls
+    assert memory_keychain.entries == {(KEYRING_SERVICE, BOT_TOKEN): "a-bot-token-for-tests"}
 
 
 @pytest.mark.parametrize(

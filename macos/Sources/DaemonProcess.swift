@@ -31,6 +31,11 @@ final class DaemonProcess {
         var arguments = ["-m", "vision", "run", "--port", String(settings.port)]
         if settings.fakeBrain { arguments.append("--fake-brain") }
         var environment = ProcessInfo.processInfo.environment
+        if settings.fakeBrain {
+            // The self-test runs on a scratch home: it must not read the owner's keys from the
+            // Keychain, or the bot token there would connect the owner's real bot for the test.
+            environment["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
+        }
         // Nothing from the launching shell may point Python somewhere else.
         for name in ["PYTHONHOME", "PYTHONPATH", "VIRTUAL_ENV", "VISION_ENV_FILE", "VISION_RESOURCES"] {
             environment.removeValue(forKey: name)
