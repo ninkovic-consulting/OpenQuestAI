@@ -6,6 +6,7 @@ import type { JobLimits, NewJob, Started } from "../../net/job-types";
 import type { JobsApi } from "../../net/jobs-api";
 import { hostAgentId, hostRoom } from "../../net/plan";
 import type { Agent, Plan, Room } from "../../net/types";
+import { agentChoice } from "../agent-choice";
 import { el, setText } from "../dom";
 import { button, fieldRow, statusLine } from "../settings/fields";
 
@@ -67,7 +68,7 @@ export function jobForm(o: JobFormOptions): HTMLElement {
   form.noValidate = true;
 
   const agent = el("select");
-  for (const a of residents) agent.append(new Option(a.name, a.id));
+  for (const a of residents) agent.append(new Option(agentChoice(a), a.id));
   const room = el("select");
   const roomNote = el("p", "field-note");
   const brief = el("textarea");

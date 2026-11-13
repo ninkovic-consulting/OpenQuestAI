@@ -7,6 +7,7 @@ import type { Daemon } from "../net/daemon";
 import { nativeHelpers } from "../net/native";
 import type { Store } from "../net/store";
 import type { Cell } from "../net/types";
+import { agentChoice } from "./agent-choice";
 import { el } from "./dom";
 import { mountFolderList, type FolderList } from "./pickers/folder-list";
 import { mountModelPicker, OWN_MODEL, type ModelSource } from "./pickers/model-picker";
@@ -96,7 +97,7 @@ export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon
       const choices = agentChoices(plan);
       agent.replaceChildren(
         ...choices.agents.map((a) => {
-          const option = el("option", "", a.name);
+          const option = el("option", "", agentChoice(a));
           option.value = a.id;
           return option;
         }),

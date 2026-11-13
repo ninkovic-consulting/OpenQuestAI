@@ -1,4 +1,5 @@
 import type { Plan, Room } from "../../../net/types";
+import { agentChoice } from "../../agent-choice";
 import { toolsNote } from "../../build-form";
 import { el } from "../../dom";
 import { mountFolderList } from "../../pickers/folder-list";
@@ -75,7 +76,7 @@ function roomEditor(ctx: SettingsContext, plan: Plan, room: Room): HTMLElement {
     const select = el("select");
     select.append(
       ...agentsFor(plan, room).map((a) => {
-        const option = el("option", "", a.name);
+        const option = el("option", "", agentChoice(a));
         option.value = a.id;
         return option;
       }),
