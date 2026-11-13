@@ -3,8 +3,10 @@
 Be plain about what this is: a program such as `git`, `npm` or `python` can
 run arbitrary code from the project (a `package.json` script, a test file, a
 git hook or alias, a `setup.py`). Running one is as powerful as running a
-shell command in that folder. That is why the caller always asks the owner
-first, and why the card shows the exact command line and folder.
+shell command in that folder. That is why the caller asks the owner first
+by default (a free tier holds only in a job the owner started at the Mac,
+see `vision.gate.policy`), and why the card shows the exact command line
+and folder.
 
 What this module does guarantee:
 - only a program from the owner's list, by its id, at the absolute path the

@@ -8,8 +8,9 @@ stands for all of them, and run_program takes the folder to run in (the
 first by default). It returns, in this order: list_files,
 read_file, search_files, write_file, edit_file, run_program. The caller sets
 the tiers: the first three free, write_file and edit_file ask, run_program
-always asks (a program such as git, npm or python can run any code the
-project contains).
+asks (a program such as git, npm or python can run any code the project
+contains). The owner may make run_program free, which then holds only in a
+job they started at the Mac (`vision.gate.policy`).
 
 Safety rules, enforced here and not left to the model:
 1. nothing outside the real folder a path is addressed through

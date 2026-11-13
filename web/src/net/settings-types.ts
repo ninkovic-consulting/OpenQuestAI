@@ -62,8 +62,12 @@ export interface Settings {
   budget: { month: string; spent_usd: number; cap_usd: number; warn_fraction: number };
   agents: SettingsAgent[];
   voice: VoiceState;
-  /** `free_at_the_mac_only`: free holds only for what the owner types or says at the Mac. */
-  gate: { tools: GateTool[]; tiers: Record<string, Tier>; never_free: string[]; free_at_the_mac_only: string[] };
+  /**
+   * `free_at_the_mac_only`: free holds only for what the owner types or says at the Mac.
+   * `free_for_jobs_from_the_mac`: free holds only in a job the owner started at the Mac
+   * (typed, said, or made in the window).
+   */
+  gate: { tools: GateTool[]; tiers: Record<string, Tier>; never_free: string[]; free_at_the_mac_only: string[]; free_for_jobs_from_the_mac: string[] };
   /** `root`: the folder new projects are made in, as the owner wrote it (`[projects] root`). */
   projects: { root: string };
   key: { stored: boolean; source: KeySource | null };

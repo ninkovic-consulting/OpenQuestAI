@@ -76,7 +76,7 @@ export function asVoiceState(v: unknown): VoiceState | null {
 }
 
 function isGate(v: unknown): boolean {
-  if (!isObj(v) || !isStrList(v["never_free"]) || !isStrList(v["free_at_the_mac_only"]) || !isObj(v["tiers"])) return false;
+  if (!isObj(v) || !isStrList(v["never_free"]) || !isStrList(v["free_at_the_mac_only"]) || !isStrList(v["free_for_jobs_from_the_mac"]) || !isObj(v["tiers"])) return false;
   const tools = v["tools"];
   const tiers = Object.values(v["tiers"]);
   return (

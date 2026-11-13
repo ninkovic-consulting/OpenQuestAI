@@ -384,11 +384,105 @@ async def test_a_spoken_yes_answers_the_oldest_request_whoever_asked(config: Con
     assert not (await second).ok
 
 
-async def test_run_program_is_never_free(config: Config) -> None:
-    from vision.gate.policy import tier_for
+class Programs:
+    """Project tools with a `run_program` and a `shell` that record their runs."""
 
-    config.gate.tiers["run_program"] = "free"
-    assert tier_for(config.gate, "run_program") == tier_for(config.gate, "run_program", "text") == "ask"
+    def __init__(self) -> None:
+        self.ran: list[str] = []
+
+    def __call__(self, roots: Sequence[Path], programs: Mapping[str, Path]) -> list[Tool]:
+        def tool(name: str) -> Tool:
+            async def run(args: dict[str, Any]) -> str:
+                self.ran.append(name)
+                return f"{name} ran"
+
+            return Tool(ToolSpec(name, name, {"type": "object", "properties": {}}), run, name, "")
+
+        return [tool("run_program"), tool("shell")]
+
+
+async def _program_job(
+    seeded: Config, tmp_path: Path, tier: str, *, call: str = "run_program", **hand_off: Any
+) -> tuple[World, Job, Programs, list[GateRequest]]:
+    """Tink runs `call` once in the Workshop, in a job handed off with `hand_off`; nobody answers."""
+    seeded.gate.tiers["run_program"] = tier
+    seeded.gate.tiers["shell"] = "free"
+    seeded.gate.timeout_s = 0.2
+    programs = Programs()
+    w = World(seeded, Client([use(call, program="git"), text("Done.")]), project=tmp_path, project_tools=programs)
+    asks = w.bus.subscribe({GateRequest.TYPE})
+    job = await w.run("Tink", "Read the repository's head.", **hand_off)
+    seen = []
+    while not asks._queue.empty():  # noqa: SLF001
+        seen.append(await asks.get())
+    return w, job, programs, seen
+
+
+@pytest.mark.parametrize(
+    "hand_off",
+    [{"via": "text"}, {"via": "voice"}, {"via": "window", "asked_by": "owner"}],
+    ids=["typed", "said", "window"],
+)
+async def test_free_run_program_runs_without_asking_in_a_job_started_at_the_mac(
+    seeded: Config, tmp_path: Path, hand_off: dict[str, str]
+) -> None:
+    w, job, programs, asked = await _program_job(seeded, tmp_path, "free", **hand_off)
+    assert job.status == "done" and not job.needed_approval
+    assert programs.ran == ["run_program"] and asked == []
+    audit = next(a for a in w.memory.audits if a.tool == "run_program")
+    assert (audit.tier, audit.decision, audit.agent, audit.job) == ("free", "allow", "maker", job.id)
+
+
+@pytest.mark.parametrize(
+    "hand_off",
+    [{"via": "phone"}, {"via": "automation"}, {"via": "job"}, {"via": ""}, {}, {"via": "somewhere"}],
+    ids=["phone", "automation", "job-report", "empty", "unknown", "odd"],
+)
+async def test_free_run_program_asks_first_in_any_other_job(
+    seeded: Config, tmp_path: Path, hand_off: dict[str, str]
+) -> None:
+    w, job, programs, asked = await _program_job(seeded, tmp_path, "free", **hand_off)
+    assert programs.ran == [] and [r.tool for r in asked] == ["run_program"]
+    assert job.needed_approval
+    audit = next(a for a in w.memory.audits if a.tool == "run_program")
+    assert (audit.tier, audit.decision) == ("ask", "timeout")
+
+
+@pytest.mark.parametrize("via", ["text", "voice", "window", "phone", ""])
+async def test_run_program_set_to_ask_asks_whatever_started_the_job(seeded: Config, tmp_path: Path, via: str) -> None:
+    _, job, programs, asked = await _program_job(seeded, tmp_path, "ask", via=via)
+    assert programs.ran == [] and [r.tool for r in asked] == ["run_program"] and job.needed_approval
+
+
+async def test_a_free_shell_never_runs_in_a_job_started_at_the_mac(seeded: Config, tmp_path: Path) -> None:
+    """A resident is never given `shell` (`abilities.HOST_ONLY`); were it there, its scoped gate
+    would still ask (`test_gate.test_a_job_from_the_mac_frees_neither_shell_nor_start_project`)."""
+    w, job, programs, asked = await _program_job(seeded, tmp_path, "free", call="shell", via="text")
+    assert programs.ran == [] and asked == []
+    assert "shell" not in offered(w.client.requests[0])  # type: ignore[union-attr]
+    assert [(a.tool, a.decision) for a in w.memory.audits if a.tool == "shell"] == [("shell", "deny")]
+
+
+async def test_free_run_program_asks_in_another_residents_request(seeded: Config, tmp_path: Path) -> None:
+    """Tink's job came from the owner at the Mac, but the request Tink makes of Tock did not."""
+    seeded.gate.tiers["run_program"] = "free"
+    seeded.gate.timeout_s = 0.2
+    programs = Programs()
+    client = Client(
+        [
+            use("ask_resident", agent="Tock", brief="Read the repository's head and tell me what it is."),
+            use("run_program", program="git"),
+            text("Could not run it."),
+            text("Tock could not run it."),
+        ]
+    )
+    w = World(seeded, client, project=tmp_path, project_tools=programs)
+    asks = w.bus.subscribe({GateRequest.TYPE})
+    parent = await w.run("Tink", "Find the repository's head.", via="text")
+    [child] = [j for j in w.board.all(10) if j.parent == parent.id]
+    request = await asyncio.wait_for(asks.get(), 1)
+    assert (request.tool, request.job) == ("run_program", child.id)
+    assert programs.ran == [] and child.needed_approval and child.via == ""
 
 
 async def test_with_the_real_workbench(seeded: Config, tmp_path: Path) -> None:

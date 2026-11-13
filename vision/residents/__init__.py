@@ -17,7 +17,8 @@
   reason, and the others still work. Nothing the host alone may do is ever
   among them;
 - puts them behind a gate scoped to the job (same tiers, audit and bus; the
-  card names the agent and its room);
+  card names the agent and its room; the gate is told where the job came
+  from, which decides whether a free `run_program` holds);
 - writes the system prompt (`prompt`) and runs the loop: on Claude
   (`worker`), or on the local model (`local_worker`) in offline mode, and
   when Claude cannot be used for the job (no API key, or the month's budget
@@ -162,7 +163,9 @@ class Residents:
         notes = ResidentNotes(self._config.paths.house, agent["id"])
         tools, folders = self._tools(agent["id"], job, desk, notes, room, _folders(room))
         tools += self._learning(agent, job, room, folders)
-        actor = Actor(agent["id"], agent["name"], job.id, room["name"] if room else None)
+        # A request from another resident never counts as the owner's, whatever it records.
+        via = job.via if job.parent is None else ""
+        actor = Actor(agent["id"], agent["name"], job.id, room["name"] if room else None, via)
         gate = self._scope(tools, actor, desk)
         server: list[dict[str, Any]] = []
         uses = self._config.jobs

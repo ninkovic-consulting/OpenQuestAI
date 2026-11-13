@@ -1,7 +1,8 @@
 """The six workbench tools, built for a room's project folders.
 
 Tiers are the caller's: list_files, read_file and search_files free;
-write_file and edit_file ask; run_program always asks. Every path starts
+write_file and edit_file ask; run_program asks (free, when the owner sets
+it so, only in a job they started at the Mac). Every path starts
 with a folder's name (`folders.py`), and run_program takes the folder to
 run in (the first by default).
 """

@@ -250,7 +250,7 @@ resident = true
 
 [tools.run_program]
 title = "Run a program"
-description = "Runs one of the room's programs in one of its project folders, always after asking you."
+description = "Runs one of the room's programs in one of its project folders, after asking you unless you make it free."
 built_in = true
 resident = true
 

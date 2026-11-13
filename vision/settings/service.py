@@ -17,7 +17,7 @@ from keyring.errors import KeyringError
 
 from vision.core import effort
 from vision.core.config import Config, load_config
-from vision.gate.policy import FREE_AT_THE_MAC_ONLY, NEVER_FREE
+from vision.gate.policy import FREE_AT_THE_MAC_ONLY, FREE_FOR_JOBS_FROM_THE_MAC, NEVER_FREE
 from vision.house import HouseError, store
 from vision.house.tools import load_catalog
 from vision.memory import profile
@@ -146,6 +146,7 @@ class SettingsService:
         catalog = load_catalog()
         ids = [t for t, info in catalog.items() if info.built_in]
         ids += [t for t in tiers if t not in ids]
+        ids = _after_shell(ids)
         return {
             "tools": [
                 {
@@ -158,6 +159,7 @@ class SettingsService:
             "tiers": {t: tiers.get(t, self.config.gate.default_tier) for t in ids},
             "never_free": sorted(NEVER_FREE),
             "free_at_the_mac_only": sorted(FREE_AT_THE_MAC_ONLY),
+            "free_for_jobs_from_the_mac": sorted(FREE_FOR_JOBS_FROM_THE_MAC),
         }
 
     # ------------------------------------------------------------ PATCH /api/settings
@@ -321,3 +323,14 @@ def _agent_changes(change: values.Change) -> dict[str, dict[str, Any]]:
             _, agent_id, key = field.split(".", 2)
             out.setdefault(agent_id, {})[key] = value
     return out
+
+
+def _after_shell(ids: list[str]) -> list[str]:
+    """`ids` with the tools free only for jobs from the Mac moved to just after `shell`, so
+    the two switches that run commands sit together in Asking first."""
+    if "shell" not in ids:
+        return ids
+    moved = [t for t in ids if t in FREE_FOR_JOBS_FROM_THE_MAC]
+    rest = [t for t in ids if t not in FREE_FOR_JOBS_FROM_THE_MAC]
+    at = rest.index("shell") + 1
+    return [*rest[:at], *moved, *rest[at:]]

@@ -6,6 +6,7 @@ import type { Plan } from "../../net/types";
 import { modelChoices, modelDetail, OWN_MODEL } from "../pickers/model-picker";
 import { fromProposal } from "../room-form";
 import { buildPatch, changedFields, draftFrom, placeErrors, rebase, restartLine, saveSummary } from "./draft";
+import { tierNote } from "./groups/asking";
 import { formatBytes, formatDay, formatDownload, formatPrice, formatTokens, modelOption, voiceLabel } from "./format";
 import { agentsFor, isHostRoom, roomEditFrom, roomPatch } from "./room-edit";
 import { back, forward, skip, startFlow, stepCount, stepOf, summary } from "./wizard/flow";
@@ -208,5 +209,43 @@ describe("the wizard's steps", () => {
     for (let i = 0; i < 12; i++) flow = forward(flow);
     expect(stepOf(flow)).toBe("done");
     expect(summary(flow).find((s) => s.id === "room")?.outcome.text).toBe("Not reached");
+  });
+});
+
+describe("asking first", () => {
+  it("lists Run a program right after Shell, with Free open to it", async () => {
+    const gate = (await settings()).gate;
+    const ids = gate.tools.map((t) => t.id);
+    expect(ids[ids.indexOf("shell") + 1]).toBe("run_program");
+    expect(gate.never_free).not.toContain("run_program");
+    expect(gate.free_for_jobs_from_the_mac).toEqual(["run_program"]);
+  });
+
+  it("says Free for a program holds only in jobs started at this Mac", async () => {
+    const gate = (await settings()).gate;
+    const program = gate.tools.find((t) => t.id === "run_program");
+    if (!program) throw new Error("no run_program row");
+    const note = tierNote(gate, program);
+    expect(note.startsWith(program.description)).toBe(true);
+    expect(note).toContain("Free applies only to jobs you start at this Mac: typed, said, or from a room's card.");
+    expect(note).toContain("A job started from your phone, by an automation or by another agent still asks first, here at the Mac.");
+    expect(note).toContain("A program can run code from the project.");
+    expect(note).not.toContain("—");
+  });
+
+  it("points Shell to the programs' own switch", async () => {
+    const gate = (await settings()).gate;
+    const shell = gate.tools.find((t) => t.id === "shell");
+    if (!shell) throw new Error("no shell row");
+    const note = tierNote(gate, shell);
+    expect(note).toContain("Programs the other agents run in a project folder have their own switch: Run a program.");
+    expect(note).toContain("Free applies only to what you type or say at this Mac.");
+  });
+
+  it("keeps Free locked for a tool that is never free", async () => {
+    const gate = { ...(await settings()).gate, never_free: ["run_program"] };
+    const program = gate.tools.find((t) => t.id === "run_program");
+    if (!program) throw new Error("no run_program row");
+    expect(tierNote(gate, program)).toContain("Always asks first");
   });
 });

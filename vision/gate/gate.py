@@ -1,7 +1,8 @@
 """The gate: every tool call passes through here, and every call is audited.
 
 - `free` runs at once (for `shell`, only in a turn the owner typed or said
-  at the Mac; see `policy`).
+  at the Mac; for `run_program`, only in a job the owner started at the Mac;
+  see `policy`). A free call is audited like any other.
 - `ask` publishes `gate.request`, waits up to `[gate] timeout_s` for a
   matching `gate.decision`, then publishes `gate.resolved`. No answer is a
   deny, logged as `timeout`.
@@ -88,6 +89,9 @@ class Actor:
     agent_name: str
     job: str
     room_name: str | None = None
+    job_via: str = ""
+    """Where the job came from (`Job.via` of a job the host or the owner started; empty for a
+    request from another resident). `policy.tier_for` frees `run_program` only for some."""
 
     def says(self, summary: str) -> str:
         """The card's summary in the agent's name: "Tink, in the Workshop: run a program"."""
@@ -153,14 +157,16 @@ class ToolGate:
 
     def tier(self, name: str) -> Tier:
         """The tier in the turn this runs in. A resident's call is never the owner's own turn,
-        whichever turn handed the job off, so a tier free only at the Mac asks there. A tool
+        whichever turn handed the job off, so a tier free only at the Mac asks there; a tier
+        free only for jobs the owner started at the Mac goes by where the job came from. A tool
         that carries its own tier (one an agent wrote) uses that instead of `[gate.tiers]`."""
         origin = current_origin()
-        source = origin.source if origin is not None and self._actor is None else None
+        actor = self._actor
+        source = origin.source if origin is not None and actor is None else None
         tool = self._find(name)
         if tool is not None and tool.tier is not None:
             return tool.tier
-        return tier_for(self._gate, name, source)
+        return tier_for(self._gate, name, source, actor.job_via if actor is not None else None)
 
     def line(self, name: str, args: dict[str, Any]) -> str:
         """One line saying what a call does, for a job's steps: "Run a program: pytest -q"."""

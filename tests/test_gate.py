@@ -58,9 +58,30 @@ def test_free_shell_holds_only_for_the_owner_at_the_mac(config: Config) -> None:
     assert tier_for(config.gate, "shell", "text") == "never"
 
 
-def test_run_program_is_never_free_even_for_the_owner(config: Config) -> None:
+def test_free_run_program_holds_only_in_a_job_the_owner_started_at_the_mac(config: Config) -> None:
     config.gate.tiers["run_program"] = "free"
+    for via in ("text", "voice", "window"):
+        assert tier_for(config.gate, "run_program", None, via) == "free"
+    for via in ("phone", "automation", "job", "", "owner", "host", None):
+        assert tier_for(config.gate, "run_program", None, via) == "ask"
+    # outside a job (no `job_via`) it asks, even in the owner's own turn at the Mac
     assert tier_for(config.gate, "run_program", "text") == "ask"
+    config.gate.tiers["run_program"] = "ask"
+    assert tier_for(config.gate, "run_program", None, "text") == "ask"
+    config.gate.tiers["run_program"] = "never"
+    assert tier_for(config.gate, "run_program", None, "window") == "never"
+
+
+def test_run_program_asks_by_default(config: Config) -> None:
+    assert tier_for(config.gate, "run_program", None, "text") == "ask"
+
+
+def test_start_project_and_shell_are_not_freed_by_a_job_from_the_mac(config: Config) -> None:
+    config.gate.tiers["start_project"] = "free"
+    config.gate.tiers["shell"] = "free"
+    for via in ("text", "voice", "window"):
+        assert tier_for(config.gate, "start_project", "text", via) == "ask"
+        assert tier_for(config.gate, "shell", None, via) == "ask"
 
 
 @pytest.mark.parametrize(
@@ -199,6 +220,58 @@ async def test_free_shell_asks_first_for_a_resident_even_in_the_owners_turn(setu
     job = gate.scoped(list(gate._tools.values()), Actor("checker", "Checker", "j1"))
     assert job.tier("shell") == "ask" and gate.tier("shell") == "free"
     assert not (await job.call("shell", {"command": "date"})).ok and calls == []
+
+
+@pytest.fixture
+def program_gate(config: Config) -> tuple[ToolGate, Bus, FakeMemory, list[dict[str, Any]]]:
+    config.gate.tiers = {"run_program": "free", "shell": "free", "start_project": "free"}
+    config.gate.timeout_s = 0.05
+    bus, memory, calls = Bus(), FakeMemory(), []
+    tools = [make_tool(n, calls) for n in ("run_program", "shell", "start_project")]
+    return ToolGate(config, bus, memory, tools), bus, memory, calls
+
+
+@pytest.mark.parametrize("via", ["text", "voice", "window"])
+async def test_free_run_program_runs_without_asking_in_a_job_from_the_mac(program_gate, via: str) -> None:
+    gate, bus, memory, calls = program_gate
+    requests = bus.subscribe({GateRequest.TYPE})
+    set_origin(TurnOrigin("phone"))  # whatever turn is current, the job's own origin decides
+    job = gate.scoped(list(gate._tools.values()), Actor("maker", "Tink", "j1", "Workshop", via))
+    result = await job.call("run_program", {"command": "git rev-parse HEAD"})
+    assert result.ok and calls == [{"command": "git rev-parse HEAD"}]
+    assert requests._queue.empty()
+    [audit] = memory.audits
+    assert (audit.tool, audit.tier, audit.decision, audit.request_id) == ("run_program", "free", "allow", "")
+    assert (audit.agent, audit.job, audit.args) == ("maker", "j1", {"command": "git rev-parse HEAD"})
+
+
+@pytest.mark.parametrize("via", ["phone", "automation", "job", "", "unknown"])
+async def test_free_run_program_asks_first_in_a_job_not_from_the_mac(program_gate, via: str) -> None:
+    gate, bus, memory, calls = program_gate
+    requests = bus.subscribe({GateRequest.TYPE})
+    set_origin(TurnOrigin("text"))
+    job = gate.scoped(list(gate._tools.values()), Actor("maker", "Tink", "j1", "Workshop", via))
+    result = await job.call("run_program", {"command": "git status"})
+    assert not result.ok and calls == []
+    request = requests._queue.get_nowait()
+    assert isinstance(request, GateRequest) and request.job == "j1"
+    assert (memory.audits[0].tier, memory.audits[0].decision) == ("ask", "timeout")
+
+
+async def test_a_job_from_the_mac_frees_neither_shell_nor_start_project(program_gate) -> None:
+    gate, _, memory, calls = program_gate
+    set_origin(TurnOrigin("text"))
+    job = gate.scoped(list(gate._tools.values()), Actor("maker", "Tink", "j1", None, "text"))
+    assert job.tier("shell") == "ask" and job.tier("start_project") == "ask"
+    assert not (await job.call("shell", {"command": "date"})).ok
+    assert not (await job.call("start_project", {})).ok
+    assert calls == [] and [a.decision for a in memory.audits] == ["timeout", "timeout"]
+
+
+async def test_run_program_asks_for_the_host_whatever_the_turn(program_gate) -> None:
+    gate, _, _, _ = program_gate
+    set_origin(TurnOrigin("text"))
+    assert gate.tier("run_program") == "ask"
 
 
 async def test_never_and_unknown_are_refused_and_audited(setup) -> None:

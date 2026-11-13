@@ -64,9 +64,10 @@ async def test_settings_shape(daemon: Daemon) -> None:
     host = got["agents"][0]
     assert host["id"] == "host" and host["is_host"] and host["name"] == "Vision"
     assert not any(a["is_host"] for a in got["agents"][1:])
-    assert got["gate"]["never_free"] == ["run_program", "start_project"]
+    assert got["gate"]["never_free"] == ["start_project"]
     assert got["projects"] == {"root": "~/Projects"}
     assert got["gate"]["free_at_the_mac_only"] == ["shell"]
+    assert got["gate"]["free_for_jobs_from_the_mac"] == ["run_program"]
     assert got["gate"]["tiers"]["run_program"] == "ask" and got["gate"]["tiers"]["read_file"] == "free"
     assert got["gate"]["tiers"]["shell"] == "ask"
     assert {t["id"] for t in got["gate"]["tools"]} >= {"remember", "shell"}
@@ -75,6 +76,8 @@ async def test_settings_shape(daemon: Daemon) -> None:
         "title": "Shell",
         "description": "Runs a shell command on this Mac, after asking you unless you make it free.",
     }
+    assert got["gate"]["tools"][5]["id"] == "run_program"  # right after Shell, in Asking first
+    assert [t["id"] for t in got["gate"]["tools"]].count("run_program") == 1
     assert got["gate"]["tiers"]["delete_automation"] == "ask"
     assert got["gate"]["tiers"]["create_automation"] == "free"
     assert got["key"] == {"stored": False, "source": None}
@@ -117,23 +120,28 @@ async def test_cap_rejects_booleans_and_text(daemon: Daemon) -> None:
             assert answer.status_code == 400
 
 
-async def test_shell_can_be_free_but_run_program_never(daemon: Daemon) -> None:
+async def test_shell_and_run_program_can_be_free_but_start_project_never(daemon: Daemon) -> None:
     use(daemon)
     async with client(daemon) as http:
-        program = await http.patch("/api/settings", json={"gate": {"tiers": {"run_program": "free"}}})
-        assert program.status_code == 400
-        [error] = program.json()["detail"]["errors"]
-        assert error["field"] == "gate.tiers.run_program"
+        project = await http.patch("/api/settings", json={"gate": {"tiers": {"start_project": "free"}}})
+        assert project.status_code == 400
+        [error] = project.json()["detail"]["errors"]
+        assert error["field"] == "gate.tiers.start_project"
         assert "never free" in error["message"]
         unknown = await http.patch("/api/settings", json={"gate": {"tiers": {"rm": "free"}}})
         assert unknown.status_code == 400
         bad = await http.patch("/api/settings", json={"gate": {"tiers": {"recall": "maybe"}}})
         assert bad.json()["detail"]["errors"][0]["message"] == "A tier is free, ask or never."
         shell = await http.patch("/api/settings", json={"gate": {"tiers": {"shell": "free"}}})
+        assert daemon.config.gate.tiers["run_program"] == "ask"
+        program = await http.patch("/api/settings", json={"gate": {"tiers": {"run_program": "free"}}})
     assert shell.status_code == 200 and shell.json()["applied"] == ["gate.tiers.shell"]
+    assert program.status_code == 200 and program.json()["applied"] == ["gate.tiers.run_program"]
+    assert program.json()["settings"]["gate"]["tiers"]["run_program"] == "free"
     assert daemon.config.gate.tiers["shell"] == "free"
-    assert daemon.config.gate.tiers["run_program"] == "ask"
-    assert config_file(daemon)["gate"]["tiers"] == {"shell": "free"}
+    assert daemon.config.gate.tiers["run_program"] == "free"
+    assert daemon.config.gate.tiers["start_project"] == "ask"
+    assert config_file(daemon)["gate"]["tiers"] == {"shell": "free", "run_program": "free"}
 
 
 async def test_gate_tiers_apply_at_once(daemon: Daemon) -> None:

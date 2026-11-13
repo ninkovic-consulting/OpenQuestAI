@@ -224,8 +224,9 @@ export class MockSettings implements SettingsApi {
       gate: {
         tools: Object.keys(DEFAULT_TIERS).map((id) => ({ id, title: titleOf(id), description: TOOL_TEXT[id] ?? "" })),
         tiers: c.tiers,
-        never_free: [],
+        never_free: ["start_project"],
         free_at_the_mac_only: ["shell"],
+        free_for_jobs_from_the_mac: ["run_program"],
       },
       projects: { root: c.projectsRoot },
       key: { stored: this.key.stored, source: this.key.stored ? "keychain" : null },
@@ -717,5 +718,7 @@ export function mockFolders(prefix: string): Result<FolderSuggestion[]> {
 
 function titleOf(id: string): string {
   const t = id.replace(/_/g, " ");
-  return id === "open_url" ? "Open link" : t.charAt(0).toUpperCase() + t.slice(1);
+  if (id === "open_url") return "Open link";
+  if (id === "run_program") return "Run a program";
+  return t.charAt(0).toUpperCase() + t.slice(1);
 }

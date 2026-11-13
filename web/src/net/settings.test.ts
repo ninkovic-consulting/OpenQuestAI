@@ -24,6 +24,8 @@ describe("type guards", () => {
     expect(asVoiceState({ ...r.value.voice, mic: "maybe" })).toBeNull();
     expect(asVoiceState({ ...r.value.voice, mic: "silent" })).not.toBeNull();
     expect(asSettings({ ...r.value, gate: { ...r.value.gate, free_at_the_mac_only: undefined } })).toBeNull();
+    expect(asSettings({ ...r.value, gate: { ...r.value.gate, free_for_jobs_from_the_mac: undefined } })).toBeNull();
+    expect(asSettings({ ...r.value, gate: { ...r.value.gate, free_for_jobs_from_the_mac: [1] } })).toBeNull();
     expect(asSpeakTest({ ok: true, message: "Said." })).toEqual({ ok: true, message: "Said." });
     expect(asSpeakTest({ ok: "yes", message: "Said." })).toBeNull();
   });
@@ -96,6 +98,14 @@ describe("the mock's settings answers", () => {
     const r = await m.patchSettings({ gate: { tiers: { shell: "free" } } });
     expect(r.ok && r.value.settings.gate.tiers["shell"]).toBe("free");
     expect(r.ok && r.value.settings.gate.free_at_the_mac_only).toEqual(["shell"]);
+  });
+
+  it("let run_program be free, for jobs the owner starts at the Mac", async () => {
+    const m = mock();
+    const r = await m.patchSettings({ gate: { tiers: { run_program: "free" } } });
+    expect(r.ok && r.value.settings.gate.tiers["run_program"]).toBe("free");
+    expect(r.ok && r.value.settings.gate.free_for_jobs_from_the_mac).toEqual(["run_program"]);
+    expect(r.ok && r.value.settings.gate.never_free).toEqual(["start_project"]);
   });
 
   it("report a silent microphone, and try again when another is chosen", async () => {
