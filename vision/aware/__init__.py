@@ -5,8 +5,8 @@
   the cached system prompt, whenever they change.
 - `build_tools(awareness)`: `house_overview`, `room_details` and
   `assistant_status`, free tier, offered behind the gate.
-- `limits`: the one place that says which agents are awake and whether room
-  tools run.
+- `limits`: the one place that says who can take work and what each
+  resident can and cannot do.
 """
 
 from __future__ import annotations
@@ -28,7 +28,15 @@ class Awareness:
 
     def view(self) -> HouseView:
         d = self.daemon
-        return HouseView(d.components.house.plan(), self._personas, d.snapshot.state)
+        states = d.board.agent_states()
+        return HouseView(
+            d.components.house.plan(),
+            self._personas,
+            d.snapshot.state,
+            jobs=d.board.open_jobs(),
+            waiting=frozenset(a for a, s in states.items() if s["state"] == "waiting"),
+            project_tools=d.residents.has_project_tools,
+        )
 
     def summary(self) -> str:
         return summary(self.view())

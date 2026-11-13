@@ -6,7 +6,7 @@
   `GET /api/house` (plus the house package's own routes under `/api/house`,
   the settings package's under `/api`: settings, models, voice, downloads,
   folders, doctor, reset and backups, the scheduler's `/api/automations` and
-  the phone channel's `/api/phone`),
+  the job board's `/api/jobs` and the phone channel's `/api/phone`),
   each needing `Authorization: Bearer <token>`. Other packages protect their
   routers with `require_token`.
 - `WS /ws`: the first message must be `hello` with the token, else the
@@ -132,6 +132,8 @@ def create_app(daemon: Daemon) -> FastAPI:
             **daemon.snapshot.as_dict(),
             "brain": daemon.components.brain.name,
             "budget": dataclasses.asdict(daemon.components.budget.status()),
+            "jobs": [j.summary() for j in daemon.board.open_jobs()],
+            "agents": daemon.board.agent_states(),
         }
 
     @app.get("/api/history", dependencies=auth)
@@ -156,6 +158,10 @@ def create_app(daemon: Daemon) -> FastAPI:
     from vision.scheduler import build_router as automations_router
 
     app.include_router(automations_router(daemon.automations), prefix="/api", dependencies=auth)
+
+    from vision.jobs import build_router as jobs_router
+
+    app.include_router(jobs_router(daemon.board), prefix="/api", dependencies=auth)
 
     from vision.remote import build_router as phone_router
 

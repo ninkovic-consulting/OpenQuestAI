@@ -65,17 +65,19 @@ async def test_the_house_overview_has_every_room_and_agent(daemon: Daemon) -> No
     for room in ("Hall", "Library", "Control Room", "Comms Room", "Kitchen", "Workshop", "Attic", "Den"):
         assert f"- {room} (id " in text, room
     assert "1 extra" in text and "project /tmp" in text
-    assert "- Tink, the maker (id maker). Asleep: cannot be given work yet. Model claude-opus-5-5." in text
+    assert "- Tink, the maker (id maker). Free to take work. Model claude-opus-5-5." in text
+    assert "At work it keeps its own notes" in text
+    assert "Wren, the envoy (id envoy)" in text and "it has no mail or messaging access yet" in text
     assert "Rooms: Kitchen, Game Room, Garage, Workshop, Den." in text
     assert "- Vision, the host (id host). This is you. Awake (idle)." in text
     assert "Manner: Cheerful and practical." in text
-    assert limits.limits_line() in text
+    assert limits.limits_line(daemon.residents.has_project_tools) in text
 
 
 async def test_room_details_with_tools_and_whether_they_work(daemon: Daemon) -> None:
     await add_den(daemon)
     den = await call(daemon, "room_details", room="the den")
-    assert den.startswith("Den (id den), an extra room, run by Tink, the maker: asleep: cannot be given work yet.")
+    assert den.startswith("Den (id den), an extra room, run by Tink, the maker: free to take work.")
     assert "Project folder: /tmp." in den
     hall = await call(daemon, "room_details", room="hall")
     assert "- Shell (shell): on this Mac; works today." in hall
@@ -103,7 +105,8 @@ async def test_its_own_status_tells_the_truth_and_no_secret(daemon: Daemon) -> N
     assert "API key: stored." in text and GOOD_KEY not in text
     assert "Spend this month" in text and "of the $150.00 cap" in text
     assert "Phone channel (Discord): not set up (no bot token); not paired." in text
-    assert "Tools that ask first: delete_automation, shell." in text
+    assert "Tools that ask first: delete_automation, edit_file, run_program, shell, write_file." in text
+    assert "Residents' jobs: 0 at work, 0 waiting" in text
     assert f"Data lives in {daemon.config.paths.home}" in text
     assert "Automations: 0; none due." in text
 
@@ -112,7 +115,9 @@ async def test_the_new_tools_are_free_and_audited(daemon: Daemon) -> None:
     for name in ("house_overview", "room_details", "assistant_status"):
         assert daemon.config.gate.tiers[name] == "free"
     names = [s.name for s in daemon.components.tools.specs()]
-    assert names[-3:] == ["house_overview", "room_details", "assistant_status"]
+    assert names[-7:] == [
+        "house_overview", "room_details", "assistant_status", "hand_off", "list_jobs", "job_details", "cancel_job",
+    ]
 
 
 async def turn(d: Daemon, text: str) -> str:
@@ -128,12 +133,12 @@ async def test_the_summary_reaches_the_model_and_follows_the_house(daemon: Daemo
     first = await turn(daemon, "Hello")
     assert first.startswith("Hello\n\n[Where you are now")
     assert "You are Vision, the host. You orchestrate from the Hall and run no other room." in first
-    assert "- Tink, the maker (claude-opus-5-5): Kitchen, Game Room, Garage, Workshop; asleep." in first
-    assert "Today only you are awake." in first
+    assert "- Tink, the maker (claude-opus-5-5): Kitchen, Game Room, Garage, Workshop; free to take work." in first
+    assert "The residents can take work: hand it off with hand_off" in first
     assert (await turn(daemon, "And again")) == "And again"
     await add_den(daemon)
     third = await turn(daemon, "Anything new?")
-    assert "Kitchen, Game Room, Garage, Workshop, Den; asleep." in third
+    assert "Kitchen, Game Room, Garage, Workshop, Den; free to take work." in third
     assert daemon.components.memory is not None
     system = daemon.components.memory.core()
     assert "Where you are now" not in system

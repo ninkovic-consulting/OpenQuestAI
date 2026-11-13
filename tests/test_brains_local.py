@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from vision.brains.local import LocalBrain
+from vision.brains.local_rules import NO_TOOLS, with_rules
 from vision.core.config import Config
 from vision.core.interfaces import BrainError, TextDelta, TurnDone
 from vision.testing.fakes import FakeMemory
@@ -54,7 +55,8 @@ async def test_streams_reply_with_usage_and_keeps_history(config: Config) -> Non
     assert events == [TextDelta("Hel"), TextDelta("lo."), TurnDone(config.brain.local_model, 30, 4, "end_turn")]
     body = json.loads(server.requests[0].content)
     assert body["model"] == config.brain.local_model and body["stream"] is True
-    assert body["messages"] == [{"role": "system", "content": "PERSONA"}, {"role": "user", "content": "Hi"}]
+    assert NO_TOOLS in with_rules("PERSONA")
+    assert body["messages"] == [{"role": "system", "content": with_rules("PERSONA")}, {"role": "user", "content": "Hi"}]
     assert "tools" not in body
     assert str(server.requests[0].url) == config.brain.local_base_url + "/chat/completions"
 

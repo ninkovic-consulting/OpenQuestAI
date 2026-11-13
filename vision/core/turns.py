@@ -8,8 +8,9 @@ automations.
 
 The local time goes into the user's message, never into the cached system
 prompt: a typed or spoken turn that mentions a time gets one line with it,
-an automation's run says what it is and when it runs, and a message from the
-paired phone says it came from there. The same goes for the short summary
+an automation's run says what it is and when it runs, a message from the
+paired phone says it came from there, and a job report says a resident's
+work ended and that nobody asked anything. The same goes for the short summary
 of the house: it rides on the user's message, so the cached prefix never
 changes.
 """
@@ -75,6 +76,14 @@ def _with_time(text: str, origin: TurnOrigin, now: datetime) -> str:
             f'[Automation "{origin.automation_name}" is due now, {when}. Nobody typed or said '
             "this: it runs on its schedule, perhaps with nobody watching. Carry out the "
             "instruction below and answer with the result in a sentence or two.]\n"
+            f"{text}"
+        )
+    if origin.source == "job":
+        return (
+            f"[A job report, {when}. Nobody typed or said this: work you or the owner handed to a "
+            "resident has ended. Tell the owner the outcome in your own words, in a sentence or "
+            "a few, and say plainly if it failed or needed a yes that nobody gave. Do not hand "
+            "the work off again unless the owner asks.]\n"
             f"{text}"
         )
     if origin.source == "phone":

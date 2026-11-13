@@ -117,6 +117,8 @@ class BudgetConfig(_Section):
     monthly_cap_usd: float = Field(default=150.0, ge=0)
     warn_fraction: float = Field(default=0.8, ge=0, le=1)
     prices: dict[str, Price] = Field(default_factory=_default_prices)
+    web_search_per_1k_usd: float = Field(default=10.0, ge=0)
+    """The list price of Anthropic's server-side web search, per thousand searches."""
 
 
 class VoiceConfig(_Section):
@@ -150,6 +152,20 @@ class GateConfig(_Section):
             "house_overview": "free",
             "room_details": "free",
             "assistant_status": "free",
+            "hand_off": "free",
+            "list_jobs": "free",
+            "job_details": "free",
+            "cancel_job": "free",
+            "note_progress": "free",
+            "ask_resident": "free",
+            "machine_status": "free",
+            "web_search": "free",
+            "list_files": "free",
+            "read_file": "free",
+            "search_files": "free",
+            "write_file": "ask",
+            "edit_file": "ask",
+            "run_program": "ask",
         }
     )
 
@@ -158,6 +174,23 @@ class AutomationsConfig(_Section):
     missed_grace_s: float = Field(default=3600.0, ge=0)
     """A run missed while the daemon was off (or the Mac asleep) still runs once if it is
     late by no more than this; later than that it is skipped and recorded as missed."""
+
+
+class JobsConfig(_Section):
+    """Limits on the residents' work (`vision.jobs`)."""
+
+    max_running: int = Field(default=2, ge=1, le=6)
+    """Jobs at work at once; a resident never works on two at a time."""
+    max_queued: int = Field(default=20, ge=1, le=200)
+    max_steps: int = Field(default=24, ge=1, le=200)
+    """Model calls (tool rounds) one job may make."""
+    job_timeout_s: float = Field(default=900.0, ge=10, le=86_400)
+    max_job_usd: float = Field(default=1.0, ge=0, le=1000)
+    """A job stops when its own cost passes this."""
+    speak_results: bool = True
+    """The host says a finished job's outcome aloud (when voice is on)."""
+    web_search_max_uses: int = Field(default=5, ge=1, le=50)
+    """Web searches the scout may run in one request to the model."""
 
 
 class PathsConfig(_Section):
@@ -197,6 +230,7 @@ class Config(BaseModel):
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     gate: GateConfig = Field(default_factory=GateConfig)
     automations: AutomationsConfig = Field(default_factory=AutomationsConfig)
+    jobs: JobsConfig = Field(default_factory=JobsConfig)
     paths: PathsConfig
     agents: dict[str, Any] = Field(default_factory=dict)
     """Free-form; interpreted by `vision.house`, not validated here."""

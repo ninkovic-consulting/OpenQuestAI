@@ -31,13 +31,17 @@ Direction = Literal["out", "in"]
 State = Literal["idle", "listening", "transcribing", "thinking", "speaking"]
 BrainName = Literal["claude", "local", "fake"]
 UtteranceSource = Literal["voice", "text", "phone"]
-TurnSource = Literal["voice", "text", "automation", "phone"]
-"""Where a turn came from: said, typed, an automation that came due, or the paired phone."""
+TurnSource = Literal["voice", "text", "automation", "phone", "job"]
+"""Where a turn came from: said, typed, an automation that came due, the paired phone, or a
+resident's job that ended (the host reports it)."""
 AutomationChange = Literal["created", "updated", "deleted", "reloaded"]
 RoomLight = Literal["dark", "idle", "active"]
 GateOutcome = Literal["allow", "deny", "timeout"]
 GateChoice = Literal["allow", "deny"]
 NoticeLevel = Literal["info", "warn", "error"]
+JobStatus = Literal["queued", "working", "done", "failed", "cancelled"]
+AgentWork = Literal["idle", "working", "waiting"]
+"""What a resident is doing: nothing, a job, or a job blocked on a gate request."""
 
 
 class EventError(ValueError):
@@ -141,7 +145,12 @@ class RoomState(Event):
 
 
 class GateRequest(Event):
-    """A tool call waiting for the user's yes. `expires_at` is Unix seconds."""
+    """A tool call waiting for the user's yes. `expires_at` is Unix seconds.
+
+    A request made during a resident's job names the agent (`agent` is its id,
+    `agent_name` what the owner calls it) and the job; the host's own requests
+    leave all three null.
+    """
 
     TYPE: ClassVar[str] = "gate.request"
     DIRECTION: ClassVar[Direction] = "out"
@@ -150,6 +159,9 @@ class GateRequest(Event):
     summary: str
     detail: str
     expires_at: float
+    agent: str | None = None
+    agent_name: str | None = None
+    job: str | None = None
 
 
 class GateResolved(Event):
@@ -216,6 +228,50 @@ class AutomationFinished(Event):
     name: str = Field(min_length=1)
     status: str = Field(min_length=1)
     reply: str
+
+
+class JobStep(BaseModel):
+    """One line of a job's record: when, what kind (started, tool, progress, request,
+    finished), and a short text."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    ts: float
+    kind: str
+    text: str
+
+
+class JobChanged(Event):
+    """A job on the board changed: queued, started, a step, waiting, ended.
+
+    Times are Unix seconds (null until they happen). `asked_by` is `host`,
+    `owner` (started from the window) or the id of the resident whose request
+    it is; `parent` is that resident's job. `last_step` is the newest step.
+    """
+
+    TYPE: ClassVar[str] = "job.changed"
+    DIRECTION: ClassVar[Direction] = "out"
+    id: str = Field(min_length=1)
+    title: str
+    agent: str = Field(min_length=1)
+    room: str | None
+    status: JobStatus
+    asked_by: str
+    parent: str | None
+    created_at: float
+    started_at: float | None
+    ended_at: float | None
+    needed_approval: bool
+    last_step: JobStep | None
+
+
+class AgentState(Event):
+    """What a resident is doing now; `job` is the job it works on, else null."""
+
+    TYPE: ClassVar[str] = "agent.state"
+    DIRECTION: ClassVar[Direction] = "out"
+    agent: str = Field(min_length=1)
+    state: AgentWork
+    job: str | None = None
 
 
 class Notice(Event):
@@ -289,6 +345,8 @@ EVENT_TYPES: dict[str, type[Event]] = {
         AutomationChanged,
         AutomationStarted,
         AutomationFinished,
+        JobChanged,
+        AgentState,
         Notice,
         Hello,
         InputText,

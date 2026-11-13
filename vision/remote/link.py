@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from vision.core.interfaces import AuditRecord
-from vision.remote.host import PHONE_NEVER, Host
+from vision.remote.host import PHONE_NEVER, PHONE_OFF_BY_DEFAULT, Host
 from vision.remote.pairing import Pairing
 from vision.remote.store import PhoneState
 from vision.remote.transport import Transport, Unreachable
@@ -40,7 +40,9 @@ class Link:
         if tool in PHONE_NEVER:
             return False
         allowed = self.state().phone_tools
-        return allowed is None or tool in allowed
+        if allowed is None:
+            return tool not in PHONE_OFF_BY_DEFAULT
+        return tool in allowed
 
     async def refused(self, user_id: str, user_name: str, kind: str, why: str) -> None:
         """Write a refused attempt to the audit log: who and what kind, never the words."""

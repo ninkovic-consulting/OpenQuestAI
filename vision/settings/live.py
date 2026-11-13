@@ -20,9 +20,9 @@ from vision.house import HouseError
 if TYPE_CHECKING:
     from vision.app import Daemon
 
-LIVE_SECTIONS = ("assistant", "budget", "voice", "gate", "automations")
+LIVE_SECTIONS = ("assistant", "budget", "voice", "gate", "automations", "jobs")
 """Copied into the running config."""
-APPLIED_AT_ONCE = ("assistant", "voice", "gate", "automations", "agents")
+APPLIED_AT_ONCE = ("assistant", "voice", "gate", "automations", "jobs", "agents")
 BUDGET_AT_ONCE = ("monthly_cap_usd", "prices")
 
 
@@ -65,6 +65,8 @@ async def apply(daemon: Daemon, fresh: Config) -> None:
         budget = daemon.components.budget
         budget.set_cap(live.budget.monthly_cap_usd)
         daemon.bus.publish(BudgetUpdate(**dataclasses.asdict(budget.status())))
+    if old.jobs != live.jobs:
+        daemon.board.pump()  # a higher limit may let waiting jobs start
     if daemon.voice_running and (renamed or old.voice != live.voice):
         await daemon.set_voice(True)
 

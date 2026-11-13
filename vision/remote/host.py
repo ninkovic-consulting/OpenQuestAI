@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Protocol
 from vision.core.bus import Bus
 from vision.core.events import GateRequest, State
 from vision.core.interfaces import AuditRecord, TurnRecord
-from vision.gate.policy import ALWAYS_ASK
 from vision.house.tools import load_catalog
 
 if TYPE_CHECKING:
@@ -21,8 +20,11 @@ if TYPE_CHECKING:
 
     from vision.app import Daemon
 
-PHONE_NEVER = frozenset(ALWAYS_ASK)
+PHONE_NEVER = frozenset({"shell"})
 """Tools that are approved only at the Mac, whatever the phone settings say."""
+PHONE_OFF_BY_DEFAULT = frozenset({"run_program"})
+"""Tools the phone does not approve until the owner adds them in Settings, Phone: a
+resident's `run_program` runs code from the project."""
 
 
 class TurnsBusy(RuntimeError):
@@ -59,7 +61,7 @@ class Host(Protocol):
         ...
 
     def tools(self) -> list[tuple[str, str]]:
-        """Every tool behind the gate, as `(id, title)`."""
+        """Every tool behind the gate, the residents' included, as `(id, title)`."""
         ...
 
     def local_voice(self) -> LocalSpeech | None:
@@ -108,8 +110,10 @@ class DaemonHost:
         return self._d.snapshot.gate_pending.get(request_id)
 
     def tools(self) -> list[tuple[str, str]]:
+        """The host's tools, then the residents' (their requests reach the phone too)."""
         catalog = load_catalog()
         names = [spec.name for spec in self._d.components.tools.specs()]
+        names += [t.id for t in catalog.values() if t.resident and t.id not in names]
         return [(n, catalog[n].title if n in catalog else n.replace("_", " ")) for n in names]
 
     def local_voice(self) -> LocalSpeech | None:

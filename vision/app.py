@@ -14,11 +14,16 @@ house's host persona; then memory, the house, the automations, the brain and
 voice start, the budget is published, the Hall's light starts following the
 conversation, and once the session runs, so do the scheduler's runner and
 the phone channel (`vision.remote`), which stops first on the way down.
+The job board (`vision.jobs`) starts with them: residents' work runs as
+their own sessions (`vision.residents`), and a finished job is reported to
+the owner as a host turn of its own.
 
 The automations belong to the daemon, not to `Components`, so a daemon on
 fakes has them too; their tools are offered to the real gate only. So are the
 read-only awareness tools (`vision.aware`), whose short summary of the house
-the session adds to the user's message whenever it changes.
+the session adds to the user's message whenever it changes, and the host's
+job tools (`hand_off` and the rest). A resident's tools go through a gate
+scoped to its job, beside the host's: the same tiers, audit and bus.
 """
 
 from __future__ import annotations
@@ -28,21 +33,24 @@ import contextlib
 import dataclasses
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import uvicorn
 
-from vision import aware, brains, gate, house, memory, remote, scheduler, voice
+from vision import aware, brains, gate, house, jobs, memory, remote, residents, scheduler, voice
 from vision.core.bus import Bus, Subscription
 from vision.core.config import Config
 from vision.core.events import BudgetUpdate, Notice, NoticeLevel, RoomLight, RoomState, StateChanged
-from vision.core.interfaces import Brain, Budget, House, Memory, ToolHost, Voice
+from vision.core.interfaces import Brain, Budget, House, Memory, ToolHost, TurnRecord, Voice
 from vision.core.server import create_app
 from vision.core.session import Session
 from vision.core.snapshot import Snapshot
 from vision.core.token import ensure_token
+from vision.gate.gate import Actor, JobHooks, ToolGate
+from vision.gate.tools import Tool
+from vision.residents.client import ResidentClient
 from vision.scheduler.model import Automation, RunStatus
 from vision.testing.fakes import FakeBrain, FakeVoice
 
@@ -71,18 +79,21 @@ def build_components(
     *,
     automations: scheduler.Automations | None = None,
     awareness: aware.Awareness | None = None,
+    board: jobs.Board | None = None,
     fake_brain: bool = False,
     voice_factory: VoiceFactory | None = None,
 ) -> tuple[Components, list[Notice]]:
     """Call every package's factory. `voice_factory` replaces `vision.voice.make_voice`;
-    `automations` and `awareness` put the scheduler's and the read-only awareness tools
-    behind the gate."""
+    `automations`, `awareness` and `board` put the scheduler's, the read-only awareness
+    and the job tools behind the gate."""
     notices: list[Notice] = []
     mem = memory.make_memory(config)
     budget = brains.make_budget(config, bus)
     extra = scheduler.build_tools(automations) if automations is not None else []
     if awareness is not None:
         extra += aware.build_tools(awareness)
+    if board is not None:
+        extra += jobs.build_tools(board)
     tools = gate.make_tool_host(config, bus, mem, extra)
     brain: Brain
     if fake_brain:
@@ -130,18 +141,36 @@ class Daemon:
         self.automations = scheduler.Automations(config, self.bus)
         self.phone = remote.make_phone(self)
         self.awareness = aware.Awareness(self)
+        self.board = jobs.Board(
+            config,
+            self.bus,
+            plan=lambda: self.components.house.plan(),
+            exhausted=lambda: self.components.budget.exhausted(),
+            light=lambda room, light: self.components.house.set_room_state(room, light),
+        )
         if components is None:
             built = build_components(
                 config,
                 self.bus,
                 automations=self.automations,
                 awareness=self.awareness,
+                board=self.board,
                 fake_brain=fake_brain,
                 voice_factory=voice,
             )
             self.components, self._notices = built
         else:
             self.components, self._notices = components(self.bus), []
+        self._resident_client = ResidentClient(config)
+        self.residents = residents.Residents(
+            config,
+            plan=lambda: self.components.house.plan(),
+            budget=lambda: self.components.budget,
+            client=self._resident_client,
+            scope=self._job_gate,
+            host_tools=self._lent_tools(),
+            project_tools=residents.load_project_tools(),
+        )
         self._voice_factory = voice
         self._voice_lock = asyncio.Lock()
         self.voice_running = False
@@ -153,6 +182,7 @@ class Daemon:
         self._session_task: asyncio.Task[None] | None = None
         self._lights_task: asyncio.Task[None] | None = None
         self._runner_task: asyncio.Task[None] | None = None
+        self._reports_task: asyncio.Task[None] | None = None
         self.app = create_app(self)
 
     def notice(self, level: NoticeLevel, text: str) -> None:
@@ -187,6 +217,16 @@ class Daemon:
         self._session_task = asyncio.create_task(self.session.run())
         runner = scheduler.Runner(self.config, self.automations, self._run_automation, self.busy)
         self._runner_task = asyncio.create_task(runner.run())
+        reporter = jobs.Reporter(
+            busy=self.busy,
+            run_turn=self._report_job,
+            speak=lambda: self.config.jobs.speak_results and self.voice_running,
+            to_phone=self.phone.send_job_result,
+            name=self.board.agent_name,
+        )
+        self.board.listeners.append(reporter)
+        self._reports_task = asyncio.create_task(reporter.run())
+        await self.board.start(self.residents)
         await self.phone.start()
 
     def busy(self) -> bool:
@@ -198,6 +238,23 @@ class Daemon:
             or self.snapshot.state in ("listening", "transcribing")
             or self.components.tools.waiting
         )
+
+    def _lent_tools(self) -> dict[str, Tool]:
+        """The host's read-only tools that some residents also get (the steward's)."""
+        lent = [*scheduler.build_tools(self.automations), *aware.build_tools(self.awareness)]
+        return {t.spec.name: t for t in lent}
+
+    def _job_gate(self, tools: Sequence[Tool], actor: Actor, hooks: JobHooks) -> ToolGate:
+        """A gate for one job, sharing the host's waiting requests, tiers, audit and bus."""
+        root = self.components.tools
+        if isinstance(root, ToolGate):
+            return root.scoped(tools, actor, hooks)
+        return ToolGate(self.config, self.bus, self.components.memory, tools, actor=actor, hooks=hooks)
+
+    async def _report_job(self, text: str, speak: bool) -> TurnRecord:
+        if self.session is None:
+            raise RuntimeError("the session is not running")
+        return await self.session.run_job(text, speak=speak)
 
     async def _run_automation(self, a: Automation) -> tuple[RunStatus, str]:
         assert self.session is not None
@@ -252,12 +309,20 @@ class Daemon:
 
     async def stop(self) -> None:
         await self.phone.stop()
-        for task in (self._runner_task, self._session_task, self._lights_task):
+        await self.board.stop()
+        for task in (self._reports_task, self._runner_task, self._session_task, self._lights_task):
             if task is not None:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
         c = self.components
-        steps = (c.voice.stop, c.brain.close, c.house.close, c.memory.close, self.snapshot.stop)
+        steps = (
+            c.voice.stop,
+            c.brain.close,
+            self._resident_client.close,
+            c.house.close,
+            c.memory.close,
+            self.snapshot.stop,
+        )
         for step in steps:
             try:
                 await step()

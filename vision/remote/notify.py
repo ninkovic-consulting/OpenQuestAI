@@ -3,7 +3,9 @@
 - automation results (`automation.finished`);
 - notices of level warn or error (`notice`);
 - requests that need a yes (`gate.request`), handed to `Approvals`, which
-  also edits each one when it ends (`gate.resolved`).
+  also edits each one when it ends (`gate.resolved`);
+- the host's report of a job that was handed off from a phone turn
+  (`job_result`, called by the daemon's job reporter, not from the bus).
 
 Nothing is sent before pairing. A message that cannot be sent (the service
 is unreachable) is logged and dropped, never retried into a flood later.
@@ -57,6 +59,16 @@ class Notifier:
                     log.info("phone notification not sent (%s): %s", event.TYPE, exc)
                 except Exception:
                     log.exception("phone notification failed (%s)", event.TYPE)
+
+    async def job_result(self, text: str) -> None:
+        """The host's words about a finished job, when paired and `notify_jobs` is on."""
+        state = self._link.state()
+        if not (state.paired and state.notify_jobs and text.strip()):
+            return
+        try:
+            await self._link.transport.send(state.chat_id, clip(text.strip(), REPLY_ROOM))
+        except Unreachable as exc:
+            log.info("job report not sent to the phone: %s", exc)
 
     async def handle(self, event: Event) -> None:
         state = self._link.state()

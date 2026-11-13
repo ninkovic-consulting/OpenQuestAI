@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from vision.brains import make_brain
+from vision.brains.local_rules import NO_TOOLS, with_rules
 from vision.brains.mlx_local import MlxBrain, Piece
 from vision.brains.router import Router
 from vision.core.bus import Bus
@@ -131,9 +132,11 @@ async def test_streams_text_and_counts(rig: tuple[MlxBrain, StubRuntime, Bus]) -
         TextDelta("."),
         TurnDone(model, prompt_tokens, 3, "end_turn"),
     ]
-    assert runtime.model.prompts[0] == "system:PERSONA|user:hi"
+    system = f"system:{with_rules('PERSONA')}"
+    assert NO_TOOLS in system
+    assert runtime.model.prompts[0] == f"{system}|user:hi"
     await collect(brain, "again")
-    assert runtime.model.prompts[1] == "system:PERSONA|user:hi|assistant:Hello.|user:again"
+    assert runtime.model.prompts[1] == f"{system}|user:hi|assistant:Hello.|user:again"
     assert all(name.startswith("mlx") for name in runtime.threads)
 
 

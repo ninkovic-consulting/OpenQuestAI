@@ -50,8 +50,11 @@ async def test_settings_shape(daemon: Daemon) -> None:
     async with client(daemon) as http:
         got = (await http.get("/api/settings")).json()
     assert set(got) == {
-        "assistant", "models", "budget", "agents", "voice", "gate", "key", "setup",
+        "assistant", "models", "budget", "agents", "voice", "gate", "jobs", "key", "setup",
         "restart_pending",
+    }
+    assert got["jobs"] == {
+        "max_running": 2, "max_steps": 24, "timeout_s": 900.0, "max_job_usd": 1.0, "speak_results": True,
     }
     assert got["assistant"] == {"name": "Vision"}
     assert got["models"]["talk"] == "claude-haiku-5-5"
@@ -60,7 +63,8 @@ async def test_settings_shape(daemon: Daemon) -> None:
     host = got["agents"][0]
     assert host["id"] == "host" and host["is_host"] and host["name"] == "Vision"
     assert not any(a["is_host"] for a in got["agents"][1:])
-    assert got["gate"]["never_free"] == ["shell"]
+    assert got["gate"]["never_free"] == ["run_program", "shell"]
+    assert got["gate"]["tiers"]["run_program"] == "ask" and got["gate"]["tiers"]["read_file"] == "free"
     assert got["gate"]["tiers"]["shell"] == "ask"
     assert {t["id"] for t in got["gate"]["tools"]} >= {"remember", "shell"}
     assert got["gate"]["tools"][4] == {

@@ -35,6 +35,7 @@ class MonthlyBudget:
 
     def __init__(self, config: Config, bus: Bus, *, now: Callable[[], datetime] = datetime.now) -> None:
         self._prices = config.budget.prices
+        self._budget_config = config.budget
         self._cap = config.budget.monthly_cap_usd
         self._warn_fraction = config.budget.warn_fraction
         self._path: Path = config.paths.home / FILE_NAME
@@ -66,6 +67,20 @@ class MonthlyBudget:
             + cache_read_tokens * price.cache_read_per_mtok
             + cache_write_tokens * price.cache_write_per_mtok
         ) / 1_000_000
+        if cost <= 0:
+            return 0.0
+        self._spent += cost
+        self._check_thresholds()
+        self._save()
+        self._publish()
+        return cost
+
+    def record_searches(self, count: int) -> float:
+        """Web searches are priced per thousand, not per token; the price is read live."""
+        if count <= 0:
+            return 0.0
+        self._sync_month()
+        cost = count * self._budget_config.web_search_per_1k_usd / 1000
         if cost <= 0:
             return 0.0
         self._spent += cost

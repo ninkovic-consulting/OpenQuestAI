@@ -11,7 +11,8 @@ Apple Silicon, no server, no tools.
   the turn fails with a `BrainError` that says to download it in Settings while online.
 - All MLX work runs on one dedicated thread, off the event loop. `interrupt()`
   ends the stream at once and stops generation at the next token.
-- The system prompt is `memory.core()`, cut short if the conversation would
+- The system prompt is `memory.core()` followed by the no-tools rule
+  (`local_rules`); the core is cut short if the conversation would
   not fit in `[brain] local_context_tokens` (or the model's own context).
 """
 
@@ -30,6 +31,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from vision.brains.local import LocalModelError
+from vision.brains.local_rules import NO_TOOLS, with_rules
 from vision.brains.pump import Emit, Pump
 from vision.core.bus import Bus
 from vision.core.config import Config
@@ -375,20 +377,19 @@ class MlxBrain:
         for past_user, reply in self._history:
             conversation += [past_user, reply]
         conversation.append(user)
-        if not core:
-            return model.chat_prompt(conversation)
         window = min(model.context_tokens, self._config.brain.local_context_tokens)
         room = (
             window
             - self._config.brain.max_output_tokens
             - len(model.chat_prompt(conversation))
+            - len(model.encode(NO_TOOLS))
             - PROMPT_MARGIN_TOKENS
         )
         tokens = model.encode(core)
         if len(tokens) > room:
             core = model.decode(tokens[: max(room, 0)])
-        system = [{"role": "system", "content": core}] if core.strip() else []
-        return model.chat_prompt(system + conversation)
+        system: Message = {"role": "system", "content": with_rules(core)}
+        return model.chat_prompt([system, *conversation])
 
     def _generate(
         self, model: LoadedModel, prompt: list[int], turn: _Turn, push: Callable[[str], None]

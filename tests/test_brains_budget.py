@@ -143,3 +143,10 @@ def test_raising_the_cap_rearms_the_notices(config: Config) -> None:
         budget.record("claude-haiku-5-5", 4000, 150)
     texts = [n.text for n in drain(sub)]
     assert any("reached the $0.001 cap" in t for t in texts)
+
+
+def test_web_searches_are_charged_per_thousand(config: Config) -> None:
+    budget = MonthlyBudget(config, Bus())
+    assert budget.record_searches(3) == pytest.approx(0.03)
+    assert budget.record_searches(0) == 0.0
+    assert budget.status().spent_usd == pytest.approx(0.03)

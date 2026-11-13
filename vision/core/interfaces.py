@@ -44,6 +44,11 @@ Who publishes what on the bus:
   each message it runs as a turn (through `Session.run_phone`), `gate.decision`
   for a Yes or Not now pressed by the paired owner, and `notice` when it is
   paired or stops.
+- Job board (`vision.jobs`): `job.changed` on every change to a job,
+  `agent.state` when a resident starts, waits on a gate request, or stops,
+  and `room.state` for the job's room (`active` while it works). A finished
+  job the host or the owner asked for becomes a session turn with source
+  `job`.
 - Server: forwards window events (`input.*`, `gate.decision`) onto the bus.
 
 HTTP routes from other packages: build a FastAPI `APIRouter` and protect it
@@ -277,7 +282,8 @@ class AuditRecord:
 
     `decision` is `allow` for free tools and approved asks, `deny` for refused
     or `never` tools, `timeout` for unanswered asks. `result` is a short
-    summary of the outcome (never secrets).
+    summary of the outcome (never secrets). `agent` and `job` name the
+    resident and its job for a call made at work; both are empty for the host.
     """
 
     ts: float
@@ -287,6 +293,8 @@ class AuditRecord:
     decision: GateOutcome
     result: str
     request_id: str = ""
+    agent: str = ""
+    job: str = ""
 
 
 @runtime_checkable
@@ -419,6 +427,11 @@ class Budget(Protocol):
         the running total under `$VISION_HOME`, rolls over when the month
         turns, and publishes a `budget` event.
         """
+        ...
+
+    def record_searches(self, count: int) -> float:
+        """Add the cost of `count` server-side web searches, priced per thousand by
+        `[budget] web_search_per_1k_usd`, and return it in dollars."""
         ...
 
     def status(self) -> BudgetStatus:

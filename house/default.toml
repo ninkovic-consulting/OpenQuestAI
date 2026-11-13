@@ -15,8 +15,8 @@
 #
 # Tools are ids from house/tools.toml. A room may list its own, as in
 # tools = ["git", "gh", "npm"]; a room that lists none uses its agent's.
-# Only the assistant's built-in tools run in this slice; project tools
-# are stored and shown, and start working when the other agents wake up.
+# A room's project tools (git, npm and the like) run in its resident's jobs,
+# in the room's project folder, after you say yes.
 
 # The host's name follows `[assistant] name` in config.toml unless set here,
 # and its models follow `[brain] talk_model` and `heavy_model`.
@@ -27,6 +27,7 @@ tools = [
     "create_automation", "list_automations", "update_automation", "pause_automation",
     "resume_automation", "run_automation", "delete_automation",
     "house_overview", "room_details", "assistant_status",
+    "hand_off", "list_jobs", "job_details", "cancel_job",
 ]
 
 [agents.steward]

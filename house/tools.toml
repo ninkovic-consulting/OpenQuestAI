@@ -1,9 +1,9 @@
 # The tool catalog. A room lists tools by id (`tools = ["git", "npm"]`), and a
 # room with no list uses its agent's.
 #
-# Built-in tools are the assistant's own and run today. Project tools are
-# stored and shown for each room, and start working when the other agents
-# wake up in the next slice.
+# Built-in tools ship with the assistant: the host's own, and those marked
+# `resident = true`, which only residents use at work. Project tools name a
+# program; a resident runs them in its room's project folder, after a yes.
 #
 # For a project tool:
 #   program  the command it needs on this Mac
@@ -87,6 +87,86 @@ built_in = true
 title = "Check its own status"
 description = "Reads the assistant's own setup: model, spend, voice, automations, phone, data."
 built_in = true
+
+[tools.hand_off]
+title = "Hand off work"
+description = "Gives a job to a resident, who works on it in their own room."
+built_in = true
+
+[tools.list_jobs]
+title = "List jobs"
+description = "Reads the job board: who works on what, and how it ended."
+built_in = true
+
+[tools.job_details]
+title = "Look at a job"
+description = "Reads one job's brief, steps, result and cost."
+built_in = true
+
+[tools.cancel_job]
+title = "Cancel a job"
+description = "Stops a job and any request it made to another resident."
+built_in = true
+
+[tools.note_progress]
+title = "Note progress"
+description = "A resident shows a short progress line on its job."
+built_in = true
+resident = true
+
+[tools.ask_resident]
+title = "Ask another resident"
+description = "A resident asks another for help, through the job board."
+built_in = true
+resident = true
+
+[tools.machine_status]
+title = "Check the Mac"
+description = "The steward reads disk, memory, battery, uptime and load."
+built_in = true
+resident = true
+
+[tools.web_search]
+title = "Search the web"
+description = "The scout searches the web through Anthropic's search tool."
+built_in = true
+resident = true
+
+[tools.list_files]
+title = "List files"
+description = "Lists files in the room's project folder."
+built_in = true
+resident = true
+
+[tools.read_file]
+title = "Read a file"
+description = "Reads a file in the room's project folder."
+built_in = true
+resident = true
+
+[tools.search_files]
+title = "Search files"
+description = "Searches the files in the room's project folder."
+built_in = true
+resident = true
+
+[tools.write_file]
+title = "Write a file"
+description = "Writes a file in the room's project folder."
+built_in = true
+resident = true
+
+[tools.edit_file]
+title = "Edit a file"
+description = "Changes part of a file in the room's project folder."
+built_in = true
+resident = true
+
+[tools.run_program]
+title = "Run a program"
+description = "Runs one of the room's programs in its project folder, always after asking you."
+built_in = true
+resident = true
 
 [tools.git]
 title = "Git"

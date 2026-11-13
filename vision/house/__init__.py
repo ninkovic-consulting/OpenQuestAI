@@ -8,8 +8,8 @@ personas in the repo's `house/agents/` are copied into the memory vault by
 `$VISION_HOME/house/agents/host.md`.
 
 Rooms and agents list tools from the catalog in the repo's `house/tools.toml`;
-`propose_tools` suggests them for a project folder. Only the assistant's
-built-in tools run in this slice.
+`propose_tools` suggests them for a project folder. A room's project tools
+run in its resident's jobs (`vision.jobs`, `vision.residents`).
 """
 
 from __future__ import annotations

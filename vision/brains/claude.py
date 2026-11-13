@@ -79,6 +79,41 @@ def echo_content(blocks: list[Message]) -> list[Message]:
     ]
 
 
+@dataclass(frozen=True, slots=True)
+class Charged:
+    usd: float
+    input_tokens: int
+    """Fresh, cache-read and cache-written input tokens together."""
+    output_tokens: int
+    web_searches: int
+
+
+def charge(budget: Budget, stream: Any) -> Charged:
+    """Charge the budget for one streamed model call, per model when a fallback ran, and
+    for its server-side web searches. Nothing is charged before `message_start`."""
+    try:
+        snapshot = stream.current_message_snapshot
+    except AssertionError:  # no message_start yet: nothing was billed
+        return Charged(0.0, 0, 0, 0)
+    usage = snapshot.usage
+    parts = [i for i in (usage.iterations or []) if getattr(i, "model", None)] or [usage]
+    usd, tokens_in, tokens_out = 0.0, 0, 0
+    for part in parts:
+        model = getattr(part, "model", None) or snapshot.model
+        fresh = part.input_tokens or 0
+        out = part.output_tokens or 0
+        read = part.cache_read_input_tokens or 0
+        write = part.cache_creation_input_tokens or 0
+        usd += budget.record(model, fresh, out, cache_read_tokens=read, cache_write_tokens=write)
+        tokens_in += fresh + read + write
+        tokens_out += out
+    tool_use = getattr(usage, "server_tool_use", None)
+    searches = (getattr(tool_use, "web_search_requests", 0) or 0) if tool_use is not None else 0
+    if searches:
+        usd += budget.record_searches(searches)
+    return Charged(usd, tokens_in, tokens_out, searches)
+
+
 def _without_thinking(message: Message) -> Message | None:
     content = message["content"]
     if message["role"] != "assistant" or isinstance(content, str):
@@ -251,22 +286,9 @@ class ClaudeBrain:
         emit(TextDelta(text))
 
     def _record(self, turn: _Turn, stream: Any) -> None:
-        """Charge the budget for one model call, per model when a fallback ran."""
-        try:
-            snapshot = stream.current_message_snapshot
-        except AssertionError:  # no message_start yet: nothing was billed
-            return
-        usage = snapshot.usage
-        parts = [i for i in (usage.iterations or []) if getattr(i, "model", None)] or [usage]
-        for part in parts:
-            model = getattr(part, "model", None) or snapshot.model
-            fresh = part.input_tokens or 0
-            out = part.output_tokens or 0
-            read = part.cache_read_input_tokens or 0
-            write = part.cache_creation_input_tokens or 0
-            self._budget.record(model, fresh, out, cache_read_tokens=read, cache_write_tokens=write)
-            turn.input_tokens += fresh + read + write
-            turn.output_tokens += out
+        charged = charge(self._budget, stream)
+        turn.input_tokens += charged.input_tokens
+        turn.output_tokens += charged.output_tokens
 
     async def _tool_result(self, block: Message) -> Message:
         args = block.get("input")

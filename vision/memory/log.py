@@ -42,7 +42,9 @@ CREATE TABLE IF NOT EXISTS audit (
     tier TEXT NOT NULL,
     decision TEXT NOT NULL,
     result TEXT NOT NULL,
-    request_id TEXT NOT NULL
+    request_id TEXT NOT NULL,
+    agent TEXT NOT NULL DEFAULT '',
+    job TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS note_files (
     path TEXT PRIMARY KEY,
@@ -62,6 +64,9 @@ _TURN_COLUMNS = (
     "input_tokens, output_tokens, error"
 )
 _SNIPPET_TOKENS = 32
+_AUDIT_COLUMNS = "ts, tool, args, tier, decision, result, request_id, agent, job"
+_ADDED_AUDIT_COLUMNS = ("agent", "job")
+"""Columns added after the first release; older logs get them on open."""
 
 
 class Log:
@@ -80,6 +85,10 @@ class Log:
         db.execute("PRAGMA synchronous=NORMAL")
         db.execute("PRAGMA busy_timeout=5000")
         db.executescript(_SCHEMA)
+        have = {row[1] for row in db.execute("PRAGMA table_info(audit)")}
+        for column in _ADDED_AUDIT_COLUMNS:
+            if column not in have:
+                db.execute(f"ALTER TABLE audit ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
         for suffix in ("", "-wal", "-shm"):
             path = self._path.with_name(self._path.name + suffix)
             if path.exists():
@@ -125,11 +134,10 @@ class Log:
     def add_audit(self, a: AuditRecord) -> None:
         with self._lock:
             self._conn().execute(
-                "INSERT INTO audit (ts, tool, args, tier, decision, result, request_id) "
-                "VALUES (?,?,?,?,?,?,?)",
+                f"INSERT INTO audit ({_AUDIT_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?)",
                 (
                     a.ts, a.tool, json.dumps(a.args, default=str), a.tier, a.decision,
-                    a.result, a.request_id,
+                    a.result, a.request_id, a.agent, a.job,
                 ),
             )
 
@@ -146,9 +154,9 @@ class Log:
     def audits(self) -> list[AuditRecord]:
         with self._lock:
             rows = self._conn().execute(
-                "SELECT ts, tool, args, tier, decision, result, request_id FROM audit ORDER BY id"
+                f"SELECT {_AUDIT_COLUMNS} FROM audit ORDER BY id"
             ).fetchall()
-        return [AuditRecord(r[0], r[1], json.loads(r[2]), r[3], r[4], r[5], r[6]) for r in rows]
+        return [AuditRecord(r[0], r[1], json.loads(r[2]), *r[3:]) for r in rows]
 
     # ------------------------------------------------------------ notes index
 

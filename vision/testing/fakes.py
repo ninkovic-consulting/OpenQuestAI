@@ -228,9 +228,15 @@ class FakeBudget:
     highest known rate.
     """
 
-    def __init__(self, cap_usd: float = 150.0, prices: dict[str, Price] | None = None) -> None:
+    def __init__(
+        self,
+        cap_usd: float = 150.0,
+        prices: dict[str, Price] | None = None,
+        search_per_1k_usd: float = 10.0,
+    ) -> None:
         self.cap_usd = cap_usd
         self.prices = dict(prices or {})
+        self.search_per_1k_usd = search_per_1k_usd
         self.spent_usd = 0.0
 
     @classmethod
@@ -253,6 +259,11 @@ class FakeBudget:
             + cache_read_tokens * price.cache_read_per_mtok
             + cache_write_tokens * price.cache_write_per_mtok
         ) / 1_000_000
+        self.spent_usd += cost
+        return cost
+
+    def record_searches(self, count: int) -> float:
+        cost = max(count, 0) * self.search_per_1k_usd / 1000
         self.spent_usd += cost
         return cost
 

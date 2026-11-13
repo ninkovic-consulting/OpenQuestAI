@@ -21,6 +21,7 @@ from typing import Any
 
 import httpx
 
+from vision.brains.local_rules import with_rules
 from vision.brains.pump import Emit, Pump
 from vision.core.config import Config
 from vision.core.events import BrainName
@@ -130,9 +131,7 @@ class LocalBrain:
         if self._client is None:
             raise LocalModelError(BrainError("internal", "The local brain was not started.", False))
         messages: list[Message] = []
-        core = self._memory.core()
-        if core:
-            messages.append({"role": "system", "content": core})
+        messages.append({"role": "system", "content": with_rules(self._memory.core())})
         for user, reply in self._history:
             messages += [user, reply]
         messages.append(turn.user)

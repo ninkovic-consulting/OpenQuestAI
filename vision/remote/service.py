@@ -42,7 +42,12 @@ log = logging.getLogger(__name__)
 SERVICE = "discord"
 TOKEN_SHAPE = re.compile(r"^[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{20,}$")
 MAX_RESTART_S = 300.0
-NOTIFY_KEYS = {"automations": "notify_automations", "warnings": "notify_warnings", "approvals": "notify_approvals"}
+NOTIFY_KEYS = {
+    "automations": "notify_automations",
+    "warnings": "notify_warnings",
+    "approvals": "notify_approvals",
+    "jobs": "notify_jobs",
+}
 SWITCHES = ("enabled", "speak_on_mac", "voice_replies")
 
 Connection = Literal["off", "no_token", "connecting", "online", "offline", "refused"]
@@ -279,6 +284,10 @@ class Phone:
             self.state.unpair()
             await self._save()
         return await self.view()
+
+    async def send_job_result(self, text: str) -> None:
+        """Send the host's report of a job handed off from the phone (`Notifier.job_result`)."""
+        await self.channel.notifier.job_result(text)
 
     async def forget_token(self) -> None:
         """Remove the token from the Keychain and disconnect (a reset that removes secrets)."""

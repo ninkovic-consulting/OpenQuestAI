@@ -1,8 +1,10 @@
 """The tool catalog, and which tools a project folder looks like it needs.
 
-The catalog is data in `house/tools.toml`. Built-in tools are the assistant's
-own and run today; project tools are stored and shown per room, and start
-working when the other agents wake up in the next slice.
+The catalog is data in `house/tools.toml`. Built-in tools ship with Vision:
+the host's own, and those marked `resident = true`, which only residents use
+at work (their notes, progress, requests, and the workbench's file and
+program tools). Project tools name a program on this Mac and work in a
+room's project folder during its resident's jobs.
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from vision.house import store
 from vision.house.model import HouseError
 
 CATALOG_FILE = store.DEFAULT_FILE.parent / "tools.toml"
-TOOL_KEYS = {"title", "description", "built_in", "program", "markers", "remote_hosts"}
+TOOL_KEYS = {"title", "description", "built_in", "resident", "program", "markers", "remote_hosts"}
 URL_HOST = re.compile(r"^\s*url\s*=\s*(?:[a-z+]+://)?(?:[^@/\s]+@)?([^:/\s]+)", re.IGNORECASE)
 
 Finder = Callable[[str], Path | None]
@@ -37,6 +39,8 @@ class ToolInfo:
     """The command the tool needs on this Mac; None for a built-in tool."""
     markers: tuple[str, ...]
     remote_hosts: tuple[str, ...]
+    resident: bool = False
+    """A built-in tool only residents use at work; the host's rooms never list it."""
 
 
 Catalog = dict[str, ToolInfo]
@@ -63,6 +67,9 @@ def _tool(tool_id: str, table: Any) -> ToolInfo:
     program = table.get("program")
     if built_in == isinstance(program, str):
         raise HouseError(f"{where} needs either built_in = true or a program, not both.")
+    resident = table.get("resident", False) is True
+    if resident and not built_in:
+        raise HouseError(f"{where}: only a built-in tool can be a resident's.")
     return ToolInfo(
         id=tool_id,
         title=str(table.get("title", tool_id)),
@@ -71,6 +78,7 @@ def _tool(tool_id: str, table: Any) -> ToolInfo:
         program=program,
         markers=tuple(table.get("markers", ())),
         remote_hosts=tuple(h.lower() for h in table.get("remote_hosts", ())),
+        resident=resident,
     )
 
 
@@ -88,13 +96,14 @@ def check_tool_ids(value: Any, where: str, catalog: Catalog | None = None) -> tu
 
 
 def with_built_ins(ids: tuple[str, ...], catalog: Catalog | None = None) -> tuple[str, ...]:
-    """`ids`, then every built-in tool not already among them, in catalog order.
+    """`ids`, then every host built-in tool not already among them, in catalog order.
 
     The assistant's own tools run whatever a house file lists, so a file written
-    before a tool existed must not hide it.
+    before a tool existed must not hide it. Residents' tools are not the host's.
     """
     catalog = load_catalog() if catalog is None else catalog
-    return tuple(dict.fromkeys([*ids, *(t.id for t in catalog.values() if t.built_in)]))
+    own = (t.id for t in catalog.values() if t.built_in and not t.resident)
+    return tuple(dict.fromkeys([*ids, *own]))
 
 
 def available(tool: ToolInfo, finder: Finder = find_program) -> bool:

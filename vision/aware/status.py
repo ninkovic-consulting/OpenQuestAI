@@ -66,6 +66,7 @@ def status_text(d: Daemon, settings: dict[str, Any]) -> str:
         f"Automations: {len(automations)}" + (f", {paused} paused" if paused else "") + (
             f"; next due: {due[0].name} at {when(due[0].next_run or 0, d.automations.zone())}." if due else "; none due."
         ),
+        _jobs_line(d),
         f"Phone channel (Discord): {_PHONE.get(d.phone.connection, d.phone.connection)}; "
         + (f"paired with {phone.owner_name}." if phone.paired else "not paired."),
         f"Tools that ask first: {', '.join(asks) or 'none'}." + (f" Never allowed: {', '.join(never)}." if never else ""),
@@ -76,3 +77,14 @@ def status_text(d: Daemon, settings: dict[str, Any]) -> str:
     if not settings["setup"]["completed"]:
         lines.append("Setup has not been finished in the window yet.")
     return "\n".join(lines)
+
+
+def _jobs_line(d: Daemon) -> str:
+    open_jobs = d.board.open_jobs()
+    working = sum(1 for j in open_jobs if j.status == "working")
+    queued = len(open_jobs) - working
+    limits = d.config.jobs
+    return (
+        f"Residents' jobs: {working} at work, {queued} waiting (at most {limits.max_running} at once, "
+        f"{limits.max_steps} steps, {limits.job_timeout_s / 60:g} minutes and ${limits.max_job_usd:.2f} each)."
+    )

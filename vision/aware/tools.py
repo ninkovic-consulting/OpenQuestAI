@@ -1,7 +1,7 @@
 """Three read-only tools, free tier, behind the gate like every other tool:
 
 - `house_overview`: every room and who runs it, and every agent: role,
-  character, model, rooms, state;
+  character, model, rooms, what it can do at work and its current job;
 - `room_details`: one room, by name or id, said loosely;
 - `assistant_status`: the assistant's own setup and status.
 """
@@ -55,7 +55,8 @@ def build_tools(aware: Awareness) -> list[Tool]:
                 "house_overview",
                 "Describe the house you live in, as it is right now: every room with the agent who runs "
                 "it, its light and whether a project folder is attached, and every agent (you and the "
-                "other residents) with their role, character, model, rooms and whether they are awake. "
+                "other residents) with their role, character, model, rooms, what each can do at work, and "
+                "the job each is doing now. "
                 "Use it whenever the user asks about the house, its rooms, the agents or residents, who "
                 "does what, or what is where. Do not search memory for these; this is the source.",
                 _NO_ARGS,
@@ -69,7 +70,8 @@ def build_tools(aware: Awareness) -> list[Tool]:
             ToolSpec(
                 "room_details",
                 "Describe one room of the house: the agent who runs it and its model, the project folder, "
-                "each tool with whether it is installed and whether it works yet, and the room's light. "
+                "each tool with whether it is installed and whether it works, the jobs in it now, and "
+                "the room's light. "
                 "For the Library it also lists what the shared library notes contain. Use it whenever the "
                 "user asks about a particular room or what is in it. Names are matched loosely "
                 "(\"the library\", \"workshop\", \"control-room\").",

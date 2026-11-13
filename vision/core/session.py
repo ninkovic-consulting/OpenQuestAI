@@ -42,6 +42,10 @@ A message from the paired phone is a turn too (`run_phone`), with source
 `phone`: its words are published as `user.utterance` with source `phone`,
 and the reply is spoken only when asked. Like an automation it starts only
 while the session is idle, so turns never overlap.
+
+So is a job report (`run_job`), with source `job`: a resident's work ended,
+and the host tells the owner in its own words. No `user.utterance`; the
+reply is spoken only when asked.
 """
 
 from __future__ import annotations
@@ -228,6 +232,11 @@ class Session:
             raise RuntimeError("a turn is already running")
         self.bus.publish(UserUtterance(text=text, source="phone"))
         return await self._run_alone(_Turn(text, TurnOrigin("phone"), speak=speak))
+
+    async def run_job(self, text: str, *, speak: bool) -> TurnRecord:
+        """Run a job report as a turn and wait for it to end, only while idle (like
+        `run_phone`, it raises `RuntimeError` otherwise)."""
+        return await self._run_alone(_Turn(text, TurnOrigin("job"), speak=speak))
 
     async def _run_alone(self, turn: _Turn) -> TurnRecord:
         """Start `turn` now (the session must be idle) and wait for its record."""

@@ -36,6 +36,22 @@ BUILT_IN = [
     "house_overview",
     "room_details",
     "assistant_status",
+    "hand_off",
+    "list_jobs",
+    "job_details",
+    "cancel_job",
+]
+RESIDENT = [
+    "note_progress",
+    "ask_resident",
+    "machine_status",
+    "web_search",
+    "list_files",
+    "read_file",
+    "search_files",
+    "write_file",
+    "edit_file",
+    "run_program",
 ]
 PROJECT = ["git", "gh", "npm", "maven", "gradle", "python", "docker", "xcode", "unity", "godot"]
 
@@ -57,8 +73,9 @@ def make(root: Path, *paths: str) -> Path:
 
 def test_catalog_loads_in_order() -> None:
     catalog = load_catalog()
-    assert list(catalog) == [*BUILT_IN, *PROJECT]
-    assert all(catalog[t].built_in and catalog[t].program is None for t in BUILT_IN)
+    assert list(catalog) == [*BUILT_IN, *RESIDENT, *PROJECT]
+    assert all(catalog[t].built_in and catalog[t].program is None for t in BUILT_IN + RESIDENT)
+    assert all(catalog[t].resident for t in RESIDENT) and not any(catalog[t].resident for t in BUILT_IN)
     assert all(not catalog[t].built_in and catalog[t].program for t in PROJECT)
     assert all(t.title and t.description for t in catalog.values())
 
@@ -234,7 +251,7 @@ async def test_tool_routes_need_the_token(daemon: Daemon) -> None:
 async def test_catalog_route(daemon: Daemon) -> None:
     async with client(daemon) as http:
         tools = (await http.get("/api/house/tools")).json()["tools"]
-    assert [t["id"] for t in tools] == [*BUILT_IN, *PROJECT]
+    assert [t["id"] for t in tools] == [*BUILT_IN, *RESIDENT, *PROJECT]
     assert all(isinstance(t["available"], bool) for t in tools)
 
 

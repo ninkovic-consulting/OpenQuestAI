@@ -110,6 +110,10 @@ def test_plan_shape_and_first_use(config: Config) -> None:
                 ("house_overview", "Describe the house"),
                 ("room_details", "Describe a room"),
                 ("assistant_status", "Check its own status"),
+                ("hand_off", "Hand off work"),
+                ("list_jobs", "List jobs"),
+                ("job_details", "Look at a job"),
+                ("cancel_job", "Cancel a job"),
             ]
         ],
         "state": "idle",

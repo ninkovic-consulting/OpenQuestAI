@@ -38,6 +38,9 @@ HF_REPO = re.compile(r"^[A-Za-z0-9][\w.-]{0,95}/[\w.-]{1,95}$")
 MAX_CAP_USD = 1_000_000.0
 MAX_FOLLOWUP_S = 300.0
 DEVICE_MAX = 200
+MIN_JOB_TIMEOUT_S = 30.0
+MAX_JOB_TIMEOUT_S = 14_400.0
+MAX_JOB_USD = 50.0
 
 CONFIG_KEYS: dict[str, tuple[str, str]] = {
     "assistant.name": ("assistant", "name"),
@@ -50,6 +53,11 @@ CONFIG_KEYS: dict[str, tuple[str, str]] = {
     "voice.tts_voice": ("voice", "tts_voice"),
     "voice.followup_s": ("voice", "followup_window_s"),
     "setup.completed": ("assistant", "setup_completed"),
+    "jobs.max_running": ("jobs", "max_running"),
+    "jobs.max_steps": ("jobs", "max_steps"),
+    "jobs.timeout_s": ("jobs", "job_timeout_s"),
+    "jobs.max_job_usd": ("jobs", "max_job_usd"),
+    "jobs.speak_results": ("jobs", "speak_results"),
 }
 """Dotted field -> (section, key) in config.toml. Gate tiers go to `[gate.tiers]`."""
 
@@ -128,6 +136,30 @@ def _followup(value: Any) -> float:
     return float(value)
 
 
+def _whole(what: str, low: int, high: int) -> Callable[[Any], int]:
+    def check(value: Any) -> int:
+        if not isinstance(value, int) or isinstance(value, bool) or not low <= value <= high:
+            raise _Bad(f"{what} must be a whole number from {low} to {high}.")
+        return value
+
+    return check
+
+
+def _job_timeout(value: Any) -> float:
+    if not _is_number(value) or not MIN_JOB_TIMEOUT_S <= value <= MAX_JOB_TIMEOUT_S:
+        raise _Bad(
+            f"A job's time limit must be a number of seconds from {MIN_JOB_TIMEOUT_S:g} "
+            f"to {MAX_JOB_TIMEOUT_S:g}."
+        )
+    return float(value)
+
+
+def _job_cost(value: Any) -> float:
+    if not _is_number(value) or not 0 < value <= MAX_JOB_USD:
+        raise _Bad(f"A job's cost cap must be more than 0 and at most {MAX_JOB_USD:g} dollars.")
+    return float(value)
+
+
 def _flag(value: Any) -> bool:
     if not isinstance(value, bool):
         raise _Bad("Send true or false.")
@@ -145,6 +177,13 @@ SECTIONS: dict[str, dict[str, Callable[[Any], Any]]] = {
         "followup_s": _followup,
     },
     "setup": {"completed": _flag},
+    "jobs": {
+        "max_running": _whole("Jobs at once", 1, 6),
+        "max_steps": _whole("Steps per job", 1, 200),
+        "timeout_s": _job_timeout,
+        "max_job_usd": _job_cost,
+        "speak_results": _flag,
+    },
 }
 
 

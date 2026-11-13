@@ -26,8 +26,8 @@ from vision.voice.settings import VoiceSettings
 
 LOCAL_ESTIMATE = "about 2.1 GB"
 TOOLS_NOTE = (
-    "Project tools are stored and shown now; they start working when the other agents "
-    "wake up in the next slice. Today only {name}'s five built-in tools run."
+    "Project tools work in the room's project folder when {name} hands its resident a job: "
+    "reading and searching files freely, writing files and running programs only after your yes."
 )
 
 

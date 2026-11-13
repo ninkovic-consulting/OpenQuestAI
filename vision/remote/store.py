@@ -36,12 +36,16 @@ class PhoneState:
     notify_automations: bool = True
     notify_warnings: bool = True
     notify_approvals: bool = True
+    notify_jobs: bool = True
+    """Send the host's report of a job that was handed off from the phone."""
     speak_on_mac: bool = False
     """Speak replies to the phone on the Mac too."""
     voice_replies: bool = False
     """Answer a voice note with a voice note as well as text."""
     phone_tools: list[str] | None = None
-    """Tools that may be approved from the phone; None is every tool but `shell`."""
+    """Tools that may be approved from the phone; None is every tool but `shell` and
+    `run_program`. A list saved before a tool existed does not hold it, so a new
+    tool is approved from the phone only once the owner adds it."""
 
     @property
     def paired(self) -> bool:

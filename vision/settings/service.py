@@ -100,6 +100,13 @@ class SettingsService:
             "agents": [{**a, "is_host": a["id"] == "host"} for a in plan["agents"]],
             "voice": voice,
             "gate": self._gate(),
+            "jobs": {
+                "max_running": c.jobs.max_running,
+                "max_steps": c.jobs.max_steps,
+                "timeout_s": c.jobs.job_timeout_s,
+                "max_job_usd": c.jobs.max_job_usd,
+                "speak_results": c.jobs.speak_results,
+            },
             "key": {"stored": source is not None, "source": source},
             "setup": {"completed": completed, "first_run": source is None or not completed},
             "restart_pending": self.restart_pending(saved),

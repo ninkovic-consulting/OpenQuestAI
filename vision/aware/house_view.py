@@ -1,8 +1,8 @@
 """The house in words, for the model: a few lines of context, the overview, one room.
 
 Everything is read from the house plan (`House.plan()`, the same one the
-window draws), the agents' personas in the vault, and the library. What
-works today comes from `limits`.
+window draws), the agents' personas in the vault, the library, and the job
+board (what each resident is doing now). What works today comes from `limits`.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from typing import Any
 
 from vision.aware import limits
 from vision.aware.personas import Personas
+from vision.jobs.model import Job
 from vision.memory.library import LibraryEntry
 
 HALL = "hall"
@@ -33,6 +34,12 @@ class HouseView:
     personas: Personas
     host_state: str
     """The assistant's own state now: idle, thinking, speaking and so on."""
+    jobs: Sequence[Job] = ()
+    """Jobs waiting or at work, oldest first."""
+    waiting: frozenset[str] = frozenset()
+    """Residents whose job waits for the owner's yes."""
+    project_tools: bool = False
+    """Whether the workbench's project tools are installed."""
 
     @property
     def name(self) -> str:
@@ -52,9 +59,20 @@ class HouseView:
     def agent_state(self, agent_id: str, *, short: bool = False) -> str:
         if agent_id == self.host_id:
             return f"awake ({self.host_state})"
-        if limits.awake(agent_id):
-            return "awake"
-        return "asleep" if short else "asleep: cannot be given work yet"
+        working = next((j for j in self.jobs if j.agent == agent_id and j.status == "working"), None)
+        queued = sum(1 for j in self.jobs if j.agent == agent_id and j.status == "queued")
+        later = f", {queued} more waiting" if queued else ""
+        if working is not None:
+            doing = "waiting for the owner's yes on" if agent_id in self.waiting else "working on"
+            room = next((r["name"] for r in self.plan["rooms"] if r["id"] == working.room), None)
+            where = f" in the {room}" if room else ""
+            return f'{doing} job {working.id}, "{working.title}"{where}{later}'
+        if queued:
+            return f"free, with {queued} job{'s' if queued != 1 else ''} waiting to start"
+        return "free to take work"
+
+    def room_jobs(self, room_id: str) -> list[Job]:
+        return [j for j in self.jobs if j.room == room_id]
 
     def role(self, agent: dict[str, Any]) -> str:
         persona = agent.get("persona")
@@ -77,7 +95,7 @@ def summary(view: HouseView) -> str:
         rooms = ", ".join(r["name"] for r in view.rooms_of(a["id"])) or "no room"
         who = f"{a['name']}, the {role}" if role else a["name"]
         lines.append(f"- {who} ({a['model']}): {rooms}; {view.agent_state(a['id'], short=True)}.")
-    lines.append(f"- {limits.limits_line()}")
+    lines.append(f"- {limits.limits_line(view.project_tools)}")
     return "\n".join(lines)
 
 
@@ -97,11 +115,12 @@ def overview(view: HouseView) -> str:
     for r in rooms:
         agent = view.agent(r["agent"])
         project = f"project {r['project']}" if r["project"] else "no project"
-        out.append(f"- {r['name']} (id {r['id']}): run by {agent['name']}; light {r['state']}; {project}.")
+        work = "".join(f'; job {j.id} "{j.title}" {j.status}' for j in view.room_jobs(r["id"]))
+        out.append(f"- {r['name']} (id {r['id']}): run by {agent['name']}; light {r['state']}; {project}{work}.")
     out += ["", "Agents:"]
     for a in plan["agents"]:
         out.append(agent_block(view, a))
-    out += ["", f"Limits: {limits.limits_line()}"]
+    out += ["", f"Limits: {limits.limits_line(view.project_tools)}"]
     return "\n".join(out)
 
 
@@ -111,7 +130,10 @@ def agent_block(view: HouseView, a: dict[str, Any]) -> str:
     models = a["model"] + (f" (heavy: {a['heavy_model']})" if a.get("heavy_model") else "")
     rooms = ", ".join(r["name"] for r in view.rooms_of(a["id"])) or "none"
     you = " This is you." if a["id"] == view.host_id else ""
-    line = f"- {a['name']}{role} (id {a['id']}).{you} {view.agent_state(a['id']).capitalize()}. Model {models}. Rooms: {rooms}."
+    state = view.agent_state(a["id"])
+    line = f"- {a['name']}{role} (id {a['id']}).{you} {state[:1].upper()}{state[1:]}. Model {models}. Rooms: {rooms}."
+    if limits.can_take_work(a["id"]):
+        line += f" At work it {limits.can_do(a['id'])}."
     if persona is not None:
         said = [f"{label}: {text}" for label, text in (("Looks after", persona.about), ("Manner", persona.manner), ("Work", persona.work)) if text]
         if said:
@@ -165,10 +187,24 @@ def room_details(view: HouseView, room: dict[str, Any], library: Sequence[Librar
         out.append("Tools:")
         for t in tools:
             here = "on this Mac" if t["available"] else "not installed on this Mac"
-            works = "works today" if limits.tool_works(bool(t["built_in"])) else "stored, does not run yet"
+            if t["built_in"]:
+                works = "works today"
+            elif not limits.tool_works(False, view.project_tools):
+                works = "stored; project tools are not installed in this build"
+            elif not room["project"]:
+                works = "runs only once the room has a project folder"
+            else:
+                works = "any resident working here can run it in the project folder, after the owner's yes"
             out.append(f"- {t['title']} ({t['id']}): {here}; {works}.")
     else:
         out.append("Tools: none.")
+    work = view.room_jobs(room["id"])
+    if work:
+        out.append(
+            "Jobs here now: "
+            + "; ".join(f'{j.id} "{j.title}" by {view.agent(j.agent)["name"]} ({j.status})' for j in work)
+            + "."
+        )
     if library is not None:
         out.append(library_words(library))
     return "\n".join(out)
@@ -178,8 +214,8 @@ def library_words(entries: Sequence[LibraryEntry]) -> str:
     if not entries:
         return (
             "The shared library is empty: no notes yet. The owner adds Markdown files to "
-            "house/library/ in the assistant's home. You read them yourself in every conversation; "
-            "that works today and does not depend on the room's agent being awake."
+            "house/library/ in the assistant's home. You read them yourself in every conversation, "
+            "and the residents read them when they work."
         )
     lines = [f"The shared library holds {len(entries)} {'note' if len(entries) == 1 else 'notes'}:"]
     for e in entries:

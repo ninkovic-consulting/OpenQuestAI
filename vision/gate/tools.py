@@ -11,7 +11,7 @@ import asyncio
 import os
 import signal
 import time
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -58,12 +58,18 @@ class Tool:
 
 
 async def run_command(
-    argv: Sequence[str], *, timeout: float, limit: int, cwd: Path | None = None
+    argv: Sequence[str],
+    *,
+    timeout: float,
+    limit: int,
+    cwd: Path | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> CommandResult:
     """Run a process with no stdin, capturing at most `limit` bytes of combined output.
 
     The process gets its own process group, which is killed on timeout or
-    cancellation so nothing it started keeps running.
+    cancellation so nothing it started keeps running. `env`, when given, is
+    the child's whole environment; otherwise it inherits the daemon's.
     """
     proc = await asyncio.create_subprocess_exec(
         *argv,
@@ -71,6 +77,7 @@ async def run_command(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         cwd=cwd,
+        env=dict(env) if env is not None else None,
         start_new_session=True,
     )
     kept = bytearray()

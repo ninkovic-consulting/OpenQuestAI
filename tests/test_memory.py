@@ -208,3 +208,25 @@ def config_with(home: Path, **paths: object) -> Config:
     lines = "\n".join(f"{k} = {v!r}" for k, v in paths.items()).replace("'", '"')
     (home / "config.toml").write_text(f"[paths]\n{lines}\n")
     return load_config(home)
+
+
+def test_an_older_audit_table_gets_the_agent_and_job_columns(config: Config) -> None:
+    from vision.memory.log import Log
+
+    path = config.paths.log_db
+    path.parent.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(path)
+    db.execute(
+        "CREATE TABLE audit (id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, tool TEXT NOT NULL, "
+        "args TEXT NOT NULL, tier TEXT NOT NULL, decision TEXT NOT NULL, result TEXT NOT NULL, request_id TEXT NOT NULL)"
+    )
+    db.execute("INSERT INTO audit (ts, tool, args, tier, decision, result, request_id) VALUES (1, 'shell', '{}', 'ask', 'allow', 'ok', 'r')")
+    db.commit()
+    db.close()
+    log = Log(path)
+    log.open()
+    log.add_audit(AuditRecord(2.0, "run_program", {"program": "python"}, "ask", "allow", "exit code 0", "r2", "checker", "j1"))
+    old, new = log.audits()
+    log.close()
+    assert (old.agent, old.job) == ("", "")
+    assert (new.tool, new.agent, new.job) == ("run_program", "checker", "j1")

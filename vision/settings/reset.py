@@ -4,7 +4,8 @@
   asked for only when something a restart applies changed (the models, say).
 - `house`: house.toml back to the default house; the house reloads at once.
 - `everything`: both, plus the memory vault, `log.db`, `budget.json`, the
-  automations and the phone channel's settings and pairing (`phone.json`);
+  automations, the job board (work in progress is cancelled first) and the
+  phone channel's settings and pairing (`phone.json`);
   setup counts as not completed again. Memory is closed while its files move
   and opened again on fresh ones, so nothing writes into a backup; a restart
   is still asked for, because the brain keeps the conversation in memory.
@@ -22,6 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from vision import house
 from vision.core.config import load_config
 from vision.core.events import BudgetUpdate
+from vision.jobs.store import FILE_NAME as JOBS_FILE
 from vision.remote.store import FILE_NAME as PHONE_FILE
 from vision.scheduler.store import FILE_NAME as AUTOMATIONS_FILE
 from vision.settings import backups, live
@@ -42,6 +44,7 @@ NAMES: dict[Level, list[str]] = {
         *LOG_ITEMS,
         "budget.json",
         AUTOMATIONS_FILE,
+        JOBS_FILE,
         PHONE_FILE,
     ],
 }
@@ -50,8 +53,8 @@ MESSAGES: dict[Level, str] = {
     "settings": "Settings are back to their defaults.",
     "house": "The house is back to the default house.",
     "everything": (
-        "Everything is back to a fresh start: settings, house, memory, log, budget, automations "
-        "and the phone's pairing."
+        "Everything is back to a fresh start: settings, house, memory, log, budget, automations, "
+        "jobs and the phone's pairing."
     ),
 }
 
@@ -100,6 +103,8 @@ class Resetter:
         d = self._daemon
         config = d.config
         memory = MEMORY_ITEMS & set(names)
+        if JOBS_FILE in names:
+            await d.board.settle()
         if memory:
             await d.components.memory.close()
         try:
@@ -126,6 +131,8 @@ class Resetter:
             d.bus.publish(BudgetUpdate(**dataclasses.asdict(d.components.budget.status())))
         if AUTOMATIONS_FILE in names:
             await d.automations.reload()
+        if JOBS_FILE in names:
+            await d.board.reload()
         if PHONE_FILE in names:
             await d.phone.reload()
         return backup, restart

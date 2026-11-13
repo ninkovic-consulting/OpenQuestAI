@@ -2,7 +2,7 @@
 
 - `GET /api/phone`: the channel's state and settings (never the bot token).
 - `PATCH /api/phone`: `enabled`, `speak_on_mac`, `voice_replies`,
-  `notify: {automations, warnings, approvals}`, `phone_tools`.
+  `notify: {automations, warnings, approvals, jobs}`, `phone_tools`.
 - `POST /api/phone/token`: `{token}`; checked with Discord, then stored in
   the Keychain. Answers `{stored, verdict, bot}`.
 - `POST /api/phone/token/verify`: `{verdict, bot}`.

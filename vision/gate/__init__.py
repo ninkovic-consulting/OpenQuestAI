@@ -11,8 +11,10 @@ from collections.abc import Sequence
 from vision.core.bus import Bus
 from vision.core.config import Config
 from vision.core.interfaces import Memory, ToolHost
-from vision.gate.gate import ToolGate
+from vision.gate.gate import Actor, JobHooks, ToolGate
 from vision.gate.tools import Tool, build_tools
+
+__all__ = ["Actor", "JobHooks", "Tool", "ToolGate", "build_tools", "make_tool_host"]
 
 
 def make_tool_host(
