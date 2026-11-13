@@ -20,7 +20,7 @@ def can_take_work(agent_id: str) -> bool:
 
 def tool_works(built_in: bool, project_tools: bool) -> bool:
     """Built-in tools run; a room's project tools run in its resident's jobs when the
-    workbench is installed (and the room has a project folder)."""
+    workbench is installed (and the room has a project folder that can be used)."""
     return built_in or project_tools
 
 
@@ -42,7 +42,7 @@ def limits_line(project_tools: bool) -> str:
     """The plain truth about what can be done today, for the model."""
     tools = (
         "Project tools (reading and searching files, and, after the owner's yes, writing files and "
-        "running the room's programs) work in a room's project folder."
+        "running the room's programs) work in a room's project folders."
         if project_tools
         else "Project tools are not installed in this build, so residents cannot read or change project "
         "files or run programs."

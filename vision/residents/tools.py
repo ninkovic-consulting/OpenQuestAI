@@ -117,7 +117,7 @@ def own_tools(notes: ResidentNotes, desk: Desk, *, may_ask: bool) -> list[Tool]:
                     "Ask another resident of the house (not the host, not yourself) to do part of this "
                     "job, through the job board, and wait for their result. Use it only when the part "
                     "is clearly theirs (for example the checker for tests, the scout for the web). They "
-                    "work in this job's room, on the same project folder, unless you name another "
+                    "work in this job's room, on the same project folders, unless you name another "
                     "room; name the room whose project the part is about. They see nothing of your "
                     "job: write a complete brief. At most three requests per job; a busy resident is "
                     "refused.",

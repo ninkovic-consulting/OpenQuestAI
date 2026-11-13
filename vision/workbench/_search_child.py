@@ -7,8 +7,9 @@ keeps the daemon safe. This file imports only the standard library and is
 run as a script with `python -I`; it reads a job file the parent wrote and
 prints one JSON object.
 
-The parent has already chosen the files (inside the project, not protected,
-no links); this process only opens them without following links and scans.
+The parent has already chosen the files (inside the project folders, not
+protected, no links) and gives each as its real path and the path to show;
+this process only opens them without following links and scans.
 """
 
 import json
@@ -22,7 +23,6 @@ def main() -> None:
         job = json.load(handle)
     flags = re.IGNORECASE if job["ignore_case"] else 0
     pattern = re.compile(job["pattern"], flags)
-    root = job["root"]
     max_matches = job["max_matches"]
     max_bytes = job["max_file_bytes"]
     match_chars = job["match_line_chars"]
@@ -32,9 +32,9 @@ def main() -> None:
     binary = 0
     too_big = 0
     more = False
-    for rel in job["files"]:
+    for path, shown in job["files"]:
         try:
-            fd = os.open(os.path.join(root, rel), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         except OSError:
             continue
         with os.fdopen(fd, "rb") as handle:
@@ -57,7 +57,7 @@ def main() -> None:
             if len(text) > shown_chars:
                 begin = max(found.start() - shown_chars // 3, 0)
                 text = ("…" if begin else "") + text[begin : begin + shown_chars] + "…"
-            matches.append([rel, number, text])
+            matches.append([shown, number, text])
         if more:
             break
     print(json.dumps({"matches": matches, "scanned": scanned, "binary": binary, "too_big": too_big, "more": more}))

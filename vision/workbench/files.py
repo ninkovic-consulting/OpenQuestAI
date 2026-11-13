@@ -1,4 +1,4 @@
-"""Listing, reading, writing and editing files inside the project folder.
+"""Listing, reading, writing and editing files inside one of the room's project folders.
 
 Blocking file work; the tools run these in a thread. Every function takes
 the raw arguments the model gave and raises `ToolFailure` (or `PathRefused`)
@@ -14,7 +14,7 @@ import unicodedata
 from pathlib import Path, PurePosixPath
 
 from vision.gate.tools import ToolFailure
-from vision.workbench.paths import PathRefused, ProjectRoot, Resolved
+from vision.workbench.paths import OUTSIDE, PathRefused, ProjectRoot, Resolved
 from vision.workbench.protected import is_protected_name
 
 # ---- limits ---------------------------------------------------------------------------
@@ -93,9 +93,13 @@ def human_size(size: int) -> str:
 # ---- list_files -----------------------------------------------------------------------
 
 
+def list_depth(raw_depth: object) -> int:
+    return _int_arg(raw_depth, "depth", DEFAULT_LIST_DEPTH, 1, MAX_LIST_DEPTH)
+
+
 def list_files(root: ProjectRoot, raw_path: object = ".", raw_depth: object = DEFAULT_LIST_DEPTH) -> str:
     resolved = root.check_readable(raw_path if raw_path not in (None, "") else ".")
-    depth = _int_arg(raw_depth, "depth", DEFAULT_LIST_DEPTH, 1, MAX_LIST_DEPTH)
+    depth = list_depth(raw_depth)
     if not resolved.real.is_dir():
         if resolved.real.exists():
             raise ToolFailure(f"`{resolved.shown}` is a file, not a folder; use read_file to read it.")
@@ -162,7 +166,7 @@ def _link_target(root: ProjectRoot, link: Path) -> str:
     if not real.exists():
         return "(broken link)"
     name = root.relative_name(real)
-    if name.startswith("a place outside"):
+    if name == OUTSIDE:
         return "(link that leads outside the project; not followed)"
     return f"{name}  (link, not followed)"
 
@@ -281,7 +285,7 @@ def _existing_lines(resolved: Resolved) -> int | None:
 
 
 def _make_parents(root: ProjectRoot, resolved: Resolved) -> None:
-    """Create missing folders between the project folder and the file, all inside it."""
+    """Create missing folders between the room's folder and the file, all inside it."""
     parent_rel = resolved.rel.parent
     current = root.real
     for part in parent_rel.parts:
@@ -298,7 +302,7 @@ def _make_parents(root: ProjectRoot, resolved: Resolved) -> None:
                 raise ToolFailure(f"The folder `{root.relative_name(current)}` could not be created.") from None
     real_parent = Path(os.path.realpath(resolved.real.parent))
     if real_parent != root.real and not real_parent.is_relative_to(root.real):
-        raise PathRefused(f"`{resolved.shown}` leads outside the project folder, so it is not reachable.")
+        raise PathRefused(f"`{resolved.shown}` leads outside {root.where}, so it is not reachable.")
 
 
 def _atomic_write(root: ProjectRoot, resolved: Resolved, data: bytes) -> None:
@@ -365,7 +369,7 @@ def describe_write(root: ProjectRoot, args: dict[str, object]) -> str:
         head = f"Replace {resolved.shown} (a large or unreadable file) with {lines} lines"
     else:
         head = f"Replace {resolved.shown} ({before} lines) with {lines} lines"
-    return f"{head}, in the project folder {root.real}.\n\n{preview(content)}"
+    return f"{head}, in the folder {root.real}.\n\n{preview(content)}"
 
 
 # ---- edit_file ------------------------------------------------------------------------
@@ -418,7 +422,7 @@ def describe_edit(root: ProjectRoot, args: dict[str, object]) -> str:
     except ToolFailure as exc:
         return f"This request will be refused: {exc}"
     return (
-        f"Edit {resolved.shown}, in the project folder {root.real}.\n\n"
+        f"Edit {resolved.shown}, in the folder {root.real}.\n\n"
         f"Replace:\n{preview(old)}\n\nWith:\n{preview(new) if new else '(nothing: the text is removed)'}"
     )
 

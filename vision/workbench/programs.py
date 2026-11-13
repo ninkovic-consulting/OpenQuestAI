@@ -1,4 +1,4 @@
-"""run_program: run one of the owner's allowed programs in the project folder.
+"""run_program: run one of the owner's allowed programs in a project folder of the room.
 
 Be plain about what this is: a program such as `git`, `npm` or `python` can
 run arbitrary code from the project (a `package.json` script, a test file, a
@@ -11,7 +11,8 @@ What this module does guarantee:
   owner configured; never a path or name the model makes up;
 - never through a shell: the arguments go to the program as they are;
 - arguments are strings without NUL bytes, capped in number and length;
-- the working folder is the project folder;
+- the working folder is one of the room's project folders: the one named by
+  `folder`, else the first;
 - the child gets a clean environment (a minimal PATH, HOME, LANG and the
   like) and nothing whose name looks like a key, token, secret or password,
   never `ANTHROPIC_API_KEY` and never a `VISION_*` variable; no stdin;
@@ -29,6 +30,7 @@ from pathlib import Path
 
 from vision.gate.tools import Runner, ToolFailure, run_command
 from vision.workbench.files import visible
+from vision.workbench.folders import Folders
 from vision.workbench.paths import ProjectRoot
 
 DEFAULT_TIMEOUT_S = 120.0
@@ -139,8 +141,8 @@ def quote_arg(arg: str) -> str:
 
 
 class ProgramRunner:
-    def __init__(self, root: ProjectRoot, programs: Mapping[str, Path], runner: Runner = run_command) -> None:
-        self.root = root
+    def __init__(self, folders: Folders, programs: Mapping[str, Path], runner: Runner = run_command) -> None:
+        self.folders = folders
         self.programs = check_programs(programs)
         self.runner = runner
 
@@ -153,27 +155,28 @@ class ProgramRunner:
             )
         return raw, self.programs[raw]
 
-    def plan(self, args: dict[str, object]) -> tuple[Path, list[str], float]:
+    def plan(self, args: dict[str, object]) -> tuple[Path, list[str], float, ProjectRoot]:
         _name, path = self._program(args.get("program"))
-        return path, _args(args.get("args")), _timeout(args.get("timeout_s"))
+        folder = self.folders.for_program(args.get("folder"))
+        return path, _args(args.get("args")), _timeout(args.get("timeout_s")), folder
 
     def describe(self, args: dict[str, object]) -> str:
         try:
-            path, argv, timeout = self.plan(args)
+            path, argv, timeout, folder = self.plan(args)
         except ToolFailure as exc:
             return f"This request will be refused: {exc}"
         command = " ".join(quote_arg(part) for part in [str(path), *argv])
         return (
-            f"Run this command:\n{command}\n\nIn the folder: {self.root.real}\n"
+            f"Run this command:\n{command}\n\nIn the folder: {folder.real}\n"
             f"Stopped after {timeout:g} seconds. The program can run code from the project."
         )
 
     async def run(self, args: dict[str, object]) -> str:
-        path, argv, timeout = self.plan(args)
+        path, argv, timeout, folder = self.plan(args)
         if not os.path.isfile(path) or not os.access(path, os.X_OK):
             raise ToolFailure(f"The program `{args.get('program')}` is not installed where it is configured.")
         env = clean_environment(self.programs)
-        result = await self.runner([str(path), *argv], timeout=timeout, limit=OUTPUT_LIMIT, cwd=self.root.real, env=env)
+        result = await self.runner([str(path), *argv], timeout=timeout, limit=OUTPUT_LIMIT, cwd=folder.real, env=env)
         output = result.output.rstrip()
         if result.truncated:
             output += (

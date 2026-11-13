@@ -13,6 +13,7 @@ from typing import Any
 
 from vision.core.config import Config
 from vision.house import grid
+from vision.house.folders import room_folders
 from vision.house.model import (
     EXTRA_FLOOR,
     EXTRA_WALL,
@@ -41,7 +42,7 @@ ROOM_KEYS = {
     "shape",
     "agent",
     "model",
-    "project",
+    "folders",
     "floor",
     "wall",
     "tools",
@@ -198,7 +199,7 @@ def _room(table: dict[str, Any], kind: RoomKind, agents: dict[str, Agent]) -> Ro
         size=size,
         agent=agent,
         model=_text(table, "model", where, required=False),
-        project=_text(table, "project", where, required=False),
+        folders=room_folders(table, where),
         floor=floor,
         wall=wall,
         tools=check_tool_ids(table["tools"], where) if "tools" in table else None,
@@ -262,8 +263,13 @@ def _extra_id(table: dict[str, Any], taken: set[str]) -> str:
 def _no_unknown_keys(table: dict[str, Any], allowed: set[str], where: str) -> None:
     unknown = sorted(set(table) - allowed)
     if unknown:
+        hint = (
+            ' A room lists its project folders as folders = ["~/Projects/shop"].'
+            if unknown[0] == "project" and "folders" in allowed
+            else ""
+        )
         raise HouseError(
-            f"{where}: unknown setting {unknown[0]!r}. Allowed: {', '.join(sorted(allowed))}."
+            f"{where}: unknown setting {unknown[0]!r}. Allowed: {', '.join(sorted(allowed))}.{hint}"
         )
 
 

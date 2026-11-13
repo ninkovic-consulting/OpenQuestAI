@@ -25,7 +25,7 @@ HAND_OFF = (
     "result later in a turn of its own, and then you tell the owner. The resident sees nothing "
     "of this conversation: write a complete brief that stands on its own, with the goal, every "
     "fact, name, file or path it needs, and what to give back. A resident may work in any room "
-    "but the Hall, with that room's project folder and tools: when the work is about a project, "
+    "but the Hall, with that room's project folders and tools: when the work is about a project, "
     "send the resident to the room that holds it (for example the checker to the Workshop to "
     "test the maker's project). Leave room out to use the agent's own first room. Set careful "
     "only when the owner asks for extra care, since it uses a dearer model."

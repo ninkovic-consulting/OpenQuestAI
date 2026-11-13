@@ -25,16 +25,31 @@ NOTES_CHARS = 3000
 HOST = "host"
 
 
+MISSING = "it is not there"
+
+
+@dataclass(frozen=True, slots=True)
+class Folder:
+    """One of the room's project folders, as the job may use it."""
+
+    given: str
+    """The folder as the owner wrote it, such as `~/Projects/shop`."""
+    path: Path
+    """The folder with `~` expanded."""
+    problem: str | None = None
+    """Why the job cannot work in it (`MISSING`, or the workbench's refusal); None when it can."""
+    name: str = ""
+    """The short name its paths start with, when the job can use several folders."""
+
+
 @dataclass(frozen=True, slots=True)
 class Setting:
     """Where the job runs: the agent and its room, as the plan shows them."""
 
     agent: dict[str, Any]
     room: dict[str, Any] | None
-    project: Path | None
-    """The room's project folder, when it has one that exists and may be worked in."""
-    refused: str | None = None
-    """Why the project folder may not be worked in, when the workbench refused it."""
+    folders: tuple[Folder, ...] = ()
+    """The room's project folders in order, each usable or with the reason it is not."""
     host_of_room: str = ""
     """The name of the agent whose room it is, when the resident is visiting."""
 
@@ -78,19 +93,34 @@ def room_part(setting: Setting, tools: Sequence[str]) -> str:
         )
     else:
         lines.append(f"This job runs in the {room['name']}, one of your own rooms.")
-    if setting.project is not None:
-        lines.append(
-            f"The room's project folder is {setting.project}. Every file path you give the project "
-            "tools is inside it; you cannot reach anything outside it."
-        )
-    elif setting.refused:
-        lines.append(f"The room's project folder cannot be worked in ({setting.refused}), so there are no project tools.")
-    elif room is not None and room.get("project"):
-        lines.append(f"The room names the project folder {room['project']}, but it is not there, so there are no project tools.")
-    else:
-        lines.append("The room has no project folder, so there are no project tools.")
+    lines += folder_lines(setting.folders)
     lines.append(f"Your tools for this job: {', '.join(tools) or 'none'}.")
     return "\n".join(lines)
+
+
+def folder_lines(folders: Sequence[Folder]) -> list[str]:
+    """Where the project tools reach, how paths are written, and each folder that cannot be used."""
+    if not folders:
+        return ["The room has no project folder, so there are no project tools."]
+    usable = [f for f in folders if f.problem is None]
+    lines: list[str] = []
+    if usable:
+        first = usable[0].name
+        count = f"{len(usable)} project folder{'s' if len(usable) != 1 else ''}"
+        lines.append(
+            f"The room has {count} you can work in. Every file path you give the project tools starts "
+            f"with the folder's name, like `{first}/README.md`; `.` lists the folders, and searches them "
+            f"all. run_program runs in `{first}` unless you name another folder with `folder`. You cannot "
+            "reach anything outside these folders. Write paths this way in your notes too, so they keep "
+            "their meaning when the owner adds a folder."
+        )
+        lines += [f"- `{f.name}`: {f.path}" for f in usable]
+    for folder in folders:
+        if folder.problem is not None:
+            lines.append(f"The room's folder {folder.given} cannot be used: {folder.problem}.")
+    if not usable:
+        lines.append("None of the room's folders can be used, so there are no project tools.")
+    return lines
 
 
 def library(vault_root: Path, room: int = LIBRARY_CHARS) -> str:

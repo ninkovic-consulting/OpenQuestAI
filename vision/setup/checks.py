@@ -241,11 +241,11 @@ def house(config: Config, system: System) -> Check:
         layout = build_layout(store.read_toml(store.DEFAULT_FILE), user, config)
     except HouseError as exc:
         return HOUSE.result(False, str(exc), f"fix {path}")
-    projects = sum(1 for r in layout.rooms if r.project)
+    projects = sum(1 for r in layout.rooms if r.folders)
     name = layout.agents[HOST].name if HOST in layout.agents else config.assistant.name
     return HOUSE.result(
         True,
-        f"assistant {name}, {projects} of {len(layout.rooms)} rooms with a project, "
+        f"assistant {name}, {projects} of {len(layout.rooms)} rooms with project folders, "
         f"monthly cap ${config.budget.monthly_cap_usd:,.0f}",
     )
 

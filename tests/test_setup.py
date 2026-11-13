@@ -319,11 +319,14 @@ def test_mac_app(config: Config) -> None:
 
 def test_house(config: Config) -> None:
     check = checks.house(config, FakeSystem())
-    assert check.detail == "assistant Vision, 0 of 10 rooms with a project, monthly cap $150"
+    assert check.detail == "assistant Vision, 0 of 10 rooms with project folders, monthly cap $150"
     assert not config.paths.house_file.exists()  # read without creating
     config.paths.house_file.parent.mkdir(parents=True, exist_ok=True)
-    config.paths.house_file.write_text('[[rooms]]\nid = "garage"\nproject = "~/p"\n')
+    config.paths.house_file.write_text('[[rooms]]\nid = "garage"\nfolders = ["~/p", "~/q"]\n')
     assert "1 of 10 rooms" in checks.house(config, FakeSystem()).detail
+    config.paths.house_file.write_text('[[rooms]]\nid = "garage"\nproject = "~/p"\n')
+    old = checks.house(config, FakeSystem())
+    assert old.status == "missing" and "unknown setting 'project'" in old.detail and "folders = [" in old.detail
     config.paths.house_file.write_text('[[rooms]]\nid = "garage"\ntools = ["anvil"]\n')
     broken = checks.house(config, FakeSystem())
     assert broken.status == "missing" and "anvil" in broken.detail
@@ -452,7 +455,7 @@ def test_setup_walks_through_and_fixes(config: Config, tmp_path: Path) -> None:
     }
     house = tomllib.loads(config.paths.house_file.read_text())
     workshop = next(r for r in house["rooms"] if r["id"] == "workshop")
-    assert workshop["project"] == str(folder.resolve())
+    assert workshop["folders"] == [str(folder.resolve())]
     assert workshop["tools"] == ["git", "npm"]
     assert "Proposed tools: Git" in io.text
     assert TOOLS_NOTE.format(name="Ada") in io.text

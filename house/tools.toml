@@ -3,7 +3,7 @@
 #
 # Built-in tools ship with the assistant: the host's own, and those marked
 # `resident = true`, which only residents use at work. Project tools name a
-# program; a resident runs them in its room's project folder, after a yes.
+# program; a resident runs them in one of its room's project folders, after a yes.
 #
 # For a project tool:
 #   program  the command it needs on this Mac
@@ -134,37 +134,37 @@ resident = true
 
 [tools.list_files]
 title = "List files"
-description = "Lists files in the room's project folder."
+description = "Lists files in the room's project folders."
 built_in = true
 resident = true
 
 [tools.read_file]
 title = "Read a file"
-description = "Reads a file in the room's project folder."
+description = "Reads a file in one of the room's project folders."
 built_in = true
 resident = true
 
 [tools.search_files]
 title = "Search files"
-description = "Searches the files in the room's project folder."
+description = "Searches the files in the room's project folders."
 built_in = true
 resident = true
 
 [tools.write_file]
 title = "Write a file"
-description = "Writes a file in the room's project folder."
+description = "Writes a file in one of the room's project folders."
 built_in = true
 resident = true
 
 [tools.edit_file]
 title = "Edit a file"
-description = "Changes part of a file in the room's project folder."
+description = "Changes part of a file in one of the room's project folders."
 built_in = true
 resident = true
 
 [tools.run_program]
 title = "Run a program"
-description = "Runs one of the room's programs in its project folder, always after asking you."
+description = "Runs one of the room's programs in one of its project folders, always after asking you."
 built_in = true
 resident = true
 

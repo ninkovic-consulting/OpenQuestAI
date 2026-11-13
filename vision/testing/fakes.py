@@ -305,6 +305,7 @@ class FakeHouse:
             "cell_m": 4.0,
             "wall_height_m": 2.6,
             "max_extra_rooms": 20,
+            "max_room_folders": 8,
             "assistant": {"name": self.assistant},
             "agents": [
                 {
@@ -325,7 +326,7 @@ class FakeHouse:
                     "size": [2, 2],
                     "agent": "host",
                     "model": "claude-haiku-5-5",
-                    "project": None,
+                    "folders": [],
                     "floor": "red-carpet",
                     "wall": "teal-panel",
                     "tools": [

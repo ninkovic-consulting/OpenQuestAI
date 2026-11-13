@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -17,6 +18,7 @@ PLAN_KEYS = {
     "cell_m",
     "wall_height_m",
     "max_extra_rooms",
+    "max_room_folders",
     "assistant",
     "agents",
     "rooms",
@@ -32,7 +34,7 @@ ROOM_KEYS = {
     "size",
     "agent",
     "model",
-    "project",
+    "folders",
     "floor",
     "wall",
     "tools",
@@ -69,7 +71,7 @@ def test_plan_shape_and_first_use(config: Config) -> None:
     plan = house.plan()
     assert set(plan) == PLAN_KEYS
     assert plan["revision"] == 0
-    assert (plan["cell_m"], plan["wall_height_m"], plan["max_extra_rooms"]) == (4.0, 2.6, 20)
+    assert (plan["cell_m"], plan["wall_height_m"], plan["max_extra_rooms"], plan["max_room_folders"]) == (4.0, 2.6, 20, 8)
     assert plan["assistant"] == {"name": "Vision"}
     assert plan["agents"][0] == {
         "id": "host",
@@ -89,7 +91,7 @@ def test_plan_shape_and_first_use(config: Config) -> None:
         "size": [2, 2],
         "agent": "host",
         "model": "claude-haiku-5-5",
-        "project": None,
+        "folders": [],
         "floor": "red-carpet",
         "wall": "teal-panel",
         "tools": [
@@ -144,9 +146,10 @@ def test_set_room_state(config: Config) -> None:
         house.set_room_state("hall", "blinding")  # type: ignore[arg-type]
 
 
-async def test_add_room_writes_file_and_publishes(house: GridHouse, config: Config) -> None:
+async def test_add_room_writes_file_and_publishes(house: GridHouse, config: Config, tmp_path: Path) -> None:
+    (tmp_path / "p").mkdir()
     sub = watch(house)
-    room = await house.add_room({"name": "Studio", "agent": "maker", "project": "~/p"})
+    room = await house.add_room({"name": "Studio", "agent": "maker", "folders": [str(tmp_path / "p")]})
     assert room["id"] == "studio" and room["at"] == [1, -1] and room["kind"] == "extra"
     assert room["model"] == "claude-opus-5-5" and room["floor"] == "wood-floor"
     event = await next_event(sub)
@@ -155,7 +158,7 @@ async def test_add_room_writes_file_and_publishes(house: GridHouse, config: Conf
     assert saved["rooms"][-1] == {
         "name": "Studio",
         "agent": "maker",
-        "project": "~/p",
+        "folders": [str(tmp_path / "p")],
         "id": "studio",
         "at": [1, -1],
     }

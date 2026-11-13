@@ -16,11 +16,13 @@ from vision.core.bus import Bus
 from vision.core.config import Config
 from vision.core.events import HouseChanged, Notice, RoomLight
 from vision.house import grid, store
+from vision.house.folders import check_new
 from vision.house.model import (
     CELL_M,
     HALL,
     HOST,
     MAX_EXTRA_ROOMS,
+    MAX_ROOM_FOLDERS,
     WALL_HEIGHT_M,
     HouseError,
     Layout,
@@ -32,9 +34,9 @@ from vision.house.tools import tool_refs
 log = logging.getLogger(__name__)
 
 POLL_S = 1.0
-ADD_KEYS = {"id", "name", "at", "size", "agent", "model", "project", "floor", "wall", "tools"}
-EDIT_KEYS = {"name", "agent", "model", "project", "floor", "wall", "at", "size", "tools"}
-CLEARABLE = {"model", "project", "tools"}
+ADD_KEYS = {"id", "name", "at", "size", "agent", "model", "folders", "floor", "wall", "tools"}
+EDIT_KEYS = {"name", "agent", "model", "folders", "floor", "wall", "at", "size", "tools"}
+CLEARABLE = {"model", "folders", "tools"}
 AGENT_EDIT_KEYS = {"name", "model"}
 
 Mutation = Callable[[dict[str, Any], Layout], str | None]
@@ -87,6 +89,7 @@ class GridHouse:
             "cell_m": CELL_M,
             "wall_height_m": WALL_HEIGHT_M,
             "max_extra_rooms": MAX_EXTRA_ROOMS,
+            "max_room_folders": MAX_ROOM_FOLDERS,
             "assistant": {"name": self._config.assistant.name},
             "agents": [
                 {
@@ -108,7 +111,7 @@ class GridHouse:
                     "size": list(r.size),
                     "agent": r.agent,
                     "model": r.model or agents[r.agent].model,
-                    "project": r.project,
+                    "folders": list(r.folders),
                     "floor": r.floor,
                     "wall": r.wall,
                     "tools": tool_refs(agents[r.agent].tools if r.tools is None else r.tools),
@@ -162,6 +165,7 @@ class GridHouse:
             _check_keys(fields, ADD_KEYS)
             if fields.get("id") in {r.id for r in layout.rooms}:
                 raise HouseError(f"Room id {fields['id']!r} is already taken; ids must be unique.")
+            _check_new_folders(fields, (), f"Room {fields.get('name', fields.get('id', '?'))!r}")
             entry = {k: v for k, v in fields.items() if v is not None}
             doc.setdefault("rooms", []).append(entry)
             return None
@@ -181,6 +185,7 @@ class GridHouse:
                     f"'{room.name}' is a default room: it can be renamed, reassigned and "
                     "re-textured, but not moved or resized."
                 )
+            _check_new_folders(fields, room.folders, f"Room {room.name!r}")
             entry = _entry(doc, room_id)
             for key, value in fields.items():
                 if value is None and key in CLEARABLE:
@@ -370,6 +375,13 @@ def _entry(doc: dict[str, Any], room_id: str) -> dict[str, Any]:
     table = {"id": room_id}
     rooms.append(table)
     return table
+
+
+def _check_new_folders(fields: dict[str, Any], before: tuple[str, ...], where: str) -> None:
+    """Folders added through the routes must exist; the shape is left for the house to check."""
+    value = fields.get("folders")
+    if isinstance(value, list) and all(isinstance(f, str) for f in value):
+        check_new([f.strip() for f in value], before, where)
 
 
 def _pin(doc: dict[str, Any], layout: Layout) -> None:

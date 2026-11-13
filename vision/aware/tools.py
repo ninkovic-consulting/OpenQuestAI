@@ -54,7 +54,7 @@ def build_tools(aware: Awareness) -> list[Tool]:
             ToolSpec(
                 "house_overview",
                 "Describe the house you live in, as it is right now: every room with the agent who runs "
-                "it, its light and whether a project folder is attached, and every agent (you and the "
+                "it, its light and its project folders, and every agent (you and the "
                 "other residents) with their role, character, model, rooms, what each can do at work, and "
                 "the job each is doing now. "
                 "Use it whenever the user asks about the house, its rooms, the agents or residents, who "
@@ -69,7 +69,7 @@ def build_tools(aware: Awareness) -> list[Tool]:
         Tool(
             ToolSpec(
                 "room_details",
-                "Describe one room of the house: the agent who runs it and its model, the project folder, "
+                "Describe one room of the house: the agent who runs it and its model, its project folders, "
                 "each tool with whether it is installed and whether it works, the jobs in it now, and "
                 "the room's light. "
                 "For the Library it also lists what the shared library notes contain. Use it whenever the "

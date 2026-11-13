@@ -1,4 +1,7 @@
-"""The workbench tools: every safety rule attacked, and the ordinary cases.
+"""The workbench tools over one folder: every safety rule attacked, and the ordinary cases.
+
+Every path starts with the folder's name, `project/`, as it does with several
+folders (`test_workbench_folders.py`).
 
 Everything happens under `tmp_path`; nothing touches the network or the real
 home folder. Programs used are system ones (/bin/sh, /usr/bin/env) and the
@@ -53,7 +56,7 @@ def project(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def tools(project: Path) -> dict[str, Tool]:
-    return {tool.spec.name: tool for tool in project_tools(project, PROGRAMS)}
+    return {tool.spec.name: tool for tool in project_tools([project], PROGRAMS)}
 
 
 async def refused(tool: Tool, **args: Any) -> str:
@@ -77,16 +80,16 @@ def test_tools_in_fixed_order(tools: dict[str, Tool]) -> None:
 def test_root_may_not_be_home_or_disk(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     with pytest.raises(ValueError):
-        project_tools(tmp_path, {})
+        project_tools([tmp_path], {})
     with pytest.raises(ValueError):
-        project_tools(Path("/"), {})
+        project_tools([Path("/")], {})
 
 
 def test_program_list_is_checked(project: Path) -> None:
     with pytest.raises(ValueError):
-        project_tools(project, {"git": Path("git")})
+        project_tools([project], {"git": Path("git")})
     with pytest.raises(ValueError):
-        project_tools(project, {"../git": Path("/usr/bin/git")})
+        project_tools([project], {"../git": Path("/usr/bin/git")})
 
 
 # ---- rule 1: nothing outside the root --------------------------------------------------
@@ -94,7 +97,8 @@ def test_program_list_is_checked(project: Path) -> None:
 
 @pytest.mark.parametrize(
     "path",
-    ["../outside/secret.txt", "src/../../outside/secret.txt", "..", "~/secret.txt", "~", "", "   ", "src/\x00app.py"],
+    ["../outside/secret.txt", "project/../outside/secret.txt", "project/src/../../outside/secret.txt", "..", "~/secret.txt", "~", "",
+     "   ", "project/src/\x00app.py", "outside/secret.txt", "src/app.py"],
 )
 async def test_odd_and_escaping_paths_are_refused(tools: dict[str, Tool], outside: Path, path: str) -> None:
     message = await refused(tools["read_file"], path=path)
@@ -117,16 +121,16 @@ async def test_absolute_paths_are_refused_without_echo(tools: dict[str, Tool], o
 
 async def test_symlink_to_file_outside(tools: dict[str, Tool], project: Path, outside: Path) -> None:
     (project / "link.txt").symlink_to(outside / "secret.txt")
-    message = await refused(tools["read_file"], path="link.txt")
-    assert "outside the project" in message and str(outside) not in message
+    message = await refused(tools["read_file"], path="project/link.txt")
+    assert "outside the folder `project`" in message and str(outside) not in message
 
 
 async def test_symlinked_folder_leading_out(tools: dict[str, Tool], project: Path, outside: Path) -> None:
     (project / "docs").symlink_to(outside)
-    assert "outside the project" in await refused(tools["read_file"], path="docs/secret.txt")
-    assert "outside the project" in await refused(tools["list_files"], path="docs")
+    assert "outside the folder `project`" in await refused(tools["read_file"], path="project/docs/secret.txt")
+    assert "outside the folder `project`" in await refused(tools["list_files"], path="project/docs")
     # A link in the middle of a path, and as the parent of a file about to be created.
-    assert "outside the project" in await refused(tools["write_file"], path="docs/new/deep.txt", content="x")
+    assert "outside the folder `project`" in await refused(tools["write_file"], path="project/docs/new/deep.txt", content="x")
     assert not (outside / "new").exists()
     listing = await tools["list_files"].run({})
     assert "docs -> (link that leads outside the project; not followed)" in listing
@@ -135,17 +139,17 @@ async def test_symlinked_folder_leading_out(tools: dict[str, Tool], project: Pat
 
 async def test_symlink_to_etc_is_never_followed(tools: dict[str, Tool], project: Path) -> None:
     (project / "sys").symlink_to("/etc")
-    assert "outside the project" in await refused(tools["read_file"], path="sys/hosts")
+    assert "outside the folder `project`" in await refused(tools["read_file"], path="project/sys/hosts")
     found = await tools["search_files"].run({"pattern": "localhost"})
     assert "sys/" not in found
-    listing = await tools["list_files"].run({"depth": 3})
+    listing = await tools["list_files"].run({"depth": 4})
     assert "hosts" not in listing
 
 
 async def test_writing_through_a_symlink_is_refused(tools: dict[str, Tool], project: Path, outside: Path) -> None:
     (project / "notes.txt").symlink_to(outside / "secret.txt")
-    assert "outside the project" in await refused(tools["write_file"], path="notes.txt", content="pwned")
-    assert "outside the project" in await refused(tools["edit_file"], path="notes.txt", old="OUTSIDE", new="x")
+    assert "outside the folder `project`" in await refused(tools["write_file"], path="project/notes.txt", content="pwned")
+    assert "outside the folder `project`" in await refused(tools["edit_file"], path="project/notes.txt", old="OUTSIDE", new="x")
     assert (outside / "secret.txt").read_text() == "OUTSIDE-SECRET\n"
     assert (project / "notes.txt").is_symlink()
 
@@ -153,24 +157,24 @@ async def test_writing_through_a_symlink_is_refused(tools: dict[str, Tool], proj
 async def test_symlink_loop_is_refused(tools: dict[str, Tool], project: Path) -> None:
     (project / "a").symlink_to(project / "b")
     (project / "b").symlink_to(project / "a")
-    await refused(tools["read_file"], path="a")
+    await refused(tools["read_file"], path="project/a")
 
 
 async def test_link_inside_the_project_works(tools: dict[str, Tool], project: Path) -> None:
     (project / "readme-link").symlink_to(project / "README.md")
-    assert "hello world" in await tools["read_file"].run({"path": "readme-link"})
+    assert "hello world" in await tools["read_file"].run({"path": "project/readme-link"})
 
 
 # ---- rule 2: secrets -------------------------------------------------------------------
 
 
 async def test_env_read_is_refused(tools: dict[str, Tool], project: Path) -> None:
-    for path in (".env", ".ENV", "./.env"):
+    for path in ("project/.env", "project/.ENV", "./project/.env"):
         message = await refused(tools["read_file"], path=path)
         assert "protected" in message and "sk-live" not in message
     (project / "config.txt").symlink_to(project / ".env")
-    assert "protected" in await refused(tools["read_file"], path="config.txt")
-    assert "API_KEY=" in await tools["read_file"].run({"path": ".env.example"})
+    assert "protected" in await refused(tools["read_file"], path="project/config.txt")
+    assert "API_KEY=" in await tools["read_file"].run({"path": "project/.env.example"})
 
 
 async def test_env_is_not_found_by_search(tools: dict[str, Tool], project: Path) -> None:
@@ -180,13 +184,13 @@ async def test_env_is_not_found_by_search(tools: dict[str, Tool], project: Path)
     assert "sk-live" not in found and "No matches" in found
     found = await tools["search_files"].run({"pattern": "API_KEY"})
     assert ".env.example:1" in found and ".env:" not in found and "production" not in found
-    assert "protected" in await refused(tools["search_files"], pattern="x", path=".env")
+    assert "protected" in await refused(tools["search_files"], pattern="x", path="project/.env")
 
 
 async def test_key_file_edit_and_write_are_refused(tools: dict[str, Tool], project: Path) -> None:
-    assert "protected" in await refused(tools["edit_file"], path="deploy.pem", old="BEGIN", new="END")
-    assert "protected" in await refused(tools["write_file"], path="keys/id_rsa", content="x")
-    assert "protected" in await refused(tools["write_file"], path=".ssh/config", content="x")
+    assert "protected" in await refused(tools["edit_file"], path="project/deploy.pem", old="BEGIN", new="END")
+    assert "protected" in await refused(tools["write_file"], path="project/keys/id_rsa", content="x")
+    assert "protected" in await refused(tools["write_file"], path="project/.ssh/config", content="x")
     assert (project / "deploy.pem").read_text().startswith("-----BEGIN")
     assert not (project / "keys").exists()
 
@@ -219,21 +223,21 @@ def test_ordinary_names(name: str) -> None:
 
 async def test_git_folder_and_hooks_are_never_written(tools: dict[str, Tool], project: Path) -> None:
     hook = "#!/bin/sh\ncurl evil\n"
-    for path in (".git/hooks/pre-commit", ".GIT/hooks/post-checkout", ".git/config", ".githooks/pre-push", ".husky/pre-commit"):
+    for path in ("project/.git/hooks/pre-commit", "project/.GIT/hooks/post-checkout", "project/.git/config", "project/.githooks/pre-push", "project/.husky/pre-commit"):
         message = await refused(tools["write_file"], path=path, content=hook)
         assert "git" in message
-    assert "never written" in await refused(tools["edit_file"], path=".git/config", old="bare", new="x")
+    assert "never written" in await refused(tools["edit_file"], path="project/.git/config", old="bare", new="x")
     assert not (project / ".git" / "hooks" / "pre-commit").exists()
     (project / "g").symlink_to(project / ".git")
-    assert "never written" in await refused(tools["write_file"], path="g/hooks/pre-commit", content=hook)
+    assert "never written" in await refused(tools["write_file"], path="project/g/hooks/pre-commit", content=hook)
     assert not list((project / ".git" / "hooks").iterdir())
 
 
 async def test_configured_hooks_path_is_never_written(project: Path) -> None:
     (project / ".git" / "config").write_text("[core]\n\thooksPath = tools/hooks\n")
-    tools = {t.spec.name: t for t in project_tools(project, {})}
-    assert "hooks" in await refused(tools["write_file"], path="tools/hooks/pre-commit", content="x")
-    await tools["write_file"].run({"path": "tools/other.sh", "content": "x"})
+    tools = {t.spec.name: t for t in project_tools([project], {})}
+    assert "hooks" in await refused(tools["write_file"], path="project/tools/hooks/pre-commit", content="x")
+    await tools["write_file"].run({"path": "project/tools/other.sh", "content": "x"})
 
 
 # ---- rule 4: clean environment ----------------------------------------------------------
@@ -375,14 +379,21 @@ async def test_search_caps_matches_and_line_length(tools: dict[str, Tool], proje
 # ---- ordinary cases ------------------------------------------------------------------------
 
 
-async def test_list(tools: dict[str, Tool]) -> None:
-    listing = await tools["list_files"].run({})
+async def test_list(tools: dict[str, Tool], project: Path) -> None:
+    folders = await tools["list_files"].run({})
+    assert folders.splitlines()[:2] == [
+        "./ (depth 2): this room's 1 folder; start every path with a folder's name.",
+        f"project/  ({os.path.realpath(project)})",
+    ]
+    assert "  src/  [not expanded]" in folders
+    listing = await tools["list_files"].run({"path": "project"})
+    assert listing.startswith("project/ (depth 2)")
     assert "src/" in listing and "  app.py  (" in listing and "README.md  (" in listing
     assert "node_modules/  [skipped" in listing and ".git/  [skipped" in listing
     assert "index.js" not in listing
-    shallow = await tools["list_files"].run({"depth": 1})
+    shallow = await tools["list_files"].run({"path": "project", "depth": 1})
     assert "src/  [not expanded]" in shallow and "app.py" not in shallow
-    deps = await tools["list_files"].run({"path": "node_modules"})
+    deps = await tools["list_files"].run({"path": "project/node_modules"})
     assert "pkg/" in deps
 
 
@@ -390,65 +401,65 @@ async def test_list_caps_entries(tools: dict[str, Tool], project: Path) -> None:
     (project / "many").mkdir()
     for i in range(500):
         (project / "many" / f"f{i:03}.txt").write_text("x")
-    listing = await tools["list_files"].run({"path": "many"})
+    listing = await tools["list_files"].run({"path": "project/many"})
     assert "[cut at 400 entries" in listing
 
 
 async def test_ranged_read(tools: dict[str, Tool]) -> None:
-    text = await tools["read_file"].run({"path": "src/app.py", "start_line": 10, "end_line": 12})
-    assert text.splitlines() == ["src/app.py: lines 10-12 of 50", "10\tline 10", "11\tline 11", "12\tline 12", "[cut after line 12 of 50 (the default range); call read_file with start_line=13 to read on]"]
-    whole = await tools["read_file"].run({"path": "README.md"})
-    assert whole.splitlines()[0] == "README.md: lines 1-2 of 2"
-    assert "past the end" in await refused(tools["read_file"], path="README.md", start_line=10)
+    text = await tools["read_file"].run({"path": "project/src/app.py", "start_line": 10, "end_line": 12})
+    assert text.splitlines() == ["project/src/app.py: lines 10-12 of 50", "10\tline 10", "11\tline 11", "12\tline 12", "[cut after line 12 of 50 (the default range); call read_file with start_line=13 to read on]"]
+    whole = await tools["read_file"].run({"path": "project/README.md"})
+    assert whole.splitlines()[0] == "project/README.md: lines 1-2 of 2"
+    assert "past the end" in await refused(tools["read_file"], path="project/README.md", start_line=10)
 
 
 async def test_big_read_is_cut_with_a_way_on(tools: dict[str, Tool], project: Path) -> None:
     (project / "big.txt").write_text("".join(f"{'z' * 100} {i}\n" for i in range(3000)))
-    text = await tools["read_file"].run({"path": "big.txt"})
+    text = await tools["read_file"].run({"path": "project/big.txt"})
     assert len(text) < 62_000 and "call read_file with start_line=" in text
 
 
 async def test_binary_file_read_is_refused(tools: dict[str, Tool], project: Path) -> None:
     (project / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
-    assert "binary" in await refused(tools["read_file"], path="logo.png")
+    assert "binary" in await refused(tools["read_file"], path="project/logo.png")
 
 
 async def test_fifo_read_is_refused(tools: dict[str, Tool], project: Path) -> None:
     os.mkfifo(project / "pipe")
-    assert "not a regular file" in await refused(tools["read_file"], path="pipe")
+    assert "not a regular file" in await refused(tools["read_file"], path="project/pipe")
 
 
 async def test_search_with_glob(tools: dict[str, Tool]) -> None:
     found = await tools["search_files"].run({"pattern": "hello", "glob": "*.ts"})
-    assert "src/util.ts:1: export const hello = 1;" in found and "README" not in found
+    assert "project/src/util.ts:1: export const hello = 1;" in found and "README" not in found
     found = await tools["search_files"].run({"pattern": "HELLO", "ignore_case": True})
-    assert "README.md:2: hello world" in found and "node_modules" not in found
-    found = await tools["search_files"].run({"pattern": "line 4\\d", "path": "src", "glob": "src/**/*.py"})
-    assert "src/app.py:40: line 40" in found
+    assert "project/README.md:2: hello world" in found and "node_modules" not in found
+    found = await tools["search_files"].run({"pattern": "line 4\\d", "path": "project/src", "glob": "src/**/*.py"})
+    assert "project/src/app.py:40: line 40" in found
 
 
 async def test_write_new_and_replace(tools: dict[str, Tool], project: Path) -> None:
-    assert await tools["write_file"].run({"path": "docs/guide/intro.md", "content": "a\nb\n"}) == "Created docs/guide/intro.md (2 lines)."
+    assert await tools["write_file"].run({"path": "project/docs/guide/intro.md", "content": "a\nb\n"}) == "Created project/docs/guide/intro.md (2 lines)."
     assert (project / "docs/guide/intro.md").read_text() == "a\nb\n"
     os.chmod(project / "docs/guide/intro.md", 0o600)
-    assert await tools["write_file"].run({"path": "docs/guide/intro.md", "content": "c\n"}) == "Replaced docs/guide/intro.md (now 1 lines)."
+    assert await tools["write_file"].run({"path": "project/docs/guide/intro.md", "content": "c\n"}) == "Replaced project/docs/guide/intro.md (now 1 lines)."
     assert (project / "docs/guide/intro.md").read_text() == "c\n"
     assert oct((project / "docs/guide/intro.md").stat().st_mode & 0o777) == oct(0o600)
     assert not [p for p in (project / "docs/guide").iterdir() if p.name.endswith(".tmp")]
 
 
 async def test_write_size_cap(tools: dict[str, Tool]) -> None:
-    assert "more than" in await refused(tools["write_file"], path="huge.txt", content="x" * 1_000_001)
+    assert "more than" in await refused(tools["write_file"], path="project/huge.txt", content="x" * 1_000_001)
 
 
 async def test_edit_unique_and_not_unique(tools: dict[str, Tool], project: Path) -> None:
     (project / "a.txt").write_text("one\ntwo\ntwo\nthree\n")
-    assert "Edited a.txt" in await tools["edit_file"].run({"path": "a.txt", "old": "one\n", "new": "uno\n"})
+    assert "Edited project/a.txt" in await tools["edit_file"].run({"path": "project/a.txt", "old": "one\n", "new": "uno\n"})
     assert (project / "a.txt").read_text() == "uno\ntwo\ntwo\nthree\n"
-    assert "more than once" in await refused(tools["edit_file"], path="a.txt", old="two", new="dos")
-    assert "not found" in await refused(tools["edit_file"], path="a.txt", old="four", new="x")
+    assert "more than once" in await refused(tools["edit_file"], path="project/a.txt", old="two", new="dos")
+    assert "not found" in await refused(tools["edit_file"], path="project/a.txt", old="four", new="x")
     (project / "b.txt").write_text("aaa")
-    assert "more than once" in await refused(tools["edit_file"], path="b.txt", old="aa", new="b")
+    assert "more than once" in await refused(tools["edit_file"], path="project/b.txt", old="aa", new="b")
     assert (project / "a.txt").read_text() == "uno\ntwo\ntwo\nthree\n"
 
 
@@ -458,22 +469,22 @@ async def test_edit_unique_and_not_unique(tools: dict[str, Tool], project: Path)
 def test_describe_write(tools: dict[str, Tool], project: Path) -> None:
     describe = tools["write_file"].describe
     assert describe is not None
-    card = describe({"path": "new/file.py", "content": "print(1)\nprint(2)\n"})
-    assert card.startswith("Create new file new/file.py (2 lines)") and "print(2)" in card
-    card = describe({"path": "README.md", "content": "x\n" * 100})
-    assert card.startswith("Replace README.md (2 lines) with 100 lines") and "more lines not shown" in card
-    card = describe({"path": "x.txt", "content": "safe‮evil"})
+    card = describe({"path": "project/new/file.py", "content": "print(1)\nprint(2)\n"})
+    assert card.startswith("Create new file project/new/file.py (2 lines)") and "print(2)" in card
+    card = describe({"path": "project/README.md", "content": "x\n" * 100})
+    assert card.startswith("Replace project/README.md (2 lines) with 100 lines") and "more lines not shown" in card
+    card = describe({"path": "project/x.txt", "content": "safe‮evil"})
     assert "\\u202e" in card
-    assert describe({"path": ".env", "content": "x"}).startswith("This request will be refused")
+    assert describe({"path": "project/.env", "content": "x"}).startswith("This request will be refused")
     assert describe({"path": None}).startswith("This request will be refused")
 
 
 def test_describe_edit(tools: dict[str, Tool]) -> None:
     describe = tools["edit_file"].describe
     assert describe is not None
-    card = describe({"path": "README.md", "old": "hello world", "new": "hi there"})
-    assert card.startswith("Edit README.md") and "Replace:\nhello world" in card and "With:\nhi there" in card
-    assert "refused" in describe({"path": "README.md", "old": "absent", "new": "x"})
+    card = describe({"path": "project/README.md", "old": "hello world", "new": "hi there"})
+    assert card.startswith("Edit project/README.md") and "Replace:\nhello world" in card and "With:\nhi there" in card
+    assert "refused" in describe({"path": "project/README.md", "old": "absent", "new": "x"})
 
 
 def test_describe_run(tools: dict[str, Tool], project: Path) -> None:

@@ -102,7 +102,7 @@ def test_personal_file_overrides(config: Config) -> None:
                 "id": "garage",
                 "name": "Platform",
                 "agent": "checker",
-                "project": "~/Projects/platform",
+                "folders": ["~/Projects/platform", "/srv/platform-api"],
                 "model": "special-model",
                 "floor": "stone-tile",
                 "at": [0, 3],
@@ -112,10 +112,10 @@ def test_personal_file_overrides(config: Config) -> None:
     assert house.agents["maker"].name == "Sprocket"
     assert house.agents["maker"].persona == "agents/maker.md"
     garage = house.room("garage")
-    assert (garage.name, garage.agent, garage.project, garage.model, garage.floor) == (
+    assert (garage.name, garage.agent, garage.folders, garage.model, garage.floor) == (
         "Platform",
         "checker",
-        "~/Projects/platform",
+        ("~/Projects/platform", "/srv/platform-api"),
         "special-model",
         "stone-tile",
     )

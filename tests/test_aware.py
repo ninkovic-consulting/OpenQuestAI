@@ -25,7 +25,7 @@ async def call(d: Daemon, tool: str, **args: Any) -> str:
 
 async def add_den(d: Daemon) -> None:
     async with client(d) as http:
-        answer = await http.post("/api/house/rooms", json={"name": "Den", "agent": "maker", "at": [4, 1], "project": "/tmp"})
+        answer = await http.post("/api/house/rooms", json={"name": "Den", "agent": "maker", "at": [4, 1], "folders": ["/tmp", "/usr"]})
     assert answer.status_code == 201, answer.text
 
 
@@ -64,7 +64,7 @@ async def test_the_house_overview_has_every_room_and_agent(daemon: Daemon) -> No
     text = await call(daemon, "house_overview")
     for room in ("Hall", "Library", "Control Room", "Comms Room", "Kitchen", "Workshop", "Attic", "Den"):
         assert f"- {room} (id " in text, room
-    assert "1 extra" in text and "project /tmp" in text
+    assert "1 extra" in text and "folders /tmp, /usr" in text
     assert "- Tink, the maker (id maker). Free to take work. Model claude-opus-5-5." in text
     assert "At work it keeps its own notes" in text
     assert "Wren, the envoy (id envoy)" in text and "it has no mail or messaging access yet" in text
@@ -78,7 +78,7 @@ async def test_room_details_with_tools_and_whether_they_work(daemon: Daemon) -> 
     await add_den(daemon)
     den = await call(daemon, "room_details", room="the den")
     assert den.startswith("Den (id den), an extra room, run by Tink, the maker: free to take work.")
-    assert "Project folder: /tmp." in den
+    assert "Project folders: /tmp, /usr." in den
     hall = await call(daemon, "room_details", room="hall")
     assert "- Shell (shell): on this Mac; works today." in hall
     failed = await daemon.components.tools.call("room_details", {"room": "ballroom"})
@@ -139,6 +139,8 @@ async def test_the_summary_reaches_the_model_and_follows_the_house(daemon: Daemo
     await add_den(daemon)
     third = await turn(daemon, "Anything new?")
     assert "Kitchen, Game Room, Garage, Workshop, Den; free to take work." in third
+    assert "- Project folders: Den: /tmp, /usr." in third
+    assert "Project folders" not in first
     assert daemon.components.memory is not None
     system = daemon.components.memory.core()
     assert "Where you are now" not in system

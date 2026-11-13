@@ -1,4 +1,4 @@
-"""search_files: a regular-expression search over the project's text files.
+"""search_files: a regular-expression search over the text files of one or more project folders.
 
 The files are chosen here (inside the project, not protected, never through
 a link, skipping dependencies and caches); the matching itself runs in a
@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import tempfile
+from collections.abc import Sequence
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 
@@ -65,14 +66,15 @@ def _glob_matches(glob: str, rel: PurePosixPath) -> bool:
     return fnmatchcase(str(rel), flat) or fnmatchcase(str(rel), glob)
 
 
-def collect_files(root: ProjectRoot, raw_path: object, glob: str | None) -> tuple[list[str], int, bool]:
-    """Project-relative paths to scan, how many protected files were left out, and whether the cap cut it."""
+def collect_files(root: ProjectRoot, raw_path: object, glob: str | None, room: int = MAX_FILES_SCANNED) -> tuple[list[tuple[str, str]], int, bool]:
+    """Files to scan as (real path, path as shown), how many protected files were left out,
+    and whether the cap of `room` files cut it."""
     resolved = root.check_readable(raw_path if raw_path not in (None, "") else ".")
     if resolved.real.is_file():
-        return [resolved.shown], 0, False
+        return [(str(resolved.real), resolved.shown)], 0, False
     if not resolved.real.is_dir():
         raise ToolFailure(f"`{resolved.shown}` does not exist.")
-    files: list[str] = []
+    files: list[tuple[str, str]] = []
     protected = 0
     stack = [resolved.real]
     while stack:
@@ -98,23 +100,38 @@ def collect_files(root: ProjectRoot, raw_path: object, glob: str | None) -> tupl
             rel = PurePosixPath(Path(entry.path).relative_to(root.real).as_posix())
             if glob is not None and not _glob_matches(glob, rel):
                 continue
-            if len(files) >= MAX_FILES_SCANNED:
+            if len(files) >= room:
                 return files, protected, True
-            files.append(str(rel))
+            files.append((entry.path, root.show(rel)))
         stack.extend(reversed(subfolders))
     return files, protected, False
 
 
-async def search_files(root: ProjectRoot, args: dict[str, object], *, runner: Runner = run_command) -> str:
+def _collect_all(targets: Sequence[tuple[ProjectRoot, object]], glob: str | None) -> tuple[list[tuple[str, str]], int, bool]:
+    """`collect_files` over each folder in turn, under one cap for them all."""
+    files: list[tuple[str, str]] = []
+    protected = 0
+    for root, raw_path in targets:
+        found, hidden, capped = collect_files(root, raw_path, glob, MAX_FILES_SCANNED - len(files))
+        files += found
+        protected += hidden
+        if capped:
+            return files, protected, True
+    return files, protected, False
+
+
+async def search_files(
+    targets: Sequence[tuple[ProjectRoot, object]], args: dict[str, object], *, runner: Runner = run_command
+) -> str:
+    """Search each folder at its path (`.` for all of it); `args` carries the pattern and glob."""
     pattern = _pattern(args.get("pattern"))
     glob = _glob(args.get("glob"))
     ignore_case = bool(args.get("ignore_case", False))
-    files, protected, capped = await asyncio.to_thread(collect_files, root, args.get("path", "."), glob)
+    files, protected, capped = await asyncio.to_thread(_collect_all, targets, glob)
     if not files:
         return "No files to search there" + (" match that glob." if glob else ".")
 
     job = {
-        "root": str(root.real),
         "files": files,
         "pattern": pattern,
         "ignore_case": ignore_case,
@@ -131,7 +148,7 @@ async def search_files(root: ProjectRoot, args: dict[str, object], *, runner: Ru
             [sys.executable, "-I", str(_CHILD), job_path],
             timeout=SEARCH_TIMEOUT_S,
             limit=CHILD_OUTPUT_LIMIT,
-            cwd=root.real,
+            cwd=targets[0][0].real,
         )
     finally:
         try:

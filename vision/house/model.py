@@ -17,6 +17,7 @@ CELL_M = 4.0
 WALL_HEIGHT_M = 2.6
 MAX_EXTRA_ROOMS = 20
 MAX_EXTRA_CELLS = 4
+MAX_ROOM_FOLDERS = 8
 TEXTURES = (
     "wallpaper",
     "teal-panel",
@@ -73,7 +74,8 @@ class Room:
     agent: str
     model: str | None
     """The room's own model, overriding its agent's; None to use the agent's."""
-    project: str | None
+    folders: tuple[str, ...]
+    """The room's project folders, in order, as the owner wrote them (`~/Projects/shop`)."""
     floor: str
     wall: str
     tools: tuple[str, ...] | None = None

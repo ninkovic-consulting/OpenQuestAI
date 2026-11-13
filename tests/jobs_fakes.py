@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
 from vision.core.bus import Bus
@@ -30,7 +30,7 @@ ROOMS = [
 ]
 
 
-def plan(project: str | None = None) -> dict[str, Any]:
+def plan(folders: Sequence[str] = ()) -> dict[str, Any]:
     return {
         "assistant": {"name": "Vision"},
         "agents": [
@@ -49,7 +49,7 @@ def plan(project: str | None = None) -> dict[str, Any]:
                 "name": n,
                 "agent": a,
                 "model": "claude-sonnet-5-5" if r == "workshop" else "claude-haiku-5-5",
-                "project": project if r == "workshop" else None,
+                "folders": list(folders) if r == "workshop" else [],
                 "tools": [{"id": "python", "title": "Python", "available": True, "built_in": False}]
                 if r == "workshop"
                 else [],
@@ -92,13 +92,13 @@ class Spend:
         return self.out
 
 
-async def make_board(config: Config, bus: Bus | None = None, project: str | None = None) -> tuple[Board, Scripted, Spend, dict[str, RoomLight]]:
+async def make_board(config: Config, bus: Bus | None = None, folders: Sequence[str] = ()) -> tuple[Board, Scripted, Spend, dict[str, RoomLight]]:
     lights: dict[str, RoomLight] = {}
     spend = Spend()
     board = Board(
         config,
         bus or Bus(),
-        plan=lambda: plan(project),
+        plan=lambda: plan(folders),
         exhausted=spend,
         light=lambda room, light: lights.__setitem__(room, light),
     )

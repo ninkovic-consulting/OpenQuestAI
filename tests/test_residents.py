@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import sys
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -92,14 +92,16 @@ class Probe:
 
 
 class World:
-    def __init__(self, config: Config, client: Client | None, project: Path | None = None, project_tools: Any = None) -> None:
+    def __init__(
+        self, config: Config, client: Client | None, project: Path | None = None, project_tools: Any = None, folders: Sequence[Path] = ()
+    ) -> None:
         self.config = config
         self.bus = Bus()
         self.memory = FakeMemory()
         self.budget = FakeBudget.from_config(config)
         self.root = ToolGate(config, self.bus, self.memory, [])
         self.client = client
-        self.plan = plan(str(project) if project else None)
+        self.plan = plan([str(f) for f in ([project] if project else folders)])
         lent = [_named("assistant_status"), _named("list_automations"), _named("shell")]
 
         async def give() -> Any:
@@ -241,7 +243,7 @@ def test_the_web_search_type_follows_the_model() -> None:
 
 
 async def test_no_resident_ever_gets_a_host_tool(seeded: Config, tmp_path: Path) -> None:
-    def project_tools(root: Path, programs: Mapping[str, Path]) -> list[Tool]:
+    def project_tools(roots: Sequence[Path], programs: Mapping[str, Path]) -> list[Tool]:
         return [_named("list_files"), _named("shell"), _named("open_app")]
 
     client = Client([text("ok")])
@@ -254,27 +256,67 @@ async def test_no_resident_ever_gets_a_host_tool(seeded: Config, tmp_path: Path)
 
 
 async def test_project_tools_get_the_room_folder_and_its_installed_programs(seeded: Config, tmp_path: Path) -> None:
-    seen: list[tuple[Path, dict[str, Path]]] = []
+    seen: list[tuple[Sequence[Path], dict[str, Path]]] = []
 
-    def project_tools(root: Path, programs: Mapping[str, Path]) -> list[Tool]:
-        seen.append((root, dict(programs)))
+    def project_tools(roots: Sequence[Path], programs: Mapping[str, Path]) -> list[Tool]:
+        seen.append((roots, dict(programs)))
         return [_named("list_files")]
 
     client = Client([text("ok")])
     w = World(seeded, client, project=tmp_path, project_tools=project_tools)
     await w.run("Tink", "x")
-    assert seen == [(tmp_path, {"python": Path(sys.executable)})]
-    assert f"The room's project folder is {tmp_path}." in client.requests[0]["system"][0]["text"]
+    assert seen == [([tmp_path], {"python": Path(sys.executable)})]
+    system = client.requests[0]["system"][0]["text"]
+    assert "The room has 1 project folder you can work in." in system
+    assert f"- `{tmp_path.name}`: {tmp_path}" in system and f"like `{tmp_path.name}/README.md`" in system
 
-    def refusing(root: Path, programs: Mapping[str, Path]) -> list[Tool]:
+    def refusing(roots: Sequence[Path], programs: Mapping[str, Path]) -> list[Tool]:
         raise ValueError("the home folder cannot be a project folder")
 
     client2 = Client([text("ok")])
     w2 = World(seeded, client2, project=tmp_path, project_tools=refusing)
     job = await w2.run("Tink", "x")
     assert job.status == "done" and "list_files" not in offered(client2.requests[0])
-    assert "Working without project tools: the home folder cannot be a project folder" in [s.text for s in job.steps][1]
-    assert "cannot be worked in (the home folder" in client2.requests[0]["system"][0]["text"]
+    assert job.steps[1].text.startswith("Working without project tools: ")
+    assert job.steps[1].text.endswith(": the home folder cannot be a project folder")
+    refusal = f"The room's folder {tmp_path} cannot be used: the home folder cannot be a project folder."
+    assert refusal in client2.requests[0]["system"][0]["text"]
+
+
+async def test_several_folders_are_named_and_a_bad_one_does_not_stop_the_others(seeded: Config, tmp_path: Path) -> None:
+    shop, blog, home = tmp_path / "shop", tmp_path / "blog", tmp_path / "user"
+    for folder in (shop, blog, home):
+        folder.mkdir()
+    seen: list[list[Path]] = []
+
+    def project_tools(roots: Sequence[Path], programs: Mapping[str, Path]) -> list[Tool]:
+        if home in roots:
+            raise ValueError("the project folder may not be the disk, the home folder or above it")
+        seen.append(list(roots))
+        return [_named("list_files")]
+
+    client = Client([text("ok")])
+    w = World(seeded, client, project_tools=project_tools, folders=[shop, tmp_path / "gone", home, blog])
+    job = await w.run("Tink", "x")
+    system = client.requests[0]["system"][0]["text"]
+    assert seen[-1] == [shop, blog] and "list_files" in offered(client.requests[0])
+    assert "The room has 2 project folders you can work in." in system and "like `shop/README.md`" in system
+    assert f"- `shop`: {shop}\n- `blog`: {blog}" in system
+    assert f"The room's folder {tmp_path / 'gone'} cannot be used: it is not there." in system
+    assert f"The room's folder {home} cannot be used: the project folder may not be the disk" in system
+    assert job.steps[1].text.startswith("Working without the folder ") and "the home folder" in job.steps[1].text
+
+
+async def test_one_usable_folder_among_missing_ones_keeps_plain_paths(seeded: Config, tmp_path: Path) -> None:
+    def project_tools(roots: Sequence[Path], programs: Mapping[str, Path]) -> list[Tool]:
+        return [_named("list_files")]
+
+    client = Client([text("ok")])
+    w = World(seeded, client, project_tools=project_tools, folders=[tmp_path / "gone", tmp_path])
+    await w.run("Tink", "x")
+    system = client.requests[0]["system"][0]["text"]
+    assert "The room has 1 project folder you can work in." in system and f"- `{tmp_path.name}`: {tmp_path}" in system
+    assert f"The room's folder {tmp_path / 'gone'} cannot be used: it is not there." in system
 
 
 async def test_limits_end_a_job_as_failed(seeded: Config) -> None:
@@ -359,7 +401,7 @@ async def test_with_the_real_workbench(seeded: Config, tmp_path: Path) -> None:
     (project / "calc.py").write_text("def add(a, b):\n    return a + b\n")
     client = Client(
         [
-            use("read_file", path="calc.py"),
+            use("read_file", path="calc/calc.py"),
             use("run_program", program="python", args=["-c", "import calc; print(calc.add(2, 3))"]),
             text("add works: 5."),
         ]
@@ -382,10 +424,10 @@ async def test_with_the_real_workbench(seeded: Config, tmp_path: Path) -> None:
 
 
 async def test_a_visitor_uses_the_rooms_project_and_its_own_model(seeded: Config, tmp_path: Path) -> None:
-    seen: list[tuple[Path, dict[str, Path]]] = []
+    seen: list[tuple[Sequence[Path], dict[str, Path]]] = []
 
-    def project_tools(root: Path, programs: Mapping[str, Path]) -> list[Tool]:
-        seen.append((root, dict(programs)))
+    def project_tools(roots: Sequence[Path], programs: Mapping[str, Path]) -> list[Tool]:
+        seen.append((roots, dict(programs)))
         return [_named("run_program")]
 
     seeded.gate.tiers["run_program"] = "ask"
@@ -401,7 +443,7 @@ async def test_a_visitor_uses_the_rooms_project_and_its_own_model(seeded: Config
     await until(lambda: not job.open, timeout=10)
     first = client.requests[0]
     assert first["model"] == "claude-haiku-5-5"  # Tock's own, not the Workshop's claude-sonnet-5-5
-    assert seen == [(tmp_path, {"python": Path(sys.executable)})]
+    assert seen == [([tmp_path], {"python": Path(sys.executable)})]
     assert "run_program" in offered(first)
     assert "which is Tink's room: you are visiting" in first["system"][0]["text"]
     assert job.steps[0].text == "Tock started in the Workshop."

@@ -5,8 +5,8 @@
 # corner as [column, row], with columns growing east and rows growing south.
 # `size` is [cells wide, cells deep] and defaults to [1, 1].
 #
-# The default rooms can be renamed, given another agent, model, project or
-# textures, but not moved or removed. Add up to 20 more rooms of 1 to 4
+# The default rooms can be renamed, given another agent, model, project
+# folders or textures, but not moved or removed. Add up to 20 more rooms of 1 to 4
 # cells; each must share a wall with a room already in the house. Leave out
 # `at` and a new room goes into the free spot nearest the Hall.
 #
@@ -16,7 +16,16 @@
 # Tools are ids from house/tools.toml. A room may list its own, as in
 # tools = ["git", "gh", "npm"]; a room that lists none uses its agent's.
 # A room's project tools (git, npm and the like) run in its resident's jobs,
-# in the room's project folder, after you say yes.
+# in one of the room's project folders, after you say yes.
+#
+# A room may have up to 8 project folders, in order, as in
+# folders = ["~/Projects/shop", "~/Projects/shop-api"]; more can be added
+# later. Each is a full path (starting with / or ~). A folder may not be the
+# disk, the home folder or a folder above it, may not be listed twice, and may
+# not sit inside another folder of the same room. Residents write every path
+# starting with the folder's name, such as shop-api/src/app.py; two folders
+# with the same name become shop and shop-2. A folder that is missing when a
+# job starts is named in the job, and the others still work.
 
 # The host's name follows `[assistant] name` in config.toml unless set here,
 # and its models follow `[brain] talk_model` and `heavy_model`.

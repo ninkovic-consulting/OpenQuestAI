@@ -4,7 +4,7 @@ The catalog is data in `house/tools.toml`. Built-in tools ship with Vision:
 the host's own, and those marked `resident = true`, which only residents use
 at work (their notes, progress, requests, and the workbench's file and
 program tools). Project tools name a program on this Mac and work in a
-room's project folder during its resident's jobs.
+room's project folders during its resident's jobs.
 """
 
 from __future__ import annotations

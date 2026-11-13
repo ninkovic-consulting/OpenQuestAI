@@ -26,7 +26,7 @@ from vision.voice.settings import VoiceSettings
 
 LOCAL_ESTIMATE = "about 2.1 GB"
 TOOLS_NOTE = (
-    "Project tools work in the room's project folder when {name} hands its resident a job: "
+    "Project tools work in the room's project folders when {name} hands its resident a job: "
     "reading and searching files freely, writing files and running programs only after your yes."
 )
 
@@ -281,7 +281,7 @@ class Setup:
                 self.io.say(f"The house file has an error, so rooms cannot be changed: {exc}")
                 return
             for r in plan_rooms:
-                self.io.say(f"  {r['id']:<14} {r['name']:<16} {r['project'] or '(no project)'}")
+                self.io.say(f"  {r['id']:<14} {r['name']:<16} {', '.join(r['folders']) or '(no project folder)'}")
             choice = self.answer("Room (id or name; blank to finish): ").casefold()
             if not choice:
                 return
@@ -300,7 +300,7 @@ class Setup:
             self.io.say(f"{typed} is not a folder.")
             return
         project = typed if typed.startswith("~") else str(folder.resolve())
-        fields: dict[str, Any] = {"project": project}
+        fields: dict[str, Any] = {"folders": [*room["folders"], project]}
         refs = tool_refs(propose_tools(folder))
         if refs:
             shown = ", ".join(r["title"] + ("" if r["available"] else " (not installed)")
@@ -318,7 +318,7 @@ class Setup:
         except HouseError as exc:
             self.io.say(f"Not saved: {exc}")
             return
-        self.io.say(f"Saved: {room['name']} now works on {project}.")
+        self.io.say(f"Saved: {room['name']} now works on {', '.join(fields['folders'])}.")
 
     def attempt[T](self, doing: str, action: Callable[[], T]) -> T | None:
         """Run one fix; a failure is reported, None is returned and setup goes on."""
