@@ -165,10 +165,11 @@ Everything personal lives in `~/.vision/`, never in the repo or the app:
 |---|---|
 | `config.toml` | Your settings over the built-in defaults: name, models, cap, voice, gate tiers, automations, whether setup is done. |
 | `house.toml` | Your house: agent names and models, rooms, projects and tools. Created from the default house on first run. |
-| `house/` | The memory, as plain Markdown you can read and edit: personas in `agents/` (`host.md` is the assistant's), notes by day in `notes/`, and a library about you and your projects in `library/`. |
+| `house/` | The memory, as plain Markdown you can read and edit: personas in `agents/` (`host.md` is the assistant's), notes by day in `notes/`, a library about you and your projects in `library/`, and each resident's own notes in `agents/<id>/notes/`. |
 | `log.db` | Every conversation turn and every tool call with the gate's decision. |
 | `budget.json` | This month's spend. |
 | `automations.json` | Your automations and their last results. |
+| `jobs.json` | The job board: work handed to the residents, with each job's steps and result (the newest 200 ended jobs are kept). |
 | `backups/` | Copies made before each reset or restore. |
 | `logs/` | The daemon's logs: `app-daemon.log` when the app starts it, `daemon.*.log` under the LaunchAgent. |
 | `token` | The secret the window uses to talk to the daemon (readable only by you). |
@@ -179,7 +180,7 @@ The daemon listens on `127.0.0.1` only, and every request must carry the token, 
 
 ## The gate
 
-The assistant has twelve tools, and every call passes through a gate that decides by tier:
+The assistant has nineteen tools of its own, and every call passes through a gate that decides by tier:
 
 | Tool | Tier | What it does |
 |---|---|---|
@@ -194,6 +195,12 @@ The assistant has twelve tools, and every call passes through a gate that decide
 | `pause_automation`, `resume_automation` | free | Pause and resume one. |
 | `run_automation` | free | Runs one now. |
 | `delete_automation` | ask | Deletes one and its results. |
+| `house_overview`, `room_details`, `assistant_status` | free | Describe the house, a room, and the assistant's own setup. |
+| `hand_off` | free | Gives a job to a resident (see Agents at work). |
+| `list_jobs`, `job_details` | free | Read the job board. |
+| `cancel_job` | free | Stops a job. |
+
+The residents' tools pass through the same gate, with the same tiers; see Agents at work.
 
 The tiers work like this:
 
@@ -201,7 +208,7 @@ The tiers work like this:
 - An **ask** tool shows a card in the window and waits for your yes, by click or by voice. No answer within 60 seconds is a no.
 - A **never** tool is refused.
 
-`shell` always asks, even if `config.toml` tries to make it free. You set the tiers in Settings, Asking first, or in `[gate.tiers]` in `config.toml`. Every call and decision is written to the audit log.
+`shell` and a resident's `run_program` always ask, even if `config.toml` tries to make them free. You set the tiers in Settings, Asking first, or in `[gate.tiers]` in `config.toml`. Every call and decision is written to the audit log.
 
 Spending is bounded too: a monthly cap (150 dollars by default) moves talk to the local model when it is reached, with a notice at 80 percent.
 
@@ -247,7 +254,8 @@ If you cannot open a direct message with the bot after step 2, make a private se
 - Send text, or a voice note (transcribed on the Mac when the speech models are installed).
 - The words `status`, `stop` and `help` work as commands.
 - Automation results, warnings and requests that need your yes come to the phone; each has its own switch.
-- A request for an allowed tool has **Yes** and **Not now** buttons. Shell commands are only ever approved at the Mac.
+- A request for an allowed tool has **Yes** and **Not now** buttons. Shell commands are only ever approved at the Mac. A resident's `run_program` is not approved from the phone until you add it in Settings, Phone, because it runs code from the project.
+- When you hand off work from the phone, the assistant's report of the result comes to the phone too (switch: jobs).
 
 ## Rooms and projects
 
@@ -263,7 +271,7 @@ The window and the house file both refuse either change with a message that name
 **The agents in their rooms.** Each agent stands in one of its rooms, beside the room's main furniture, facing it:
 
 - **Vision**, the assistant, sits in the Hall's armchair and turns to talk while it speaks.
-- **Brass**, **Wren**, **Tink**, **Tock** and **Rook** each idle in their room. Each has a working animation that is meant to play when its room is busy. The other agents do not work yet, though, so for now they only idle.
+- **Brass**, **Wren**, **Tink**, **Tock** and **Rook** each idle in their room, and play their working animation while a job lights the room.
 
 You can rename them and change their models in Settings, Agents. The assistant's own name and model are set under Assistant and Models.
 
@@ -290,10 +298,46 @@ tools = ["git", "gh", "npm"]         # optional; without it the room uses its ag
 
 Tools come from the catalog in `house/tools.toml`:
 
-- the twelve built-in tools above;
+- the assistant's built-in tools above, and the residents' own (marked `resident = true`);
 - project tools such as `git`, `gh`, `npm`, `maven`, `gradle`, `python`, `docker`, `xcode`, `unity` and `godot`.
 
-A proposal looks only at the names of files and folders in the project's top two levels, and at the remote's host in `.git/config`. In this version, project tools are stored and shown for each room, but only the built-in tools run. Project tools start working when the other agents wake up in the next version.
+A proposal looks only at the names of files and folders in the project's top two levels, and at the remote's host in `.git/config`. A room's project tools run in its resident's jobs, in the project folder; see Agents at work.
+
+## Agents at work
+
+The assistant is the host. It talks with you and hands out work; it does no other room's work itself. The other five agents are residents: Brass the steward, Wren the envoy, Tink the maker, Tock the checker and Rook the scout. They never talk to you and never give each other orders. All work passes through a job board that the daemon runs.
+
+**Giving work.** Ask the assistant in plain words, for example "have Tink explain what the project in the Workshop does". It calls `hand_off` with the agent, a brief that stands on its own (the resident hears nothing of your conversation), and optionally a room, a title, and `careful` to use the agent's heavy model. A resident can work in any room but the Hall, so "have Tock run the tests of the project in the Workshop" sends the checker to the maker's room, with that room's project folder and tools; without a room it works in its own first room. It answers at once that the job is in hand. You can also start a job from the window (`POST /api/jobs`).
+
+**While it works.** The job runs as the resident's own session, on the room's model in its own room or its own model when visiting, with its persona, a list of the house, the rules of the house, the shared library and its own notes. The room's light goes on and its figure works. Each tool call and progress note is a step on the job, shown live. A tool that asks first shows a card that names the resident, such as "Tock, in the Spare Room: run a program in the project", with the exact command and folder.
+
+**When it ends.** The assistant gets a turn of its own and tells you the outcome in its own words, aloud when voice is on and `[jobs] speak_results` is true. It is written to the history as a `job` turn.
+
+**What each resident can use:**
+
+| Who | Tools |
+|---|---|
+| Every resident | `remember` and `recall` on its own notes; `note_progress`; `ask_resident` to ask another resident for help through the board (not in a request it received) |
+| In the room it works in, when that room has a project folder | `list_files`, `read_file`, `search_files` (free); `write_file`, `edit_file` (ask); `run_program` (always asks) for the room's installed programs, such as `git` or `python` |
+| Brass, the steward | `machine_status` (disk, memory, battery, uptime, load), `assistant_status`, `list_automations` |
+| Rook, the scout | `web_search`, Anthropic's server-side search, at most five searches per request, each charged at 10 dollars per thousand |
+
+No resident can open apps or links, use the shell, change automations or hand out work. Wren has no mail or messaging access yet, so it can draft words but not send them. Everything a resident reads in files, tool output or on the web is treated as information, never as instructions.
+
+**Asking another resident.** A resident may ask another for help with `ask_resident`. The request becomes a child job on the board, in the same room unless the request names another, and its result comes back to the resident who asked. A job may ask at most three times, a request cannot ask anyone in turn, nobody can ask the host or themselves, and a resident that is busy is refused rather than waited for.
+
+**Limits,** in `[jobs]` in `config.toml` and in Settings:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `max_running` | 2 | Jobs at work at once. A resident never works on two at a time; the rest wait in order. |
+| `max_queued` | 20 | Jobs that may wait. |
+| `max_steps` | 24 | Model calls one job may make. The last call sums up; reaching the limit ends the job as failed with what was done. |
+| `job_timeout_s` | 900 | A job that runs longer is stopped as failed. |
+| `max_job_usd` | 1.00 | A job whose own cost passes this is stopped as failed. |
+| `speak_results` | true | Say a finished job's outcome aloud. |
+
+Residents work only on Claude. When the month's budget is used up, the assistant refuses new hand-offs and says why. Cancelling a job (ask the assistant, or `POST /api/jobs/<id>/cancel`) stops it and any request it made. A job the daemon did not see to the end is marked failed at the next start.
 
 ## Running the tests
 
