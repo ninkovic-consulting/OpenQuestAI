@@ -1,0 +1,80 @@
+name: CI
+
+# Checks for every pull request and for every branch except main. A merge to main
+# runs the same checks again inside release.yml, then builds and publishes the app.
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - main
+
+# One run per branch: a newer push (or the pull request opened for the same branch)
+# cancels the one still running.
+concurrency:
+  group: ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  checks:
+    name: Tests and window build
+    runs-on: macos-15 # Apple Silicon. macos-14 was retired from GitHub Actions on 2 November 2026.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      # The build and the tests use uv's relocatable Python 3.12, never a system Python.
+      UV_PYTHON: "3.12"
+      UV_PYTHON_PREFERENCE: only-managed
+      # The tests fake every model and brain; if one ever tried to reach a model host, fail.
+      HF_HUB_OFFLINE: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.0"
+          enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Install the packages
+        run: |
+          uv lock --check
+          uv sync --all-extras --frozen
+
+      - name: Run the Python tests
+        run: uv run --all-extras --frozen pytest -q
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install the window's packages
+        working-directory: web
+        run: npm ci
+
+      - name: Type-check the window
+        working-directory: web
+        run: npx tsc --noEmit
+
+      - name: Run the window's tests
+        working-directory: web
+        run: npm test
+
+      - name: Build the window
+        working-directory: web
+        run: npm run build

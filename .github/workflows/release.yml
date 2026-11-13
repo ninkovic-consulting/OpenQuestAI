@@ -1,0 +1,208 @@
+name: Release
+
+# Every merge to main: run the checks, build the standalone Mac app, and publish it as a
+# pre-release that anyone can download. By hand ("Run workflow") it builds the chosen
+# branch, but only a run on main publishes. See docs/releasing.md.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Builds queue one behind another and are never cancelled half way, so a release is
+# never left half published. Only the newest waiting run is kept.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  build:
+    name: Check, build and sign the app
+    runs-on: macos-15 # Apple Silicon. macos-14 was retired from GitHub Actions on 2 November 2026.
+    timeout-minutes: 90
+    permissions:
+      contents: read # This job runs the project's code and the packages it installs: it cannot write.
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      build: ${{ steps.meta.outputs.build }}
+      tag: ${{ steps.meta.outputs.tag }}
+    env:
+      UV_PYTHON: "3.12"
+      UV_PYTHON_PREFERENCE: only-managed
+      HF_HUB_OFFLINE: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No caches in this workflow: the build that people download is made from
+      # fresh downloads only, never from a cache that a branch could have filled.
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.0"
+          enable-cache: false
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Install the packages
+        run: |
+          uv lock --check
+          uv sync --all-extras --frozen
+
+      - name: Run the Python tests
+        run: uv run --all-extras --frozen pytest -q
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Install the window's packages
+        working-directory: web
+        run: npm ci
+
+      - name: Type-check the window
+        working-directory: web
+        run: npx tsc --noEmit
+
+      - name: Run the window's tests
+        working-directory: web
+        run: npm test
+
+      - name: Build the window
+        working-directory: web
+        run: npm run build
+
+      - name: Name this build
+        id: meta
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          version=$(uv run --frozen --no-sync python -c "from vision import display_version; print(display_version())")
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+(\.[0-9]+)*(-[0-9A-Za-z.]+)?$'; then
+            echo "Unexpected version: $version" >&2; exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "build=$RUN_NUMBER"
+            echo "tag=v$version-build.$RUN_NUMBER"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building Vision $version, build $RUN_NUMBER"
+
+      - name: Build the standalone app
+        env:
+          VISION_BUILD_NUMBER: ${{ github.run_number }}
+        run: uv run --all-extras --frozen vision app build --standalone
+
+      - name: Verify the app's signature and version
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          BUILD: ${{ steps.meta.outputs.build }}
+        run: |
+          set -euo pipefail
+          app=dist/Vision.app
+          codesign --verify --deep --strict --verbose=2 "$app"
+          shown=$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")
+          number=$(plutil -extract CFBundleVersion raw "$app/Contents/Info.plist")
+          test "$shown" = "$VERSION" || { echo "App says version $shown, expected $VERSION" >&2; exit 1; }
+          test "$number" = "$BUILD" || { echo "App says build $number, expected $BUILD" >&2; exit 1; }
+          echo "Signature is valid; app is $shown, build $number"
+
+      - name: Zip the app
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          uv run --all-extras --frozen vision app package
+          zip="dist/Vision-$VERSION-macos-arm64.zip"
+          test -f "$zip" || { echo "Expected $zip" >&2; ls dist >&2; exit 1; }
+          # The zip must keep the signature: unpack a copy and verify that too.
+          check="$RUNNER_TEMP/unzipped"
+          rm -rf "$check"
+          ditto -x -k "$zip" "$check"
+          codesign --verify --deep --strict "$check/Vision.app"
+          ls -l "$zip"
+
+      - name: Keep the zip for the publish job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vision-app
+          path: dist/*.zip
+          if-no-files-found: error
+          compression-level: 0 # The zip is already compressed.
+          retention-days: 1
+
+  publish:
+    name: Publish the pre-release
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write # The only place in the pipeline that can write: it creates the release and prunes old ones.
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.build.outputs.version }}
+      BUILD: ${{ needs.build.outputs.build }}
+      TAG: ${{ needs.build.outputs.tag }}
+      KEEP: "5"
+    steps:
+      - name: Get the zip
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: vision-app
+          path: artifact
+
+      - name: Publish the release
+        run: |
+          set -euo pipefail
+          zip=$(ls artifact/*.zip)
+          test "$(printf '%s\n' "$zip" | wc -l)" -eq 1 || { echo "Expected one zip" >&2; exit 1; }
+          readme="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/main/README.md#opening-an-app-not-signed-with-a-developer-id"
+
+          cat > notes.md <<EOF
+          Vision $VERSION, build $BUILD: the standalone Mac app for OpenQuestAI. It holds its own Python, its packages and its window, so nothing else needs installing.
+
+          **Needs:** a Mac with Apple Silicon, macOS 14 or later, about 5 GB free (the app is about 0.9 GB; the models it offers to download are about 4 GB), and your own Anthropic API key.
+
+          **Opening it the first time:** this app is signed ad hoc, not with an Apple Developer ID, so macOS blocks it after a download. Unzip it, move Vision.app to Applications, double-click it, then open System Settings, Privacy and Security and click Open Anyway. The README explains it, including a Terminal command that does the same: $readme
+
+          **This is a beta.** Expect rough edges. Every merge to main publishes a new build, and only the newest $KEEP are kept.
+
+          Built from commit $GITHUB_SHA.
+          EOF
+
+          # A re-run of the same workflow run publishes the same tag again: replace it.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --cleanup-tag --yes
+          fi
+          gh release create "$TAG" "$zip" \
+            --target "$GITHUB_SHA" \
+            --title "Vision $VERSION (build $BUILD)" \
+            --notes-file notes.md \
+            --prerelease
+
+      - name: Keep only the newest builds
+        run: |
+          set -euo pipefail
+          # Pre-releases made by this workflow have tags like v0.1.0-beta-build.57.
+          # The newest $KEEP by build number stay; the rest go, with their tags.
+          gh release list --limit 200 --json tagName,isPrerelease \
+            | jq -r --argjson keep "$KEEP" '
+                [ .[]
+                  | select(.isPrerelease and (.tagName | test("-build\\.[0-9]+$")))
+                  | {tag: .tagName, n: (.tagName | capture("-build\\.(?<n>[0-9]+)$").n | tonumber)} ]
+                | sort_by(.n) | reverse | .[$keep:] | .[].tag' \
+            | while read -r old; do
+                echo "Deleting $old"
+                gh release delete "$old" --cleanup-tag --yes
+              done

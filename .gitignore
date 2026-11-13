@@ -1,5 +1,17 @@
 .DS_Store
 .claude/settings.local.json
+.claude/launch.json
+
+# Editors and tools
+.idea/
+.vscode/
+*.swp
+*~
+.impeccable/
+.ruff_cache/
+.mypy_cache/
+*.xcuserstate
+xcuserdata/
 
 # Secrets
 .env
