@@ -1,16 +1,16 @@
-// The tools proposed for a project folder, as toggles. Shared by the add-room
-// form, the Rooms group and the wizard's room step.
+// The tools proposed for a room's project folders, as toggles. Shared by the
+// add-room form, the Rooms group and the wizard's room step. Each folder is
+// asked about once; the room is offered the union.
 
-import type { ProposeResult } from "../../net/types";
+import type { ProposeResult, ToolRef } from "../../net/types";
 import { el } from "../dom";
-import { fromProposal, toggle, type ToolPicks } from "../room-form";
-
-const PROPOSE_DELAY_MS = 350;
+import { sameFolderSet } from "../folders";
+import { carriedOn, fromProposal, toggle, unionTools, type ToolPicks } from "../room-form";
 
 export interface ToolToggles {
   root: HTMLFieldSetElement;
-  /** Ask for the folder's tools after a pause; `on` are the ids switched on at first (a room's tools). */
-  setProject(folder: string, on?: readonly string[]): void;
+  /** Ask for the folders' tools; `on` are the ids switched on at first (a room's tools). */
+  setFolders(folders: readonly string[], on?: readonly string[]): void;
   picks(): ToolPicks | null;
 }
 
@@ -20,18 +20,18 @@ export function mountToolToggles(
   onPick: () => void = () => {},
 ): ToolToggles {
   const root = el("fieldset", "tools");
-  const legend = el("legend", "caps", "Tools for this project");
+  const legend = el("legend", "caps", "Tools for these folders");
   const list = el("div", "tool-list");
   const message = el("p", "tool-note");
   root.append(legend, list, message);
   root.hidden = true;
   let picks: ToolPicks | null = null;
-  let folder = "";
+  let folders: readonly string[] = [];
   let asked = 0;
-  let timer = 0;
+  const known = new Map<string, Promise<ProposeResult>>();
 
   const render = (text?: string): void => {
-    root.hidden = folder === "";
+    root.hidden = folders.length === 0;
     if (text !== undefined || !picks) {
       list.replaceChildren();
       message.textContent = text ?? "";
@@ -62,40 +62,51 @@ export function mountToolToggles(
     message.textContent = note();
   };
 
+  /** A folder's proposal, asked once; a refusal is asked again next time. */
+  const proposal = (folder: string): Promise<ProposeResult> => {
+    let answer = known.get(folder);
+    if (!answer) {
+      answer = propose(folder);
+      known.set(folder, answer);
+      void answer.then((r) => {
+        if (!r.ok) known.delete(folder);
+      });
+    }
+    return answer;
+  };
+
   const ask = async (on: readonly string[] | undefined): Promise<void> => {
     const mine = ++asked;
-    if (!folder) {
-      picks = null;
-      render();
+    const previous = picks;
+    const wanted = folders;
+    picks = null;
+    render(wanted.length === 1 ? "Looking at the folder…" : "Looking at the folders…");
+    const results = await Promise.all(wanted.map(proposal));
+    if (mine !== asked) return; // the folders changed meanwhile
+    const tools: ToolRef[] = unionTools(results.flatMap((r) => (r.ok ? [r.tools] : [])));
+    const failure = results.find((r) => !r.ok);
+    if (tools.length === 0 && failure && !failure.ok) {
+      render(failure.message);
       return;
     }
-    if (picks?.project === folder) return;
-    picks = null;
-    render("Looking at the folder…");
-    const result = await propose(folder);
-    if (mine !== asked) return; // a newer folder was typed meanwhile
-    if (result.ok) {
-      picks = fromProposal(folder, result.tools, on);
-      render();
-    } else {
-      render(result.message);
-    }
+    picks = fromProposal(wanted, tools, on ?? carriedOn(previous, tools));
+    render();
   };
 
   return {
     root,
-    setProject(next: string, on?: readonly string[]): void {
-      window.clearTimeout(timer);
-      folder = next.trim();
-      if (on !== undefined) picks = null;
+    setFolders(next: readonly string[], on?: readonly string[]): void {
+      const wanted = next.map((f) => f.trim()).filter((f) => f !== "");
+      if (on === undefined && picks && sameFolderSet(picks.folders, wanted)) return;
+      folders = wanted;
       asked += 1;
-      if (!folder) {
+      if (wanted.length === 0) {
         picks = null;
         render();
         return;
       }
-      timer = window.setTimeout(() => void ask(on), on === undefined ? PROPOSE_DELAY_MS : 0);
+      void ask(on);
     },
-    picks: () => (picks && picks.project === folder ? picks : null),
+    picks: () => (picks && sameFolderSet(picks.folders, folders) ? picks : null),
   };
 }

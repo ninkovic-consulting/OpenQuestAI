@@ -5,20 +5,21 @@ import type { ToolRef } from "../net/types";
 import { replySize } from "./caption";
 import { formatSpend } from "./money";
 import { roomCardModel } from "./room-card";
-import { agentChoices, fromProposal, newRoom, type RoomFields, toggle } from "./room-form";
+import { agentChoices, carriedOn, fromProposal, newRoom, type RoomFields, toggle, unionTools } from "./room-form";
 
 const tool = (id: string, available: boolean): ToolRef => ({ id, title: id.toUpperCase(), available, built_in: false });
 const proposal = [tool("git", true), tool("npm", true), tool("docker", false)];
-const fields: RoomFields = { name: " Den ", agent: "maker", at: [4, 1], project: "~/Projects/shop", model: "" };
+const shop = ["~/Projects/shop", "~/Notes"];
+const fields: RoomFields = { name: " Den ", agent: "maker", at: [4, 1], folders: ["~/Projects/shop", "~/Notes"], model: "" };
 
 describe("tool picks", () => {
   it("start with every available tool on and the missing ones off", () => {
-    const picks = fromProposal("~/Projects/shop", proposal);
+    const picks = fromProposal(shop, proposal);
     expect([...picks.on]).toEqual(["git", "npm"]);
   });
 
   it("toggle switches one tool and ignores ids that were not proposed", () => {
-    let picks = fromProposal("~/Projects/shop", proposal);
+    let picks = fromProposal(shop, proposal);
     picks = toggle(picks, "git");
     picks = toggle(picks, "docker");
     expect([...picks.on].sort()).toEqual(["docker", "npm"]);
@@ -26,22 +27,47 @@ describe("tool picks", () => {
   });
 });
 
+describe("tools over several folders", () => {
+  it("are the union, each tool once, in the order first proposed", () => {
+    const merged = unionTools([[tool("git", true), tool("npm", true)], [tool("git", true), tool("docker", false)]]);
+    expect(merged.map((t) => t.id)).toEqual(["git", "npm", "docker"]);
+    expect(unionTools([])).toEqual([]);
+  });
+
+  it("keep what was on or off when a folder is added, and switch on a new installed tool", () => {
+    const before = toggle(fromProposal(["~/a"], [tool("git", true), tool("npm", true)]), "npm");
+    const next = [tool("git", true), tool("npm", true), tool("gh", true), tool("docker", false)];
+    expect(carriedOn(before, next)).toEqual(["git", "gh"]);
+    expect(carriedOn(null, next)).toBeUndefined();
+  });
+});
+
 describe("the new room body", () => {
   it("sends the switched-on tools in proposal order", () => {
-    const picks = toggle(toggle(fromProposal("~/Projects/shop", proposal), "docker"), "git");
-    expect(newRoom(fields, picks)).toEqual({ name: "Den", agent: "maker", at: [4, 1], project: "~/Projects/shop", tools: ["npm", "docker"] });
+    const picks = toggle(toggle(fromProposal(shop, proposal), "docker"), "git");
+    expect(newRoom(fields, picks)).toEqual({ name: "Den", agent: "maker", at: [4, 1], folders: ["~/Projects/shop", "~/Notes"], tools: ["npm", "docker"] });
   });
 
   it("sends an empty list when every proposed tool was switched off", () => {
-    const picks = toggle(toggle(fromProposal("~/Projects/shop", proposal), "git"), "npm");
+    const picks = toggle(toggle(fromProposal(shop, proposal), "git"), "npm");
     expect(newRoom(fields, picks).tools).toEqual([]);
   });
 
-  it("leaves tools out without a project, without a proposal, or for a stale one", () => {
-    expect(newRoom({ ...fields, project: "  " }, fromProposal("~/Projects/shop", proposal))).not.toHaveProperty("tools");
+  it("sends the folders in order, trimmed, and none when there are none", () => {
+    expect(newRoom({ ...fields, folders: [" ~/b ", "", "~/a"] }, null).folders).toEqual(["~/b", "~/a"]);
+    expect(newRoom({ ...fields, folders: ["  "] }, null)).not.toHaveProperty("folders");
+  });
+
+  it("takes a proposal made for the same folders in any order", () => {
+    expect(newRoom({ ...fields, folders: ["~/Notes", "~/Projects/shop"] }, fromProposal(shop, proposal)).tools).toEqual(["git", "npm"]);
+  });
+
+  it("leaves tools out without a folder, without a proposal, or for a stale one", () => {
+    expect(newRoom({ ...fields, folders: ["  "] }, fromProposal(shop, proposal))).not.toHaveProperty("tools");
+    expect(newRoom(fields, fromProposal(["~/Projects/shop"], proposal))).not.toHaveProperty("tools");
     expect(newRoom(fields, null)).not.toHaveProperty("tools");
-    expect(newRoom(fields, fromProposal("~/Projects/shop", []))).not.toHaveProperty("tools");
-    expect(newRoom(fields, fromProposal("~/Projects/other", proposal))).not.toHaveProperty("tools");
+    expect(newRoom(fields, fromProposal(shop, []))).not.toHaveProperty("tools");
+    expect(newRoom(fields, fromProposal(["~/Projects/other", "~/Notes"], proposal))).not.toHaveProperty("tools");
   });
 
   it("keeps an optional model", () => {
@@ -59,6 +85,19 @@ describe("plans carry tools", () => {
     expect(asPlan(plan)).not.toBeNull();
   });
 
+  it("a plan whose rooms lack folders, or hold a non-text one, or lack the limit is refused", () => {
+    const plan = samplePlan() as unknown as { rooms: Record<string, unknown>[] };
+    delete plan.rooms[0]!["folders"];
+    expect(asPlan(plan)).toBeNull();
+    const numbers = samplePlan() as unknown as { rooms: Record<string, unknown>[] };
+    numbers.rooms[0]!["folders"] = [4];
+    expect(asPlan(numbers)).toBeNull();
+    const unlimited = samplePlan() as unknown as Record<string, unknown>;
+    delete unlimited["max_room_folders"];
+    expect(asPlan(unlimited)).toBeNull();
+    expect(asPlan({ ...samplePlan(), rooms: samplePlan().rooms.map((r) => ({ ...r, folders: ["~/Projects/shop"] })) })).not.toBeNull();
+  });
+
   it("a plan whose rooms lack tools is refused", () => {
     const plan = samplePlan() as unknown as { rooms: Record<string, unknown>[] };
     delete plan.rooms[0]!["tools"];
@@ -73,26 +112,27 @@ describe("plans carry tools", () => {
 });
 
 describe("room card", () => {
-  it("shows the agent, model, project and what each tool can do today", () => {
+  it("shows the agent, model, folders and what each tool can do today", () => {
     const plan = samplePlan();
     plan.rooms.push({
       ...plan.rooms.find((r) => r.id === "garage")!,
       id: "den",
       name: "Den",
       kind: "extra",
-      project: "~/Projects/shop",
+      folders: ["~/Projects/shop", "~/Notes/a-very-long-folder-name/with/more/parts"],
       tools: [...HOST_TOOLS.slice(4), tool("git", true), tool("docker", false)],
     });
     const card = roomCardModel(plan, "den");
-    expect(card).toMatchObject({ name: "Den", agent: "Tink", model: "claude-opus-5-5", project: "~/Projects/shop" });
+    expect(card).toMatchObject({ name: "Den", agent: "Tink", model: "claude-opus-5-5", folders: ["~/Projects/shop", "~/Notes/a-very-long-folder-name/with/more/parts"] });
     expect(card?.tools).toEqual([
       { title: "Shell", state: "runs" },
       { title: "GIT", state: "runs" },
       { title: "DOCKER", state: "missing" },
     ]);
     expect(card?.note).toContain("Writing files and running these programs ask you first");
-    const bare = roomCardModel({ ...plan, rooms: plan.rooms.map((r) => (r.id === "den" ? { ...r, project: null } : r)) }, "den");
+    const bare = roomCardModel({ ...plan, rooms: plan.rooms.map((r) => (r.id === "den" ? { ...r, folders: [] } : r)) }, "den");
     expect(bare?.tools[1]).toEqual({ title: "GIT", state: "waits" });
+    expect(bare?.folders).toEqual([]);
     expect(bare?.note).toContain("Attach a project folder");
     expect(roomCardModel(plan, "nowhere")).toBeNull();
   });

@@ -21,6 +21,8 @@ function isRoom(v: unknown): v is Room {
     isCell(r["size"]) &&
     typeof r["floor"] === "string" &&
     typeof r["wall"] === "string" &&
+    Array.isArray(r["folders"]) &&
+    r["folders"].every((f) => typeof f === "string") &&
     Array.isArray(r["tools"]) &&
     r["tools"].every(isToolRef)
   );
@@ -39,6 +41,7 @@ export function asPlan(raw: unknown): Plan | null {
     typeof p["revision"] === "number" &&
     typeof p["cell_m"] === "number" &&
     typeof p["wall_height_m"] === "number" &&
+    typeof p["max_room_folders"] === "number" &&
     Array.isArray(p["agents"]) &&
     Array.isArray(p["rooms"]) &&
     p["rooms"].every(isRoom) &&

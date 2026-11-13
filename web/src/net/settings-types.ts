@@ -168,11 +168,11 @@ export interface RestoreAnswer {
   restart: boolean;
 }
 
-/** `PATCH /api/house/rooms/{id}`; null clears project, model or tools. */
+/** `PATCH /api/house/rooms/{id}`; null clears model or tools; `folders` is the whole list, and an empty one detaches every folder. */
 export interface RoomPatch {
   name?: string;
   agent?: string;
-  project?: string | null;
+  folders?: string[];
   model?: string | null;
   tools?: string[] | null;
 }

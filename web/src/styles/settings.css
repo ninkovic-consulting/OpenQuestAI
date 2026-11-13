@@ -447,6 +447,119 @@
   white-space: nowrap;
 }
 
+/* A room's folder list: one path per row, written out in full. */
+.folder-list {
+  min-width: 0;
+}
+
+.folder-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.folder-rows:empty {
+  display: none;
+}
+
+.folder-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.folder-row .folder-path {
+  flex: 1 1 0;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.folder-list .small {
+  flex: none;
+  padding: 8px 12px 7px;
+  background: none;
+  border: 1px solid var(--hairline-strong);
+  color: var(--muted-light);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.folder-list .small:hover:not(:disabled),
+.folder-list .small:focus-visible {
+  border-color: var(--mustard);
+  color: var(--mustard);
+  outline: none;
+}
+
+.folder-list .small:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.folder-list .small[hidden],
+.folder-none[hidden],
+.folder-adding[hidden] {
+  display: none;
+}
+
+.folder-none {
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--hairline);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.folder-adding {
+  margin-top: 8px;
+}
+
+.folder-adding-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.folder-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 8px;
+}
+
+.folder-limit {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+  letter-spacing: 0;
+  text-transform: none;
+  font-family: var(--sans);
+}
+
+.folder-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  letter-spacing: 0;
+  text-transform: none;
+  font-family: var(--sans);
+}
+
+.folder-list .field-error {
+  margin-top: 8px;
+  letter-spacing: 0;
+  text-transform: none;
+  font-family: var(--sans);
+}
+
+.folder-list .field-error[hidden] {
+  display: none;
+}
+
 /* Proposed tools, outside the build form. */
 .settings .tools,
 .wizard .tools {

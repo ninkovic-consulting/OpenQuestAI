@@ -1,6 +1,6 @@
 // The short form that asks for a new room on a clicked free slot and posts it.
-// The project folder and the model come from the shared pickers; once a folder
-// is chosen, the tools proposed for it appear as toggles. A refusal from the
+// The project folders and the model come from the shared pickers; once a folder
+// is added, the tools proposed for the folders appear as toggles. A refusal from the
 // server is shown exactly as it came.
 
 import type { Daemon } from "../net/daemon";
@@ -8,7 +8,7 @@ import { nativeHelpers } from "../net/native";
 import type { Store } from "../net/store";
 import type { Cell } from "../net/types";
 import { el } from "./dom";
-import { mountFolderPicker, type FolderPicker } from "./pickers/folder-picker";
+import { mountFolderList, type FolderList } from "./pickers/folder-list";
 import { mountModelPicker, OWN_MODEL, type ModelSource } from "./pickers/model-picker";
 import { mountToolToggles } from "./pickers/tool-toggles";
 import { agentChoices, newRoom } from "./room-form";
@@ -21,7 +21,7 @@ export interface BuildForm {
 
 /** The note under the tools: what an agent may do with them. */
 export const toolsNote = (): string =>
-  "Stored with the room. An agent working in the room may run these programs in the room's project folder, each time after your yes.";
+  "Stored with the room. An agent working in the room may run these programs in the room's project folders, each time after your yes.";
 
 export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon, models: ModelSource, onAdded: () => void): BuildForm {
   const form = el("form", "build-form");
@@ -39,7 +39,7 @@ export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon
   const agent = el("select");
   const tools = mountToolToggles((folder) => daemon.proposeTools(folder), toolsNote);
   const model = mountModelPicker({ source: models, value: "", own: { label: OWN_MODEL, note: "The room uses its agent's model; nothing is sent." } });
-  const projectSlot = el("div", "folder-slot");
+  const foldersSlot = el("div", "folder-slot");
   const noAgents = el("p", "tool-note", "Every agent in this house is busy as the host, so there is nobody to run a new room.");
   const refusal = el("div", "refusal");
   refusal.setAttribute("role", "alert");
@@ -49,13 +49,13 @@ export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon
   const cancel = el("button", "caps", "Cancel");
   cancel.type = "button";
   actions.append(submit, cancel);
-  const projectLabel = el("div", "label caps", "Project folder");
-  projectLabel.append(projectSlot);
-  form.append(title, where, field("Name", name), field("Agent", agent), noAgents, projectLabel, tools.root, field("Model (optional)", model.root), refusal, actions);
+  const foldersLabel = el("div", "label caps", "Project folders");
+  foldersLabel.append(foldersSlot);
+  form.append(title, where, field("Name", name), field("Agent", agent), noAgents, foldersLabel, tools.root, field("Model (optional)", model.root), refusal, actions);
   parent.append(form);
 
   let cell: Cell | null = null;
-  let project: FolderPicker | null = null;
+  let folders: FolderList | null = null;
 
   const close = (): boolean => {
     if (!form.classList.contains("is-open")) return false;
@@ -68,7 +68,7 @@ export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon
   form.addEventListener("submit", (ev) => {
     ev.preventDefault();
     if (!cell || !agent.value) return;
-    const room = newRoom({ name: name.value, agent: agent.value, at: cell, project: project?.value() ?? "", model: model.value() }, tools.picks());
+    const room = newRoom({ name: name.value, agent: agent.value, at: cell, folders: folders?.value() ?? [], model: model.value() }, tools.picks());
     submit.disabled = true;
     refusal.textContent = "";
     void daemon.postRoom(room).then((result) => {
@@ -106,15 +106,16 @@ export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon
       submit.disabled = choices.selected === null;
       name.value = "";
       model.set("");
-      project = mountFolderPicker({
+      folders = mountFolderList({
         api: daemon.settings,
         native: nativeHelpers(),
-        value: "",
-        label: "Project folder",
-        onChange: (folder) => tools.setProject(folder),
+        folders: [],
+        max: plan.max_room_folders,
+        label: "Project folders",
+        onChange: (list) => tools.setFolders(list),
       });
-      projectSlot.replaceChildren(project.root);
-      tools.setProject("");
+      foldersSlot.replaceChildren(folders.root);
+      tools.setFolders([]);
       refusal.textContent = "";
       form.classList.add("is-open");
       name.focus();

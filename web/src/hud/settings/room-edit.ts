@@ -4,12 +4,14 @@
 import { hostAgentId, roomAgents } from "../../net/plan";
 import type { RoomPatch } from "../../net/settings-types";
 import type { Agent, Plan, Room } from "../../net/types";
+import { cleanFolders, sameFolders, sameFolderSet } from "../folders";
 import { pickedIds, type ToolPicks } from "../room-form";
 
 export interface RoomEdit {
   name: string;
   agent: string;
-  project: string;
+  /** The room's project folders; the first is where programs run. */
+  folders: string[];
   /** "" is the agent's own model. */
   model: string;
 }
@@ -17,7 +19,7 @@ export interface RoomEdit {
 /** A room's values; a model equal to its agent's counts as the agent's own. */
 export function roomEditFrom(plan: Plan, room: Room): RoomEdit {
   const agent = plan.agents.find((a) => a.id === room.agent);
-  return { name: room.name, agent: room.agent, project: room.project ?? "", model: agent && room.model === agent.model ? "" : room.model };
+  return { name: room.name, agent: room.agent, folders: [...room.folders], model: agent && room.model === agent.model ? "" : room.model };
 }
 
 /** The Hall belongs to the host and keeps it. */
@@ -32,20 +34,21 @@ export function agentsFor(plan: Plan, room: Room): Agent[] {
 }
 
 /**
- * The body for `PATCH /api/house/rooms/{id}`. Clearing the folder clears the
- * project tools too; tools are sent when the folder changed or a toggle was
- * pressed, and only for a proposal of this exact folder.
+ * The body for `PATCH /api/house/rooms/{id}`. The folders go whole; detaching
+ * every folder clears the project tools too. Tools are sent when the folders
+ * changed or a toggle was pressed, and only for a proposal of these folders.
  */
 export function roomPatch(before: RoomEdit, edit: RoomEdit, picks: ToolPicks | null, toolsTouched: boolean, hostRoom: boolean): RoomPatch {
   const patch: RoomPatch = {};
   const name = edit.name.trim();
-  const project = edit.project.trim();
+  const folders = cleanFolders(edit.folders);
+  const foldersChanged = !sameFolders(folders, before.folders);
   if (name !== before.name) patch.name = name;
   if (!hostRoom && edit.agent !== before.agent) patch.agent = edit.agent;
   if (edit.model !== before.model) patch.model = edit.model === "" ? null : edit.model;
-  if (project !== before.project) patch.project = project === "" ? null : project;
-  if (project === "" && before.project !== "") patch.tools = null;
-  else if (project !== "" && picks && picks.project === project && picks.tools.length > 0 && (toolsTouched || project !== before.project)) {
+  if (foldersChanged) patch.folders = folders;
+  if (folders.length === 0 && before.folders.length > 0) patch.tools = null;
+  else if (folders.length > 0 && picks && sameFolderSet(picks.folders, folders) && picks.tools.length > 0 && (toolsTouched || foldersChanged)) {
     patch.tools = pickedIds(picks);
   }
   return patch;

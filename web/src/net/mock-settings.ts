@@ -2,6 +2,7 @@
 // daemon validates them, so the whole settings screen and wizard work
 // without a daemon. Rooms and agents change the mock house through `MockHouse`.
 
+import { folderRefusal } from "./mock-folders";
 import { hostAgentId } from "./plan";
 import {
   DEFAULT_TIERS,
@@ -395,6 +396,8 @@ export class MockSettings implements SettingsApi {
     const room = plan.rooms.find((r) => r.id === id);
     if (!room) return Promise.resolve(refused(`There is no room called '${id}'.`));
     const host = hostAgentId(plan);
+    const folders = patch.folders === undefined ? null : folderRefusal(patch.folders, plan.max_room_folders);
+    if (folders !== null) return Promise.resolve(refused(folders, [{ field: "folders", message: folders }]));
     if (patch.name !== undefined && !plainName(patch.name)) return Promise.resolve(refused("A room's name must be 1 to 40 characters of plain text."));
     if (patch.agent !== undefined && patch.agent !== room.agent) {
       if (room.id === "hall") return Promise.resolve(refused("The Hall is the host's room; its agent does not change."));
@@ -403,7 +406,7 @@ export class MockSettings implements SettingsApi {
     }
     if (patch.name !== undefined) room.name = patch.name.trim();
     if (patch.agent !== undefined) room.agent = patch.agent;
-    if (patch.project !== undefined) room.project = patch.project;
+    if (patch.folders !== undefined) room.folders = patch.folders.map((f) => f.trim());
     const agent = plan.agents.find((a) => a.id === room.agent);
     if (patch.model !== undefined || patch.agent !== undefined) {
       const own = patch.model === undefined ? null : patch.model;

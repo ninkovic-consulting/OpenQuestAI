@@ -41,10 +41,10 @@ export class Api {
     }
   }
 
-  async proposeTools(project: string): Promise<ProposeResult> {
+  async proposeTools(folder: string): Promise<ProposeResult> {
     let res: Response;
     try {
-      res = await fetch(`/api/house/tools/propose?${new URLSearchParams({ project })}`, { headers: this.headers() });
+      res = await fetch(`/api/house/tools/propose?${new URLSearchParams({ project: folder })}`, { headers: this.headers() });
     } catch {
       return { ok: false, message: "The house could not be reached." };
     }

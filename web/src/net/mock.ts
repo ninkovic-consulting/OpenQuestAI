@@ -7,6 +7,7 @@ import type { Automation, RunStatus } from "./automation-types";
 import type { Daemon } from "./daemon";
 import type { JobDetails } from "./job-types";
 import { MockAutomations } from "./mock-automations";
+import { folderRefusal } from "./mock-folders";
 import { MockJobs } from "./mock-jobs";
 import { MockPhone } from "./mock-phone";
 import { MockSettings } from "./mock-settings";
@@ -57,7 +58,7 @@ const LONG_REPLY =
   "start with the CSV path, because it has no tests yet and two people rely on it every Monday.";
 
 export class MockDaemon implements Daemon {
-  private plan: Plan = samplePlan();
+  private plan: Plan = mockPlan();
   private speaking: { timers: number[]; text: string; turn: string; done: (() => void) | null } | null = null;
   private turn = 0;
   private pending: number | null = null;
@@ -76,7 +77,7 @@ export class MockDaemon implements Daemon {
     changed: () => this.publish(),
     reset: () => {
       const revision = this.plan.revision;
-      this.plan = samplePlan();
+      this.plan = mockPlan();
       this.plan.revision = revision;
       this.publish();
     },
@@ -188,8 +189,8 @@ export class MockDaemon implements Daemon {
     });
   }
 
-  proposeTools(project: string): Promise<ProposeResult> {
-    if (project.includes("nowhere")) return Promise.resolve({ ok: false, message: `${project} is not a folder.` });
+  proposeTools(folder: string): Promise<ProposeResult> {
+    if (folder.includes("nowhere")) return Promise.resolve({ ok: false, message: `${folder} is not a folder.` });
     return Promise.resolve({ ok: true, tools: MOCK_PROPOSAL.map((t) => ({ ...t })) });
   }
 
@@ -197,6 +198,8 @@ export class MockDaemon implements Daemon {
     const extras = this.plan.rooms.filter((r) => r.kind === "extra").length;
     if (extras >= this.plan.max_extra_rooms)
       return Promise.resolve({ ok: false, message: `The house already has ${extras} extra rooms, the most it can hold.` });
+    const folders = room.folders === undefined ? null : folderRefusal(room.folders, this.plan.max_room_folders);
+    if (folders !== null) return Promise.resolve({ ok: false, message: folders });
     if (!this.plan.free_slots.some(([x, y]) => x === room.at[0] && y === room.at[1]))
       return Promise.resolve({ ok: false, message: "That slot is not free." });
     const agent = this.plan.agents.find((a) => a.id === room.agent);
@@ -211,7 +214,7 @@ export class MockDaemon implements Daemon {
       size: [1, 1],
       agent: agent.id,
       model: room.model ?? agent.model,
-      project: room.project ?? null,
+      folders: (room.folders ?? []).map((f) => f.trim()),
       floor: "wood-floor",
       wall: "wallpaper",
       tools: room.tools ? room.tools.flatMap((id) => MOCK_CATALOG.filter((t) => t.id === id).map((t) => ({ ...t }))) : agentTools(agent.id),
@@ -354,7 +357,7 @@ export class MockDaemon implements Daemon {
       size: [1, 1],
       agent: scout.id,
       model: scout.model,
-      project: null,
+      folders: [],
       floor: "wood-floor",
       wall: "wallpaper",
       tools: agentTools(scout.id),
@@ -395,6 +398,14 @@ export class MockDaemon implements Daemon {
     const plan = structuredClone(this.plan);
     this.at(120, () => this.store.dispatch({ kind: "plan", plan }));
   }
+}
+
+/** The sample house, with the Workshop already working in three project folders. */
+function mockPlan(): Plan {
+  const plan = samplePlan();
+  const workshop = plan.rooms.find((r) => r.id === "workshop");
+  if (workshop) workshop.folders = ["~/Projects/engine", "~/Projects/shop", "~/Notes/design"];
+  return plan;
 }
 
 /** An agent's default tools in the sample house: the host has the built-ins, the rest none. */

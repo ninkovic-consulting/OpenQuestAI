@@ -1,26 +1,26 @@
 // The card shown while the camera is inside a room: who runs it, on which
-// model, which project folder, and its tools with what each can do today.
+// model, which project folders, and its tools with what each can do today.
 
 import type { Store, ViewState } from "../net/store";
 import type { Plan, ToolRef } from "../net/types";
 import { el } from "./dom";
 
-/** Built-in tools always run; a project tool needs its program on this Mac and a project folder on the room. */
+/** Built-in tools always run; a project tool needs its program on this Mac and at least one project folder on the room. */
 export type ToolState = "runs" | "waits" | "missing";
 
 const TOOL_WORD: Record<ToolState, string> = { runs: "ready", waits: "needs a project folder", missing: "not installed" };
 
-function toolState(tool: ToolRef, hasProject: boolean): ToolState {
+function toolState(tool: ToolRef, hasFolder: boolean): ToolState {
   if (tool.built_in) return "runs";
   if (!tool.available) return "missing";
-  return hasProject ? "runs" : "waits";
+  return hasFolder ? "runs" : "waits";
 }
 
 export interface RoomCardModel {
   name: string;
   agent: string;
   model: string;
-  project: string | null;
+  folders: string[];
   tools: { title: string; state: ToolState }[];
   note: string;
 }
@@ -33,10 +33,10 @@ export function roomCardModel(plan: Plan, roomId: string): RoomCardModel | null 
     name: room.name,
     agent: agent?.name ?? room.agent,
     model: room.model,
-    project: room.project,
-    tools: room.tools.map((t) => ({ title: t.title, state: toolState(t, room.project !== null) })),
-    note: room.project
-      ? "An agent working here reads and searches the project freely. Writing files and running these programs ask you first."
+    folders: [...room.folders],
+    tools: room.tools.map((t) => ({ title: t.title, state: toolState(t, room.folders.length > 0) })),
+    note: room.folders.length > 0
+      ? "An agent working here reads and searches the project folders freely. Writing files and running these programs ask you first."
       : "Attach a project folder to this room and agents can work in it with these tools.",
   };
 }
@@ -58,13 +58,20 @@ export function mountRoomCard(parent: HTMLElement, store: Store, onEdit: (roomId
     const model = shown && s.plan ? roomCardModel(s.plan, shown) : null;
     card.hidden = model === null;
     if (!model) return;
-    const row = (label: string, value: string, muted = false): HTMLElement => {
+    const row = (label: string, value: string | string[], muted = false): HTMLElement => {
       const node = el("div", "row");
-      node.append(el("dt", "caps", label), el("dd", muted ? "is-muted" : "", value));
+      const dd = el("dd", muted ? "is-muted" : "");
+      if (typeof value === "string") dd.textContent = value;
+      else dd.append(...value.map((path) => el("span", "path", path)));
+      node.append(el("dt", "caps", label), dd);
       return node;
     };
     const facts = el("dl");
-    facts.append(row("Agent", model.agent), row("Model", model.model), row("Project", model.project ?? "None", model.project === null));
+    facts.append(
+      row("Agent", model.agent),
+      row("Model", model.model),
+      model.folders.length > 0 ? row(model.folders.length === 1 ? "Folder" : "Folders", model.folders) : row("Folders", "None", true),
+    );
     const tools = el("ul", "card-tools");
     tools.setAttribute("aria-label", "Tools");
     tools.append(

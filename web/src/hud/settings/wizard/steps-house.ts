@@ -1,9 +1,9 @@
-// The wizard's last steps: the assistant's name, a project room, and the summary.
+// The wizard's last steps: the assistant's name, a room with project folders, and the summary.
 
 import type { Room } from "../../../net/types";
 import { toolsNote } from "../../build-form";
 import { el } from "../../dom";
-import { mountFolderPicker } from "../../pickers/folder-picker";
+import { mountFolderList } from "../../pickers/folder-list";
 import { mountModelPicker, OWN_MODEL } from "../../pickers/model-picker";
 import { mountToolToggles } from "../../pickers/tool-toggles";
 import { fieldRow } from "../fields";
@@ -41,9 +41,8 @@ export function roomStep(env: WizardEnv): StepView {
   const plan = env.store.get().plan;
   const rooms = plan ? plan.rooms.filter((r) => !isHostRoom(plan, r)) : [];
   const body = el("div", "wizard-room");
-  let room: Room | undefined = rooms.find((r) => r.project === null) ?? rooms[0];
+  let room: Room | undefined = rooms.find((r) => r.folders.length === 0) ?? rooms[0];
   let model: string | null = null;
-  let folder = "";
   let touched = false;
   const error = el("p", "field-error");
   error.hidden = true;
@@ -57,34 +56,44 @@ export function roomStep(env: WizardEnv): StepView {
     }),
   );
   if (room) select.value = room.id;
-  select.addEventListener("change", () => (room = rooms.find((r) => r.id === select.value)));
   const tools = mountToolToggles(env.propose, toolsNote, () => (touched = true));
-  const picker = mountFolderPicker({
+  const folders = mountFolderList({
     api: env.api,
     native: env.native,
-    value: "",
-    label: "Project folder",
-    onChange: (v) => {
-      folder = v;
-      tools.setProject(v);
-    },
+    folders: room?.folders ?? [],
+    max: plan?.max_room_folders ?? 1,
+    label: "Project folders",
+    onChange: (list) => tools.setFolders(list),
   });
+  const showRoom = (): void => {
+    folders.set(room?.folders ?? []);
+    touched = false;
+    tools.setFolders(room?.folders ?? [], room?.tools.map((t) => t.id));
+  };
+  select.addEventListener("change", () => {
+    room = rooms.find((r) => r.id === select.value);
+    showRoom();
+  });
+  showRoom();
   const models = mountModelPicker({ source: env.models, value: "", own: { label: OWN_MODEL, note: "The room uses its agent's model." }, onChange: (v) => (model = v) });
   // Only a model picked here is sent; the room keeps its own otherwise.
-  body.append(fieldRow("Room", select), fieldRow("Project folder", picker.root), tools.root, fieldRow("Model (optional)", models.root), error);
+  body.append(fieldRow("Room", select), fieldRow("Project folders", folders.root), tools.root, fieldRow("Model (optional)", models.root), error);
 
   return {
     heading: "A project room",
-    lead: "Give one room a project folder, and the agent who runs it works there. Optional; rooms can be changed any time in Settings, Rooms.",
+    lead: "Give one room project folders, and the agent who runs it works there. Optional; rooms can be changed any time in Settings, Rooms.",
     body,
     finish: async () => {
-      if (!plan || !room || folder.trim() === "") return { status: "skipped", text: "No project folder attached." };
+      if (!plan || !room) return { status: "skipped", text: "No project folders attached." };
       const before = roomEditFrom(plan, room);
-      const patch = roomPatch(before, { ...before, project: folder, model: model ?? before.model }, tools.picks(), touched, false);
+      const patch = roomPatch(before, { ...before, folders: folders.value(), model: model ?? before.model }, tools.picks(), touched, false);
+      if (patch.folders === undefined) return { status: "skipped", text: "No project folders attached." };
       const r = await env.api.patchRoom(room.id, patch);
-      if (r.ok) return { status: "done", text: `${folder.trim()} is the ${room.name}'s project.` };
+      if (r.ok) return { status: "done", text: `${room.name}: ${patch.folders.join(", ")}.` };
+      const refusal = r.errors.find((e) => e.field === "folders")?.message;
+      folders.setError(refusal ?? "");
       error.textContent = r.message;
-      error.hidden = false;
+      error.hidden = refusal !== undefined;
       return null;
     },
   };

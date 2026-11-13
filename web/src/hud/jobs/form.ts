@@ -138,7 +138,7 @@ export function jobForm(o: JobFormOptions): HTMLElement {
   carefulField.append(carefulRow, carefulText);
   form.append(
     where,
-    fieldRow("Brief", brief, { note: "What to do, in plain words. The resident sees only this and its room's project folder." }),
+    fieldRow("Brief", brief, { note: "What to do, in plain words. The resident sees only this and its room's project folders." }),
     fieldRow("Title", title, { note: "Optional: a short name for the job in this list." }),
     carefulField,
     refusal,

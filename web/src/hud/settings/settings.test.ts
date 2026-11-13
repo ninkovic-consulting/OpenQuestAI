@@ -137,7 +137,7 @@ describe("editing a room", () => {
   const tool = (id: string) => ({ id, title: id, available: true, built_in: false });
 
   it("starts from the room, with the agent's model as its own", () => {
-    expect(roomEditFrom(plan, workshop)).toEqual({ name: "Workshop", agent: "maker", project: "", model: "" });
+    expect(roomEditFrom(plan, workshop)).toEqual({ name: "Workshop", agent: "maker", folders: [], model: "" });
   });
 
   it("never offers the host for another room, and only the host for the Hall", () => {
@@ -153,14 +153,32 @@ describe("editing a room", () => {
     expect(roomPatch(before, { ...before, agent: "scout" }, null, false, true)).toEqual({});
   });
 
-  it("sends tools for a new folder, clears them with the folder", () => {
+  it("sends the whole folder list, with tools for a new folder", () => {
     const before = roomEditFrom(plan, workshop);
-    const picks = fromProposal("~/Projects/my-app", [tool("git"), tool("npm")]);
-    expect(roomPatch(before, { ...before, project: "~/Projects/my-app" }, picks, false, false)).toEqual({ project: "~/Projects/my-app", tools: ["git", "npm"] });
-    const withFolder = { ...before, project: "~/Projects/my-app" };
-    expect(roomPatch(withFolder, { ...withFolder, project: "" }, null, false, false)).toEqual({ project: null, tools: null });
-    expect(roomPatch(withFolder, withFolder, fromProposal("~/Projects/my-app", [tool("git")], []), false, false)).toEqual({});
-    expect(roomPatch(withFolder, withFolder, fromProposal("~/Projects/my-app", [tool("git")], []), true, false)).toEqual({ tools: [] });
+    const folders = ["~/Projects/my-app", "~/Projects/shop"];
+    const picks = fromProposal(folders, [tool("git"), tool("npm")]);
+    expect(roomPatch(before, { ...before, folders }, picks, false, false)).toEqual({ folders, tools: ["git", "npm"] });
+    expect(roomPatch(before, { ...before, folders: [" ~/Projects/my-app ", ""] }, null, false, false)).toEqual({ folders: ["~/Projects/my-app"] });
+  });
+
+  it("sends the list when a folder is removed or the order changes, and nothing when it is the same", () => {
+    const withTwo = { ...roomEditFrom(plan, workshop), folders: ["~/a", "~/b"] };
+    expect(roomPatch(withTwo, { ...withTwo, folders: ["~/b"] }, null, false, false)).toEqual({ folders: ["~/b"] });
+    expect(roomPatch(withTwo, { ...withTwo, folders: ["~/b", "~/a"] }, null, false, false)).toEqual({ folders: ["~/b", "~/a"] });
+    expect(roomPatch(withTwo, { ...withTwo }, null, false, false)).toEqual({});
+  });
+
+  it("detaching every folder sends an empty list and clears the tools", () => {
+    const withFolder = { ...roomEditFrom(plan, workshop), folders: ["~/Projects/my-app"] };
+    expect(roomPatch(withFolder, { ...withFolder, folders: [] }, null, false, false)).toEqual({ folders: [], tools: null });
+  });
+
+  it("sends tools only for a proposal of these folders, after a change or a toggle", () => {
+    const withFolder = { ...roomEditFrom(plan, workshop), folders: ["~/Projects/my-app"] };
+    const same = fromProposal(["~/Projects/my-app"], [tool("git")], []);
+    expect(roomPatch(withFolder, withFolder, same, false, false)).toEqual({});
+    expect(roomPatch(withFolder, withFolder, same, true, false)).toEqual({ tools: [] });
+    expect(roomPatch(withFolder, withFolder, fromProposal(["~/elsewhere"], [tool("git")]), true, false)).toEqual({});
   });
 });
 

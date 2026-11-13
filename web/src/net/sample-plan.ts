@@ -31,7 +31,7 @@ function room(
   shape: Room["shape"] = "rect",
 ): Room {
   const tools = agent === "host" ? HOST_TOOLS.map((t) => ({ ...t })) : [];
-  return { id, name, kind: "default", shape, at, size, agent, model, project: null, floor, wall, tools, state };
+  return { id, name, kind: "default", shape, at, size, agent, model, folders: [], floor, wall, tools, state };
 }
 
 export function samplePlan(): Plan {
@@ -40,6 +40,7 @@ export function samplePlan(): Plan {
     cell_m: 4.0,
     wall_height_m: 2.6,
     max_extra_rooms: 20,
+    max_room_folders: 8,
     assistant: { name: "Vision" },
     agents: [
       { id: "host", name: "Vision", model: HAIKU, heavy_model: OPUS },

@@ -2,11 +2,13 @@
 // switched on, and the body that is posted.
 
 import { roomAgents } from "../net/plan";
+import { cleanFolders, sameFolderSet } from "./folders";
 import type { Agent, Cell, NewRoom, Plan, ToolRef } from "../net/types";
 
-/** The tools proposed for one project folder and which of them are on. */
+/** The tools proposed for a room's folders and which of them are on. */
 export interface ToolPicks {
-  project: string;
+  /** The folders the proposal was made for. */
+  folders: readonly string[];
   tools: readonly ToolRef[];
   on: ReadonlySet<string>;
 }
@@ -15,9 +17,27 @@ export interface ToolPicks {
  * A fresh proposal: every tool whose program is on this Mac starts on, the
  * rest off. With `on` (a room's current tools) exactly those proposed start on.
  */
-export function fromProposal(project: string, tools: readonly ToolRef[], on?: readonly string[]): ToolPicks {
+export function fromProposal(folders: readonly string[], tools: readonly ToolRef[], on?: readonly string[]): ToolPicks {
   const start = on ? tools.filter((t) => on.includes(t.id)) : tools.filter((t) => t.available);
-  return { project, tools, on: new Set(start.map((t) => t.id)) };
+  return { folders, tools, on: new Set(start.map((t) => t.id)) };
+}
+
+/** What several folders look like they need together: each tool once, in the order first proposed. */
+export function unionTools(proposals: readonly (readonly ToolRef[])[]): ToolRef[] {
+  const seen = new Map<string, ToolRef>();
+  for (const tool of proposals.flat()) if (!seen.has(tool.id)) seen.set(tool.id, tool);
+  return [...seen.values()];
+}
+
+/**
+ * The ids to switch on after the folders changed: what was on stays on, what
+ * was off stays off, and a tool the earlier folders did not propose starts on
+ * when its program is installed.
+ */
+export function carriedOn(previous: ToolPicks | null, tools: readonly ToolRef[]): string[] | undefined {
+  if (!previous) return undefined;
+  const known = new Set(previous.tools.map((t) => t.id));
+  return tools.filter((t) => previous.on.has(t.id) || (!known.has(t.id) && t.available)).map((t) => t.id);
 }
 
 /** The switched-on tools in proposal order, as a room stores them. */
@@ -37,22 +57,22 @@ export interface RoomFields {
   name: string;
   agent: string;
   at: Cell;
-  project: string;
+  folders: string[];
   model: string;
 }
 
 /**
  * The body for `POST /api/house/rooms`. Tools are sent only when a proposal
- * for this exact project was shown and had tools in it; otherwise the room
+ * for exactly these folders was shown and had tools in it; otherwise the room
  * uses its agent's tools.
  */
 export function newRoom(fields: RoomFields, picks: ToolPicks | null): NewRoom {
   const room: NewRoom = { name: fields.name.trim(), agent: fields.agent, at: fields.at };
-  const project = fields.project.trim();
+  const folders = cleanFolders(fields.folders);
   const model = fields.model.trim();
-  if (project) room.project = project;
+  if (folders.length > 0) room.folders = folders;
   if (model) room.model = model;
-  if (project && picks && picks.project === project && picks.tools.length > 0) {
+  if (folders.length > 0 && picks && sameFolderSet(picks.folders, folders) && picks.tools.length > 0) {
     room.tools = pickedIds(picks);
   }
   return room;

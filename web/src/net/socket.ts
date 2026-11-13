@@ -53,8 +53,8 @@ export class SocketDaemon implements Daemon {
     }
   }
 
-  proposeTools(project: string): Promise<ProposeResult> {
-    return this.api.proposeTools(project);
+  proposeTools(folder: string): Promise<ProposeResult> {
+    return this.api.proposeTools(folder);
   }
 
   postRoom(room: NewRoom): Promise<PostResult> {

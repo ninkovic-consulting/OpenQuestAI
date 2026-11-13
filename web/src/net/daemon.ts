@@ -10,7 +10,7 @@ export interface Daemon {
   send(event: InboundEvent): void;
   postRoom(room: NewRoom): Promise<PostResult>;
   /** The tools proposed for a project folder on this Mac. */
-  proposeTools(project: string): Promise<ProposeResult>;
+  proposeTools(folder: string): Promise<ProposeResult>;
   /** Earlier turns from `/api/history`, oldest first; the chat thread narrows the answer. */
   history(): Promise<Result<unknown>>;
   /** The settings routes: settings, models, voice, downloads, folders, doctor, resets, rooms. */

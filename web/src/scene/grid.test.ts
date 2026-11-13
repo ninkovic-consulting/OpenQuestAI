@@ -16,7 +16,7 @@ function withObservatory(plan: Plan): Plan {
     size: [1, 1],
     agent: "scout",
     model: "claude-haiku-5-5",
-    project: null,
+    folders: [],
     tools: [],
     floor: "wood-floor",
     wall: "wallpaper",

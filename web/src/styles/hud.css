@@ -820,6 +820,12 @@ select {
   overflow-wrap: anywhere;
 }
 
+.room-card dd .path {
+  display: block;
+  padding: 1px 0;
+  font: 12px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+}
+
 .room-card dd.is-muted {
   color: var(--muted);
 }

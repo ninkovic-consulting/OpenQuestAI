@@ -18,7 +18,7 @@ export interface Agent {
   heavy_model?: string | null;
 }
 
-/** A tool on a room, as the plan carries it. Project tools run only in a room with a project folder. */
+/** A tool on a room, as the plan carries it. Project tools run only in a room with at least one project folder. */
 export interface ToolRef {
   id: string;
   title: string;
@@ -36,7 +36,8 @@ export interface Room {
   size: Cell;
   agent: string;
   model: string;
-  project: string | null;
+  /** The room's project folders as the owner gave them, for example `~/Projects/shop`; the first is where programs run. */
+  folders: string[];
   floor: string;
   wall: string;
   /** The room's own tools, or its agent's when it lists none. */
@@ -56,6 +57,8 @@ export interface Plan {
   cell_m: number;
   wall_height_m: number;
   max_extra_rooms: number;
+  /** The most project folders one room may have. */
+  max_room_folders: number;
   assistant: { name: string };
   agents: Agent[];
   rooms: Room[];
@@ -146,7 +149,8 @@ export interface NewRoom {
   name: string;
   agent: string;
   at: Cell;
-  project?: string;
+  /** Project folders, in order; left out, the room has none. */
+  folders?: string[];
   model?: string;
   /** Tool ids; left out, the room uses its agent's. */
   tools?: string[];
