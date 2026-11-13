@@ -29,7 +29,7 @@ function fresh(): PhoneView {
     detail: null,
     paired: null,
     pairing: null,
-    notify: { automations: true, warnings: true, approvals: true },
+    notify: { automations: true, warnings: true, approvals: true, jobs: true },
     speak_on_mac: false,
     voice_replies: false,
     tools,

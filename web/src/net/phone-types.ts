@@ -13,6 +13,8 @@ export interface PhoneNotify {
   automations: boolean;
   warnings: boolean;
   approvals: boolean;
+  /** What a resident's job came to, when it was handed off from the phone. */
+  jobs: boolean;
 }
 
 export interface PhoneView {

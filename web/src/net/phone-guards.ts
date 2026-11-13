@@ -40,6 +40,7 @@ export function asPhoneView(v: unknown): PhoneView | null {
     isBool(notify["automations"]) &&
     isBool(notify["warnings"]) &&
     isBool(notify["approvals"]) &&
+    isBool(notify["jobs"]) &&
     isBool(v["speak_on_mac"]) &&
     isBool(v["voice_replies"]) &&
     Array.isArray(v["tools"]) &&

@@ -239,6 +239,8 @@ Times are the Mac's local time.
 
 You can message the assistant from your phone through a Discord bot of your own. Nothing on the Mac listens for the internet: the daemon connects out to Discord.
 
+The full guide, with every step, how to use it and what to do when something goes wrong, is in [docs/discord.md](docs/discord.md). In short:
+
 **Set it up once.**
 
 1. In the [Discord Developer Portal](https://discord.com/developers/applications), create an application. On its **Installation** page, keep **User Install** ticked.

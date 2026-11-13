@@ -205,6 +205,7 @@ function notifyChoices(v: PhoneView, change: Change): HTMLElement {
     one("automations", "Automation results"),
     one("warnings", "Warnings and errors"),
     one("approvals", "Requests that need your yes"),
+    one("jobs", "Results of jobs you handed off from the phone"),
   );
   return root;
 }
