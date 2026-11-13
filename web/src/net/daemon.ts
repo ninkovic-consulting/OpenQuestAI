@@ -1,4 +1,5 @@
 import type { AutomationsApi } from "./automations-api";
+import type { JobsApi } from "./jobs-api";
 import type { PhoneApi } from "./phone-api";
 import type { Result, SettingsApi } from "./settings-api";
 import type { InboundEvent, NewRoom, PostResult, ProposeResult } from "./types";
@@ -18,4 +19,6 @@ export interface Daemon {
   readonly automations: AutomationsApi;
   /** The phone channel routes. */
   readonly phone: PhoneApi;
+  /** The job board routes. */
+  readonly jobs: JobsApi;
 }

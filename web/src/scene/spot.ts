@@ -3,7 +3,7 @@
 // without one it stands well clear of walls and doors, facing into the room.
 // The middle of the room stays clear too: the room's name hangs above it.
 
-import type { FloorGrid } from "./floor";
+import { CELL, type FloorGrid } from "./floor";
 
 export interface Point {
   x: number;
@@ -72,6 +72,42 @@ function pick(grid: FloorGrid, clear: Float32Array, needs: SpotNeeds, min: { bod
       }
     }
   return best;
+}
+
+/** The other end of a resident's pacing at work: how far, and how clear the way. */
+export const PACE = { min: 1.0, best: 1.8, max: 2.4, body: 0.35, doorClear: 0.9 } as const;
+
+/**
+ * The second spot a working figure paces to from `from`: as near `PACE.best`
+ * away as the floor allows, clear of doors, with clear floor all the way.
+ * Null when the room has no such spot; the figure then works where it stands.
+ */
+export function choosePace(grid: FloorGrid, from: Point, needs: SpotNeeds): Spot | null {
+  const clear = grid.clearance();
+  const at = (x: number, z: number): number => {
+    const col = Math.floor((x - grid.x0) / CELL);
+    const row = Math.floor((z - grid.z0) / CELL);
+    return col < 0 || row < 0 || col >= grid.cols || row >= grid.rows ? 0 : (clear[row * grid.cols + col] ?? 0);
+  };
+  let best: Point | null = null;
+  let bestScore = -Infinity;
+  for (let row = 0; row < grid.rows; row++)
+    for (let col = 0; col < grid.cols; col++) {
+      if ((clear[row * grid.cols + col] ?? 0) < PACE.body) continue;
+      const [x, z] = grid.centre(col, row);
+      const d = Math.hypot(x - from.x, z - from.z);
+      if (d < PACE.min || d > PACE.max) continue;
+      if (needs.doors.some((door) => Math.hypot(door.x - x, door.z - z) < PACE.doorClear)) continue;
+      const score = -Math.abs(d - PACE.best);
+      if (score <= bestScore) continue;
+      const steps = Math.ceil(d / (CELL / 2));
+      let open = true;
+      for (let i = 1; i < steps && open; i++) open = at(from.x + ((x - from.x) * i) / steps, from.z + ((z - from.z) * i) / steps) >= PACE.body;
+      if (!open) continue;
+      bestScore = score;
+      best = { x, z };
+    }
+  return best ? face(best, needs) : null;
 }
 
 /** Face the piece, or the middle of the room; straight south when standing on the point itself. */

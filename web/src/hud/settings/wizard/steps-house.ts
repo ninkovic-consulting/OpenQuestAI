@@ -58,7 +58,7 @@ export function roomStep(env: WizardEnv): StepView {
   );
   if (room) select.value = room.id;
   select.addEventListener("change", () => (room = rooms.find((r) => r.id === select.value)));
-  const tools = mountToolToggles(env.propose, () => toolsNote(env.settings.assistant.name), () => (touched = true));
+  const tools = mountToolToggles(env.propose, toolsNote, () => (touched = true));
   const picker = mountFolderPicker({
     api: env.api,
     native: env.native,

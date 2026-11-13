@@ -1,5 +1,6 @@
 // One small store that the HUD and the scene both read. `reduce` is pure.
 
+import { isOpen, type AgentStatus, type Job, type JobList } from "./job-types";
 import type {
   AssistantState,
   BrainName,
@@ -16,9 +17,11 @@ import type {
 export type Connection = "connecting" | "open" | "offline";
 
 export interface Caption {
-  /** What the user said or typed; for an automation's run, the automation's name. */
+  /** What the user said or typed; for an automation's run, its name; for a job report, the job's title. */
   user: string;
-  source: "voice" | "text" | "automation" | "phone" | null;
+  source: "voice" | "text" | "automation" | "phone" | "job" | null;
+  /** For a job report: the name of the resident whose job it was. */
+  agent?: string;
   reply: string;
   /** True while deltas are still streaming in. */
   streaming: boolean;
@@ -49,6 +52,14 @@ export interface ViewState {
   automation: RunningAutomation | null;
   /** Counts automation changes, so the Automations group knows to refetch. */
   automationsRevision: number;
+  /** The job board as last seen, by id; `GET /api/jobs` seeds it and `job.changed` keeps it current. */
+  jobs: Record<string, Job>;
+  /** What each resident is doing, by agent id; `agent.state` keeps it current. */
+  agents: Record<string, AgentStatus>;
+  /** Top-level jobs that ended here, oldest first, each still to be reported by a turn of the host's. */
+  reports: string[];
+  /** A turn was announced (an utterance, an automation, a job report) and has not closed. */
+  turnOpen: boolean;
 }
 
 export type Action =
@@ -56,11 +67,15 @@ export type Action =
   | { kind: "plan"; plan: Plan }
   /** `initial` is the first snapshot of this page: its recent notices become toasts. */
   | { kind: "snapshot"; snapshot: StateSnapshot; initial: boolean }
+  /** `GET /api/jobs`, after every (re)connect. */
+  | { kind: "jobs"; list: JobList }
   | { kind: "connection"; connection: Connection }
   | { kind: "toast"; level: NoticeLevel; text: string }
   | { kind: "dismiss"; id: number };
 
 const MAX_TOASTS = 4;
+/** Reports waited for at most; older ones are forgotten (a report turn that never came). */
+const MAX_REPORTS = 8;
 
 export function initialState(): ViewState {
   return {
@@ -78,6 +93,10 @@ export function initialState(): ViewState {
     nextToastId: 1,
     automation: null,
     automationsRevision: 0,
+    jobs: {},
+    agents: {},
+    reports: [],
+    turnOpen: false,
   };
 }
 
@@ -86,19 +105,47 @@ function addToast(s: ViewState, level: NoticeLevel, text: string): ViewState {
   return { ...s, toasts: [...s.toasts, toast].slice(-MAX_TOASTS), nextToastId: s.nextToastId + 1 };
 }
 
+/** Requests wait in the order they arrived; one announced again keeps its place. */
 function addGate(s: ViewState, gate: GateRequest): ViewState {
-  return { ...s, gates: [...s.gates.filter((g) => g.id !== gate.id), gate] };
+  const at = s.gates.findIndex((g) => g.id === gate.id);
+  if (at === -1) return { ...s, gates: [...s.gates, gate] };
+  return { ...s, gates: s.gates.map((g, i) => (i === at ? gate : g)) };
+}
+
+/** A job changed. A top-level job seen ending here waits for the host's turn that reports it. */
+function jobChanged(s: ViewState, job: Job): ViewState {
+  const before = s.jobs[job.id];
+  const next = { ...s, jobs: { ...s.jobs, [job.id]: job } };
+  const ended = !isOpen(job.status) && (before === undefined || isOpen(before.status));
+  if (!ended || job.parent !== null) return next;
+  return { ...next, reports: [...s.reports, job.id].slice(-MAX_REPORTS) };
+}
+
+/**
+ * The assistant began thinking. With no turn announced, it is the report of
+ * the oldest job waiting for one: the daemon announces a job turn by nothing else.
+ */
+function thinking(s: ViewState): ViewState {
+  if (s.turnOpen) return s;
+  const [id, ...rest] = s.reports;
+  const job = id === undefined ? undefined : s.jobs[id];
+  if (!job) return s;
+  const agent = s.plan?.agents.find((a) => a.id === job.agent)?.name ?? job.agent;
+  return { ...s, reports: rest, turnOpen: true, caption: { user: job.title, source: "job", agent, reply: "", streaming: false } };
 }
 
 function reduceEvent(s: ViewState, e: OutboundEvent): ViewState {
   switch (e.type) {
-    case "state.changed":
-      return {
+    case "state.changed": {
+      const next: ViewState = {
         ...s,
         assistant: e.data.state,
         brain: e.data.brain ?? s.brain,
         voiceLevel: e.data.state === "speaking" ? s.voiceLevel : 0,
+        turnOpen: e.data.state === "idle" ? false : s.turnOpen,
       };
+      return e.data.state === "thinking" ? thinking(next) : next;
+    }
     case "budget":
       return { ...s, budget: e.data };
     case "house.changed":
@@ -106,6 +153,7 @@ function reduceEvent(s: ViewState, e: OutboundEvent): ViewState {
     case "user.utterance":
       return {
         ...s,
+        turnOpen: true,
         caption: { user: e.data.text, source: e.data.source, reply: "", streaming: false },
       };
     case "vision.delta": {
@@ -120,7 +168,7 @@ function reduceEvent(s: ViewState, e: OutboundEvent): ViewState {
       };
     }
     case "vision.reply":
-      return { ...s, caption: { ...s.caption, reply: e.data.text, streaming: false } };
+      return { ...s, turnOpen: false, caption: { ...s.caption, reply: e.data.text, streaming: false } };
     case "voice.level":
       return { ...s, voiceLevel: Math.min(1, Math.max(0, e.data.level)) };
     case "room.state":
@@ -141,10 +189,15 @@ function reduceEvent(s: ViewState, e: OutboundEvent): ViewState {
       return {
         ...s,
         automation: e.data,
+        turnOpen: true,
         caption: { user: e.data.name, source: "automation", reply: "", streaming: false },
       };
     case "automation.finished":
       return { ...s, automation: s.automation?.id === e.data.id ? null : s.automation };
+    case "job.changed":
+      return jobChanged(s, e.data);
+    case "agent.state":
+      return { ...s, agents: { ...s.agents, [e.data.agent]: { state: e.data.state, job: e.data.job } } };
     case "notice":
       return addToast(s, e.data.level, e.data.text);
   }
@@ -178,6 +231,8 @@ export function reduce(s: ViewState, a: Action): ViewState {
       return reducePlan(s, a.plan);
     case "snapshot":
       return reduceSnapshot(s, a.snapshot, a.initial);
+    case "jobs":
+      return { ...s, jobs: Object.fromEntries(a.list.jobs.map((j) => [j.id, j])), agents: a.list.agents };
     case "connection":
       return { ...s, connection: a.connection };
     case "toast":

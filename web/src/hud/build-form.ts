@@ -19,9 +19,9 @@ export interface BuildForm {
   close(): boolean;
 }
 
-/** The note under the tools: what they do in this slice. */
-export const toolsNote = (assistant: string): string =>
-  `Stored with the room. Project tools start working when the other agents wake up; for now only ${assistant}'s built-in tools run.`;
+/** The note under the tools: what an agent may do with them. */
+export const toolsNote = (): string =>
+  "Stored with the room. An agent working in the room may run these programs in the room's project folder, each time after your yes.";
 
 export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon, models: ModelSource, onAdded: () => void): BuildForm {
   const form = el("form", "build-form");
@@ -37,8 +37,7 @@ export function mountBuildForm(parent: HTMLElement, store: Store, daemon: Daemon
   name.required = true;
   name.maxLength = 40;
   const agent = el("select");
-  const assistant = (): string => store.get().plan?.assistant.name ?? "the assistant";
-  const tools = mountToolToggles((folder) => daemon.proposeTools(folder), () => toolsNote(assistant()));
+  const tools = mountToolToggles((folder) => daemon.proposeTools(folder), toolsNote);
   const model = mountModelPicker({ source: models, value: "", own: { label: OWN_MODEL, note: "The room uses its agent's model; nothing is sent." } });
   const projectSlot = el("div", "folder-slot");
   const noAgents = el("p", "tool-note", "Every agent in this house is busy as the host, so there is nobody to run a new room.");

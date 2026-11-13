@@ -1,6 +1,9 @@
 // The wire protocol (spec section 5) and the house plan (spec section 4.8).
 // Mirrors vision/core/events.py; the daemon is the source of truth.
 
+import { asAgentState, asJob, gateFieldsOk } from "./job-guards";
+import type { AgentWork, Job } from "./job-types";
+
 export type AssistantState = "idle" | "listening" | "transcribing" | "thinking" | "speaking";
 export type BrainName = "claude" | "local" | "fake";
 export type RoomLight = "dark" | "idle" | "active";
@@ -15,7 +18,7 @@ export interface Agent {
   heavy_model?: string | null;
 }
 
-/** A tool on a room, as the plan carries it. Only built-in tools run in this slice. */
+/** A tool on a room, as the plan carries it. Project tools run only in a room with a project folder. */
 export interface ToolRef {
   id: string;
   title: string;
@@ -71,13 +74,25 @@ export interface OutboundData {
   "vision.reply": { text: string; turn_id: string };
   "voice.level": { level: number };
   "room.state": { room: string; state: RoomLight };
-  "gate.request": { id: string; tool: string; summary: string; detail: string; expires_at: number };
+  /** A request made during a resident's job names the agent (id and name) and the job; the host's own leave them null. */
+  "gate.request": {
+    id: string;
+    tool: string;
+    summary: string;
+    detail: string;
+    expires_at: number;
+    agent?: string | null;
+    agent_name?: string | null;
+    job?: string | null;
+  };
   "gate.resolved": { id: string; decision: "allow" | "deny" | "timeout" };
   "brain.fallback": { from: BrainName; to: BrainName; reason: string };
   /** `automation` is null when deleted; `reloaded` (empty id) means refetch the whole list. */
   "automation.changed": { id: string; change: "created" | "updated" | "deleted" | "reloaded"; automation: unknown };
   "automation.started": { id: string; name: string };
   "automation.finished": { id: string; name: string; status: string; reply: string };
+  "job.changed": Job;
+  "agent.state": { agent: string; state: AgentWork; job: string | null };
   notice: { level: NoticeLevel; text: string };
 }
 
@@ -157,8 +172,17 @@ const OUTBOUND_TYPES: ReadonlySet<string> = new Set<OutboundType>([
   "automation.changed",
   "automation.started",
   "automation.finished",
+  "job.changed",
+  "agent.state",
   "notice",
 ]);
+
+/** Events whose data the window relies on field by field are checked before they reach the store. */
+const DATA_CHECKS: Partial<Record<OutboundType, (data: Record<string, unknown>) => boolean>> = {
+  "job.changed": (d) => asJob(d) !== null,
+  "agent.state": (d) => asAgentState(d) !== null,
+  "gate.request": gateFieldsOk,
+};
 
 /** Narrow raw JSON to an outbound event, or null when it is not one. */
 export function asOutbound(raw: unknown): OutboundEvent | null {
@@ -166,5 +190,7 @@ export function asOutbound(raw: unknown): OutboundEvent | null {
   const { type, ts, data } = raw as Record<string, unknown>;
   if (typeof type !== "string" || !OUTBOUND_TYPES.has(type)) return null;
   if (typeof data !== "object" || data === null) return null;
+  const check = DATA_CHECKS[type as OutboundType];
+  if (check && !check(data as Record<string, unknown>)) return null;
   return { type, ts: typeof ts === "number" ? ts : Date.now() / 1000, data } as OutboundEvent;
 }

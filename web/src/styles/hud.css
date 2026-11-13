@@ -158,13 +158,22 @@ select {
   color: var(--muted);
 }
 
+.resident.is-tower .dot {
+  color: var(--alert);
+}
+
 .resident.is-awake .dot,
-.resident.is-active .dot {
+.resident.is-working .dot {
   color: var(--mustard);
 }
 
-.resident.is-tower .dot {
+.resident.is-waiting .dot {
   color: var(--alert);
+}
+
+.resident.is-working .dot,
+.resident.is-waiting .dot {
+  animation: breathe 2.4s ease-in-out infinite;
 }
 
 .resident .name {
@@ -173,13 +182,29 @@ select {
   overflow-wrap: anywhere;
 }
 
-.resident.is-asleep .name {
+.resident.is-idle .name {
   color: var(--muted);
 }
 
 .resident .where {
   color: var(--muted-light);
   font-size: 14px;
+  line-height: 1.4;
+}
+
+.resident.is-waiting .where {
+  color: var(--text);
+}
+
+/* The job a resident works on, under its room, in full. */
+.resident .job-title {
+  display: block;
+  margin-top: 2px;
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 /* A narrow panel stacks each resident's room under the name. */
@@ -232,7 +257,7 @@ select {
   background: var(--alert);
 }
 
-/* The build and settings controls share a row under the budget. */
+/* The build, jobs and settings controls share a row under the budget; a narrow panel wraps them into even rows. */
 .panel-actions {
   display: flex;
   flex-wrap: wrap;
@@ -241,11 +266,17 @@ select {
 }
 
 .build-toggle,
+.jobs-toggle,
 .settings-toggle {
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   background: none;
   border: 1px solid var(--hairline-strong);
   color: var(--muted-light);
-  padding: 10px 18px 9px;
+  padding: 10px 14px 9px;
   cursor: pointer;
   transition:
     border-color 0.2s,
@@ -254,13 +285,34 @@ select {
 
 .build-toggle:hover,
 .build-toggle.is-on,
+.jobs-toggle:hover,
+.jobs-toggle.is-on,
 .settings-toggle:hover,
 .settings-toggle.is-on {
   border-color: var(--mustard);
   color: var(--mustard);
 }
 
+/* Running jobs, counted on the control while the panel is closed. */
+.jobs-toggle .count {
+  min-width: 18px;
+  padding: 2px 5px 1px;
+  border: 1px solid var(--mustard);
+  border-radius: 9px;
+  color: var(--mustard);
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.jobs-toggle .count:empty,
+.jobs-toggle.is-on .count {
+  display: none;
+}
+
 .build-toggle:focus-visible,
+.jobs-toggle:focus-visible,
 .settings-toggle:focus-visible {
   outline: 1px solid var(--mustard);
   outline-offset: 2px;
@@ -282,7 +334,21 @@ select {
 .gate-head {
   display: flex;
   justify-content: space-between;
+  /* The countdown keeps its distance when the panel is narrow. */
+  gap: 12px;
   color: var(--muted-light);
+}
+
+/* Who asks, when a resident asks during a job. */
+.gate-who {
+  margin: 14px 0 0;
+  color: var(--text);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+}
+
+.gate-who + .gate-summary {
+  margin-top: 6px;
 }
 
 .gate-summary {
@@ -300,9 +366,30 @@ select {
   font: 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
   color: var(--muted-light);
   white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 96px;
+  overflow-wrap: anywhere;
+  max-height: min(180px, 26vh);
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-strong) transparent;
+}
+
+.gate-detail:focus-visible {
+  outline: 1px solid var(--text);
+  outline-offset: 1px;
+}
+
+.gate-queue {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid rgba(237, 228, 208, 0.25);
+  color: var(--muted-light);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+}
+
+.gate-queue[hidden] {
+  display: none;
 }
 
 .gate-actions {

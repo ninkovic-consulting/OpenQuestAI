@@ -1,0 +1,444 @@
+/* The Jobs panel: the Settings screen's frame (settings.css) with the jobs
+   on the left and one job, or the new-job form, on the right. State is a
+   small dot plus a 1px border, as everywhere else. */
+
+.jobs .settings-frame {
+  grid-template-columns: clamp(280px, 38%, 420px) minmax(0, 1fr);
+}
+
+.jobs-side {
+  padding-bottom: 0;
+}
+
+.jobs-side .settings-title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 4px 12px;
+}
+
+.jobs-side .settings-title .hint {
+  grid-row: 2;
+}
+
+.jobs-side .settings-title .btn {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+}
+
+.job-list-slot {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-strong) transparent;
+}
+
+.job-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.job-empty {
+  padding: 18px 24px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.job-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: baseline;
+  width: 100%;
+  padding: 13px 24px 12px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--muted-light);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.job-row:hover {
+  background: rgba(237, 228, 208, 0.03);
+}
+
+.job-row[aria-current="true"] {
+  background: rgba(226, 166, 43, 0.08);
+}
+
+.job-row:focus-visible {
+  outline: 1px solid var(--mustard);
+  outline-offset: -1px;
+}
+
+/* A request between residents sits under the job that made it. */
+.job-row.is-request {
+  padding-left: 44px;
+  background: rgba(20, 9, 7, 0.3);
+}
+
+.job-row.is-request[aria-current="true"] {
+  background: rgba(226, 166, 43, 0.08);
+}
+
+.job-row .dot {
+  transform: translateY(-1px);
+}
+
+.job-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.job-title {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.job-row[aria-current="true"] .job-title {
+  color: var(--mustard);
+}
+
+.job-asked,
+.job-who,
+.job-flag {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  line-height: 1.5;
+}
+
+.job-asked {
+  color: var(--lamp);
+}
+
+.job-who {
+  color: var(--muted);
+}
+
+.job-when {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.job-last {
+  color: var(--muted-light);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.job-flag {
+  align-self: flex-start;
+  margin-top: 3px;
+  padding: 3px 7px 2px;
+  border: 1px solid var(--alert);
+  color: var(--alert);
+}
+
+/* The dot of a job's status: mustard while it works, alert when it failed. */
+.job-row .dot,
+.job-state .dot,
+.job-steps .dot {
+  color: var(--muted);
+}
+
+:is(.job-row, .job-state).is-working > .dot {
+  color: var(--mustard);
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+:is(.job-row, .job-state).is-queued > .dot {
+  background: transparent;
+  border: 1px solid var(--lamp);
+}
+
+:is(.job-row, .job-state).is-done > .dot {
+  color: var(--muted-light);
+}
+
+:is(.job-row, .job-state).is-failed > .dot {
+  color: var(--alert);
+}
+
+:is(.job-row, .job-state).is-cancelled > .dot {
+  background: transparent;
+  border: 1px solid var(--muted);
+}
+
+/* ---------------------------------------------------------------- the right side */
+
+.jobs-main .kicker {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.jobs-main .kicker:empty,
+.jobs-main .blurb:empty {
+  display: none;
+}
+
+.jobs-head-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.jobs-back {
+  display: none;
+}
+
+.job-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.job-detail > .status {
+  align-self: flex-start;
+}
+
+.job-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+}
+
+.job-top .field-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.job-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 7px;
+  border: 1px solid var(--hairline-strong);
+  color: var(--muted-light);
+}
+
+.job-state.is-working {
+  border-color: var(--mustard);
+  color: var(--mustard);
+}
+
+.job-state.is-failed {
+  border-color: var(--alert);
+  color: var(--text);
+}
+
+.job-state .when {
+  color: var(--muted-light);
+  font-size: 14px;
+}
+
+.job-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px 20px;
+  margin: 0;
+  padding: 16px 0;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.job-facts dt {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+}
+
+.job-facts dd {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.job-link {
+  align-self: flex-start;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--hairline-strong);
+  color: var(--muted-light);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.job-link:hover {
+  border-color: var(--mustard);
+  color: var(--mustard);
+}
+
+.job-detail .block {
+  margin-top: 0;
+}
+
+.job-text {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The steps as a timeline: a dot per step on a 1px line. */
+.job-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.job-steps li {
+  position: relative;
+  padding: 0 0 16px 22px;
+}
+
+.job-steps li::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 14px;
+  bottom: -4px;
+  width: 1px;
+  background: var(--hairline-strong);
+}
+
+.job-steps li:last-child::before {
+  display: none;
+}
+
+.step-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: -22px;
+}
+
+.step-head .caps {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+}
+
+.step-head .when {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.job-steps .is-started .dot,
+.job-steps .is-tool .dot,
+.job-steps .is-progress .dot,
+.job-steps .is-request .dot {
+  color: var(--muted-light);
+}
+
+.job-steps .is-request .dot {
+  color: var(--lamp);
+}
+
+.job-steps .is-finished .dot {
+  color: var(--mustard);
+}
+
+.job-steps .is-empty {
+  color: var(--muted);
+  padding-left: 0;
+}
+
+.step-text {
+  margin: 4px 0 0;
+  color: var(--muted-light);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------- the form */
+
+.job-form {
+  max-width: 640px;
+}
+
+.job-form .two-up > .field:first-child,
+.job-form .two-up > .field:nth-child(2) {
+  margin-top: 0;
+}
+
+.job-form .check-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.job-refusal {
+  margin-top: 18px;
+}
+
+.job-refusal:empty {
+  display: none;
+}
+
+/* A narrow scene shows the list or one job, with Back to step out. */
+@container (max-width: 760px) {
+  .jobs .settings-frame {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .jobs .jobs-side {
+    flex-direction: column;
+    align-items: stretch;
+    overflow: hidden;
+  }
+
+  .jobs .jobs-side .settings-title {
+    padding: 18px 20px 14px;
+  }
+
+  .jobs .jobs-side .settings-title h2 {
+    font-size: 24px;
+  }
+
+  .jobs .jobs-side .settings-title .hint {
+    display: block;
+  }
+
+  .jobs[data-pane="list"] .jobs-main,
+  .jobs:not([data-pane="list"]) .jobs-side {
+    display: none;
+  }
+
+  .jobs-back {
+    display: inline-block;
+  }
+
+  .job-row {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .job-row.is-request {
+    padding-left: 38px;
+  }
+}

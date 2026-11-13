@@ -5,7 +5,7 @@
 import type { Caption } from "../../net/store";
 
 /** Where a turn came from, when that is known. */
-export type Origin = "text" | "voice" | "automation" | "phone";
+export type Origin = "text" | "voice" | "automation" | "phone" | "job";
 
 /**
  * `sending`: typed here, not yet echoed by the daemon. `waiting`: accepted,
@@ -18,6 +18,8 @@ export interface Entry {
   id: number;
   user: string;
   origin: Origin | null;
+  /** For a job report: the resident whose job it was; `user` is then the job's title. */
+  agent?: string;
   reply: string;
   phase: Phase;
   /** How a closed turn ended; `interrupted` when it closed without a word. */
@@ -35,6 +37,7 @@ export interface Thread {
 export interface HistoryTurn {
   startedAt: number;
   origin: Origin | null;
+  agent?: string;
   user: string;
   reply: string;
   status: "ok" | "interrupted" | "failed";
@@ -42,7 +45,7 @@ export interface HistoryTurn {
 
 export const emptyThread = (): Thread => ({ entries: [], nextId: 1 });
 
-const ORIGINS: ReadonlySet<string> = new Set<Origin>(["text", "voice", "automation", "phone"]);
+const ORIGINS: ReadonlySet<string> = new Set<Origin>(["text", "voice", "automation", "phone", "job"]);
 
 export function asOrigin(source: string | null): Origin | null {
   return source !== null && ORIGINS.has(source) ? (source as Origin) : null;
@@ -71,6 +74,9 @@ export function gateResolved(t: Thread): Thread {
   };
 }
 
+/** The resident a job report is about, when the caption names one. */
+const about = (c: Caption): { agent?: string } => (c.agent === undefined ? {} : { agent: c.agent });
+
 /** True when `next` opens a new turn: a `user.utterance` or `automation.started`. */
 function startsTurn(prev: Caption, next: Caption): boolean {
   if (next.user === "" || next.reply !== "" || next.streaming) return false;
@@ -93,7 +99,7 @@ export function fromCaption(t: Thread, prev: Caption, next: Caption): Thread {
       const at = firstPending === -1 ? rest.length : firstPending;
       return { ...t, entries: [...rest.slice(0, at), claimed, ...rest.slice(at)] };
     }
-    return add({ ...t, entries: closed }, { user: next.user, origin, reply: "", phase: "waiting", ended: null, toGate: false }, true);
+    return add({ ...t, entries: closed }, { user: next.user, origin, ...about(next), reply: "", phase: "waiting", ended: null, toGate: false }, true);
   }
   const phase: Phase = next.streaming ? "streaming" : "done";
   const ended = next.streaming ? null : next.reply === "" ? "interrupted" : "ok";
@@ -107,7 +113,7 @@ export function fromCaption(t: Thread, prev: Caption, next: Caption): Thread {
   if (current === -1) {
     // A reply with no turn shown for it, as when the page opens mid-turn.
     if (next.reply === "") return t;
-    return add(t, { user: next.user, origin, reply: next.reply, phase, ended, toGate: false }, true);
+    return add(t, { user: next.user, origin, ...about(next), reply: next.reply, phase, ended, toGate: false }, true);
   }
   const entries = t.entries.slice();
   entries[current] = { ...entries[current]!, reply: next.reply, phase, ended };
@@ -125,6 +131,7 @@ export function withHistory(t: Thread, turns: readonly HistoryTurn[]): Thread {
     id: nextId++,
     user: h.user,
     origin: h.origin,
+    ...(h.agent === undefined ? {} : { agent: h.agent }),
     reply: h.reply,
     phase: "done",
     ended: h.status,

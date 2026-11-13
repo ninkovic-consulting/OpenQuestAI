@@ -1,9 +1,10 @@
 // The real connection: WebSocket at /ws, `hello` first, reconnect with
-// back-off, and reload /api/state and /api/house after every (re)connect.
+// back-off, and reload /api/state, /api/house and /api/jobs after every (re)connect.
 
 import { Api } from "./api";
 import { HttpAutomations, type AutomationsApi } from "./automations-api";
 import type { Daemon } from "./daemon";
+import { HttpJobs, type JobsApi } from "./jobs-api";
 import { HttpPhone, type PhoneApi } from "./phone-api";
 import { asPlan } from "./plan";
 import type { Result, SettingsApi } from "./settings-api";
@@ -21,6 +22,7 @@ export class SocketDaemon implements Daemon {
   readonly settings: SettingsApi;
   readonly automations: AutomationsApi;
   readonly phone: PhoneApi;
+  readonly jobs: JobsApi;
   private ws: WebSocket | null = null;
   private backoff = BACKOFF_MIN_MS;
   private loadedOnce = false;
@@ -36,6 +38,7 @@ export class SocketDaemon implements Daemon {
     this.settings = new HttpSettings(this.api);
     this.automations = new HttpAutomations(this.api);
     this.phone = new HttpPhone(this.api);
+    this.jobs = new HttpJobs(this.api);
   }
 
   start(): void {
@@ -113,6 +116,14 @@ export class SocketDaemon implements Daemon {
       this.store.dispatch({ kind: "toast", level: "warn", text: `Could not load the state: ${String(err)}` });
     }
     await this.loadPlan();
+    await this.loadJobs();
+  }
+
+  /** The board as it stands; events keep it current from here. */
+  private async loadJobs(): Promise<void> {
+    const r = await this.jobs.list();
+    if (r.ok) this.store.dispatch({ kind: "jobs", list: r.value });
+    else this.store.dispatch({ kind: "toast", level: "warn", text: `Could not load the jobs: ${r.message}` });
   }
 
   private async loadPlanIfStale(): Promise<void> {

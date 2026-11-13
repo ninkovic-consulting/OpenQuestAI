@@ -23,12 +23,14 @@ export function replySize(text: string): ReplySize {
 /** Who the words came from. */
 export function whoSaid(origin: Origin | null): string {
   if (origin === "phone") return "You, from the phone";
+  if (origin === "job") return "Job report";
   return origin === "automation" ? "Automation" : "You";
 }
 
-/** The label above the user's words: who, and how when it was here at the Mac. */
-export function entryLabel(origin: Origin | null): string {
+/** The label above the user's words: who, and how when it was here at the Mac; for a job report, whose job. */
+export function entryLabel(origin: Origin | null, agent?: string): string {
   if (origin === "text") return `${whoSaid(origin)} · typed`;
+  if (origin === "job" && agent) return `${whoSaid(origin)} · ${agent}`;
   return origin === "voice" ? `${whoSaid(origin)} · spoken` : whoSaid(origin);
 }
 
@@ -81,7 +83,7 @@ function paint(v: EntryView, e: Entry, assistant: string): void {
   setText(v.name, assistant);
   if (v.shown === e) return;
   v.shown = e;
-  setText(v.who, entryLabel(e.origin));
+  setText(v.who, entryLabel(e.origin, e.agent));
   setText(v.user, e.user);
   setText(v.reply, e.reply);
   v.reply.dataset["size"] = replySize(e.reply);

@@ -13,6 +13,7 @@ import { mountCaption } from "./hud/caption";
 import { el } from "./hud/dom";
 import { mountGate } from "./hud/gate";
 import { mountInput } from "./hud/input";
+import { mountJobs } from "./hud/jobs/view";
 import { mountLabels } from "./hud/labels";
 import { mountPanel } from "./hud/panel";
 import { modelSource } from "./hud/pickers/model-picker";
@@ -77,6 +78,7 @@ async function main(): Promise<void> {
   const form = mountBuildForm(stageRoot, store, daemon, models, () => setBuilding(false));
   panel.buildToggle.addEventListener("click", () => {
     form.close();
+    jobs.close();
     setBuilding(!building);
   });
   stage.onSlot = (cell) => form.open(cell);
@@ -86,12 +88,22 @@ async function main(): Promise<void> {
     onShown: (open) => panel.settingsToggle.classList.toggle("is-on", open),
   });
   settings = view;
+  const jobs = mountJobs(stageRoot, { api: daemon.jobs, store, onShown: (open) => panel.jobsToggle.classList.toggle("is-on", open) });
   const openSettings = (): void => {
     form.close();
     setBuilding(false);
     wizard.close();
+    jobs.close();
     view.open();
   };
+  const openJobs = (): void => {
+    form.close();
+    setBuilding(false);
+    wizard.close();
+    view.close();
+    jobs.open();
+  };
+  panel.jobsToggle.addEventListener("click", () => (jobs.isOpen() ? jobs.close() : openJobs()));
   panel.settingsToggle.addEventListener("click", () => (view.isOpen() ? view.close() : openSettings()));
   window.addEventListener("keydown", (ev) => {
     if (ev.key === "," && (ev.metaKey || ev.ctrlKey)) {
@@ -104,6 +116,7 @@ async function main(): Promise<void> {
   mountGate(panel.foot, store, daemon);
   mountInput(stageRoot, store, daemon, [
     () => view.close(),
+    () => jobs.back(),
     () => wizard.close(),
     () => form.close(),
     () => {

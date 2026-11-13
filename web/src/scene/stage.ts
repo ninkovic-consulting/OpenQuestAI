@@ -112,7 +112,8 @@ export class Stage {
 
   private onState(s: ViewState, prev: ViewState): void {
     if (s.plan && (s.plan !== this.plan || prev.plan === null)) this.rebuild(s.plan);
-    if (s.plan && (s.plan !== prev.plan || s.roomLights !== prev.roomLights)) this.residents.sync(s.plan, s.roomLights);
+    const moved = s.roomLights !== prev.roomLights || s.agents !== prev.agents || s.jobs !== prev.jobs;
+    if (s.plan && (s.plan !== prev.plan || moved)) this.residents.sync(s.plan, s.roomLights, s);
     this.props.setTalking(s.assistant === "speaking");
   }
 

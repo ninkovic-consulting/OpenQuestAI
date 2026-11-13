@@ -5,7 +5,9 @@
 import { cellKey, cellOwners } from "../scene/grid";
 import type { Automation, RunStatus } from "./automation-types";
 import type { Daemon } from "./daemon";
+import type { JobDetails } from "./job-types";
 import { MockAutomations } from "./mock-automations";
+import { MockJobs } from "./mock-jobs";
 import { MockPhone } from "./mock-phone";
 import { MockSettings } from "./mock-settings";
 import { hostAgentId, hostRefusal, hostRoom } from "./plan";
@@ -30,6 +32,10 @@ import type {
 } from "./types";
 
 const WORD_MS = 75;
+/** How often a job's report checks whether the assistant is free yet. */
+const REPORT_POLL_MS = 500;
+/** "ask tink ..." hands a job to Tink, as the host would. */
+const ASK_TINK = /^\s*ask tink\b[\s,:]*(?:to\s+)?/i;
 const LEVEL_MS = 33;
 
 const projectTool = (id: string, title: string, available: boolean): ToolRef => ({ id, title, available, built_in: false });
@@ -60,6 +66,11 @@ export class MockDaemon implements Daemon {
     perform: (a) => this.runAutomation(a),
   });
   readonly phone = new MockPhone();
+  readonly jobs = new MockJobs({
+    emit: <K extends OutboundType>(type: K, data: OutboundData[K]) => this.emit(type, data),
+    plan: () => this.plan,
+    report: (job) => this.reportJob(job),
+  });
   readonly settings = new MockSettings({
     plan: () => this.plan,
     changed: () => this.publish(),
@@ -88,6 +99,10 @@ export class MockDaemon implements Daemon {
     };
     this.store.dispatch({ kind: "snapshot", snapshot, initial: true });
     this.store.dispatch({ kind: "plan", plan: structuredClone(this.plan) });
+    void this.jobs.list().then((r) => {
+      if (r.ok) this.store.dispatch({ kind: "jobs", list: r.value });
+    });
+    this.jobs.announce();
     const name = (id: string): string => this.plan.agents.find((a) => a.id === id)?.name ?? id;
     const workshop = this.plan.rooms.find((r) => r.id === "workshop")?.name ?? "Workshop";
     this.at(300, () => this.emit("budget", { month: "2026-11", spent_usd: 18.42, cap_usd: 150 }));
@@ -99,7 +114,6 @@ export class MockDaemon implements Daemon {
         `The tests pass now. ${name("checker")} found one bad date format, and ${name("maker")} is fixing it in the ${workshop}.`,
       ),
     );
-    this.at(4200, () => this.emit("room.state", { room: "workshop", state: "active" }));
     this.at(9000, () =>
       this.emit("gate.request", {
         id: "gate-1",
@@ -130,6 +144,7 @@ export class MockDaemon implements Daemon {
         this.interrupt();
         break;
       case "gate.decision":
+        if (this.jobs.decide(event.data.id, event.data.decision)) break;
         this.emit("gate.resolved", { id: event.data.id, decision: event.data.decision });
         this.emit("notice", {
           level: "info",
@@ -160,6 +175,12 @@ export class MockDaemon implements Daemon {
         turns: [
           turn(5 * hour, "text", "Remember that the renderer rewrite is due in March.", "Noted. I will keep that with the engine notes."),
           turn(3 * hour, "automation", "", "It is time: there are two notes for today, both about the engine."),
+          turn(
+            2.8 * hour,
+            "job",
+            'Brass finished job 3f2a91c0, "Summarise this week\'s engine notes".\nBrass\'s result:\nThree things changed this week.',
+            "Brass has the engine notes summarised: three changes, one breakage that is already fixed, and the CSV path still has no tests.",
+          ),
           turn(2 * hour, "phone", "Is the Mac still awake?", "Yes. Nothing is running and the house is quiet."),
           turn(1 * hour, "voice", "Open the project notes.", "Opening them", "interrupted"),
         ],
@@ -220,11 +241,43 @@ export class MockDaemon implements Daemon {
     this.interrupt();
     this.emit("user.utterance", { text, source });
     this.setState("thinking");
+    if (ASK_TINK.test(text)) return this.askTink(text.replace(ASK_TINK, ""));
     // Asking for detail gets a reply several lines long, to exercise the caption.
     const long = /\b(more|detail|explain|why)\b/i.test(text);
     this.pending = this.at(900, () => {
       this.pending = null;
       this.say(long ? LONG_REPLY : "Everything is quiet. The workshop lights are on and the tests are green.");
+    });
+  }
+
+  /** The host hands the rest of the message to Tink as a job, and says so. */
+  private askTink(rest: string): void {
+    const brief = rest.trim() ? rest.trim().charAt(0).toUpperCase() + rest.trim().slice(1) : "Run the engine's test suite and say whether it passes.";
+    const made = this.jobs.handOffFromHost("maker", "workshop", brief);
+    const reply = typeof made === "string" ? made : `I asked Tink to take it in the Workshop: "${made.title}". I will tell you how it goes.`;
+    this.pending = this.at(700, () => {
+      this.pending = null;
+      this.say(reply);
+    });
+  }
+
+  /** A job ended: once the assistant is free, a turn of its own with no words from the user, as the daemon runs it. */
+  private reportJob(job: JobDetails): void {
+    if (this.speaking || this.pending !== null) {
+      this.at(REPORT_POLL_MS, () => this.reportJob(job));
+      return;
+    }
+    const name = this.plan.agents.find((a) => a.id === job.agent)?.name ?? job.agent;
+    const reply =
+      job.status === "done"
+        ? `${name} finished "${job.title}". ${job.result}`
+        : job.status === "failed"
+          ? `${name}'s job "${job.title}" failed: ${job.error}`
+          : `${name}'s job "${job.title}" was cancelled.`;
+    this.setState("thinking");
+    this.pending = this.at(900, () => {
+      this.pending = null;
+      this.say(reply);
     });
   }
 

@@ -90,7 +90,7 @@ function roomEditor(ctx: SettingsContext, plan: Plan, room: Room): HTMLElement {
 
   const tools = mountToolToggles(
     (folder) => ctx.propose(folder),
-    () => toolsNote(plan.assistant.name),
+    toolsNote,
     () => {
       toolsTouched = true;
       dirty();

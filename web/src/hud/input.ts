@@ -11,16 +11,13 @@ import { envelope } from "../net/types";
 import { makeComposer } from "./chat/composer";
 import { chatDock } from "./chat/dock";
 import type { HistoryLoader } from "./chat/history";
-import { type Focus, type KeyAction, routeKey } from "./chat/keys";
+import { type Focus, type KeyAction, OVERLAYS, routeKey } from "./chat/keys";
 import { SentLog } from "./chat/recall";
 import { Talk } from "./chat/talk";
 import { el } from "./dom";
 
 /** Things Escape can back out of, tried in order until one says it did something. */
 export type EscapeStep = () => boolean;
-
-/** Open over the scene and keeping the keyboard: Settings, the first-start wizard, the build form. */
-const OVERLAYS = ".settings:not([hidden]), .wizard-backdrop:not([hidden]), .build-form.is-open";
 
 function focusOf(target: EventTarget | null, field: HTMLTextAreaElement): Focus {
   if (target === field) return "field";

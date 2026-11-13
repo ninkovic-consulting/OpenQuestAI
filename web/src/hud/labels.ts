@@ -74,7 +74,9 @@ export function mountLabels(parent: HTMLElement, store: Store): (anchors: RoomAn
         chips.set(room.id, chip);
       }
       const light = s.roomLights[room.id] ?? room.state;
-      const agent = plan.agents.find((a) => a.id === room.agent)?.name;
+      // Whoever works there on a job now, else the room's own agent: a room can be lent for a job.
+      const worker = Object.entries(s.agents).find(([, a]) => a.state !== "idle" && a.job !== null && s.jobs[a.job]?.room === room.id)?.[0];
+      const agent = plan.agents.find((a) => a.id === (worker ?? room.agent))?.name;
       const tower = room.shape === "round";
       setText(chip.text, (light === "active" || tower) && agent ? `${room.name} · ${agent}` : room.name);
       chip.node.classList.toggle("is-active", light === "active" && !tower);
@@ -90,7 +92,7 @@ export function mountLabels(parent: HTMLElement, store: Store): (anchors: RoomAn
   style(store.get());
   void document.fonts.ready.then(() => style(store.get()));
   store.subscribe((s, prev) => {
-    if (s.plan !== prev.plan || s.roomLights !== prev.roomLights) style(s);
+    if (s.plan !== prev.plan || s.roomLights !== prev.roomLights || s.agents !== prev.agents || s.jobs !== prev.jobs) style(s);
   });
 
   return (anchors) => {

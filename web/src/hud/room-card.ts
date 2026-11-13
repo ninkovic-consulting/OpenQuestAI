@@ -2,13 +2,19 @@
 // model, which project folder, and its tools with what each can do today.
 
 import type { Store, ViewState } from "../net/store";
-import type { Plan } from "../net/types";
+import type { Plan, ToolRef } from "../net/types";
 import { el } from "./dom";
 
-/** Built-in tools run now; project tools wait for the next slice or for their program. */
+/** Built-in tools always run; a project tool needs its program on this Mac and a project folder on the room. */
 export type ToolState = "runs" | "waits" | "missing";
 
-const TOOL_WORD: Record<ToolState, string> = { runs: "runs today", waits: "next slice", missing: "not installed" };
+const TOOL_WORD: Record<ToolState, string> = { runs: "ready", waits: "needs a project folder", missing: "not installed" };
+
+function toolState(tool: ToolRef, hasProject: boolean): ToolState {
+  if (tool.built_in) return "runs";
+  if (!tool.available) return "missing";
+  return hasProject ? "runs" : "waits";
+}
 
 export interface RoomCardModel {
   name: string;
@@ -28,8 +34,10 @@ export function roomCardModel(plan: Plan, roomId: string): RoomCardModel | null 
     agent: agent?.name ?? room.agent,
     model: room.model,
     project: room.project,
-    tools: room.tools.map((t) => ({ title: t.title, state: t.built_in ? "runs" : t.available ? "waits" : "missing" })),
-    note: `Only ${plan.assistant.name}'s built-in tools run in this slice. Project tools start working when the other agents wake up.`,
+    tools: room.tools.map((t) => ({ title: t.title, state: toolState(t, room.project !== null) })),
+    note: room.project
+      ? "An agent working here reads and searches the project freely. Writing files and running these programs ask you first."
+      : "Attach a project folder to this room and agents can work in it with these tools.",
   };
 }
 

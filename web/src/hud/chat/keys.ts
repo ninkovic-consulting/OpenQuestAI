@@ -23,9 +23,16 @@ export interface KeyPress {
   composing: boolean;
 }
 
+/**
+ * Open over the scene and keeping the keyboard: Settings, the Jobs panel (and
+ * its form), the first-start wizard, the build form. While one is open the
+ * message field takes no keys typed elsewhere.
+ */
+export const OVERLAYS = ".settings:not([hidden]), .jobs:not([hidden]), .wizard-backdrop:not([hidden]), .build-form.is-open";
+
 export interface KeyContext {
   focus: Focus;
-  /** Settings, the wizard or the build form is open over the scene. */
+  /** Settings, the Jobs panel, the wizard or the build form is open over the scene (see OVERLAYS). */
   overlay: boolean;
   fieldEmpty: boolean;
   speaking: boolean;

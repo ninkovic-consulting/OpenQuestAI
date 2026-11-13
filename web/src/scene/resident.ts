@@ -1,11 +1,18 @@
-// One standing figure: its model scaled to its real height, an idle clip and
-// a working clip that cross-fade, and a fade out and in when it changes rooms.
+// One standing figure: its model scaled to its real height, an idle clip, a
+// working clip and (once loaded) a walk, which cross-fade; a fade out and in
+// when it changes rooms. At work on a job it paces between two spots in the
+// room (pace.ts) with a thin mustard ring at its feet; waiting for the
+// owner's yes it stands still and the ring turns alert red.
 
 import * as THREE from "three";
 import type { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import type { AgentWork } from "../net/job-types";
 import { IDLE_CLIP, type Character, type WorkMotion } from "./cast";
 import { leanAxes, leanClip, pinRoot, rootCentre, trimClip } from "./motion";
+import { paceAt, TURN_S } from "./pace";
+import { palette } from "./palette";
 import { sanitizeModel } from "./sanitize";
+import type { Spot } from "./spot";
 
 /** Where a figure stands: a room, a spot on its floor, and the room's group, whose rise it follows. */
 export interface Placement {
@@ -14,30 +21,47 @@ export interface Placement {
   z: number;
   facing: number;
   group: THREE.Object3D;
+  /** The other end of its pacing at work; null when the room has no room for it. */
+  pace: Spot | null;
 }
 
 const CROSS_S = 0.8;
+/** Between walking and standing the clips change faster, so the feet do not slide. */
+const STEP_CROSS_S = 0.3;
 const FADE_S = 0.5;
+/** The walk clip's pace for a figure 1.78 m tall, in metres a second, at WALK_RATE. */
+const WALK_SPEED = 0.95;
+/** The walk clip plays a little slower than recorded: an unhurried pace round a room. */
+const WALK_RATE = 0.8;
+const REF_HEIGHT = 1.78;
+const RING = { inner: 0.34, outer: 0.37, lift: 0.015, opacity: 0.85 } as const;
 
 export class Resident {
   readonly root = new THREE.Group();
   private readonly mixer: THREE.AnimationMixer;
   private readonly materials: THREE.Material[] = [];
+  private readonly ring: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+  private walk: THREE.AnimationAction | null = null;
+  private current: THREE.AnimationAction;
   private placement: Placement | null = null;
   /** Where to go once faded out; null to stay hidden. */
-  private next: { placement: Placement | null; working: boolean } | null = null;
-  private working = false;
+  private next: { placement: Placement | null; work: AgentWork } | null = null;
+  private work: AgentWork = "idle";
+  /** Seconds into pacing on this job (it starts facing its work); it stops while the figure waits. */
+  private paced = TURN_S;
   private opacity = 0;
 
   private constructor(
     model: THREE.Object3D,
     private readonly idle: THREE.AnimationAction,
-    private readonly work: THREE.AnimationAction,
+    private readonly working: THREE.AnimationAction,
+    private readonly anchor: THREE.Vector2,
     readonly height: number,
   ) {
     this.root.add(model);
     this.root.visible = false;
     this.mixer = idle.getMixer();
+    this.current = idle;
     model.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return;
       o.castShadow = true;
@@ -46,6 +70,12 @@ export class Resident {
       o.frustumCulled = false;
       this.materials.push(...[o.material].flat());
     });
+    const ringMaterial = new THREE.MeshBasicMaterial({ color: palette.mustard, transparent: true, opacity: 0, depthWrite: false, toneMapped: false });
+    this.ring = new THREE.Mesh(new THREE.RingGeometry(RING.inner, RING.outer, 64), ringMaterial);
+    this.ring.rotation.x = -Math.PI / 2;
+    this.ring.position.y = RING.lift;
+    this.ring.visible = false;
+    this.root.add(this.ring);
   }
 
   /** Load a character's model; null when the model or its clips are missing. `phase` (0 to 1) offsets the idle. */
@@ -66,7 +96,18 @@ export class Resident {
     const work = mixer.clipAction(pinRoot(workClip(workSource, character.work, model), anchor));
     work.timeScale = character.work.speed;
     if (character.work.pingPong) work.setLoop(THREE.LoopPingPong, Infinity);
-    return new Resident(model, idle, work, character.height);
+    return new Resident(model, idle, work, anchor, character.height);
+  }
+
+  /** The character's walk, kept on the spot: the figure itself moves across the floor at the clip's pace. */
+  addWalk(clip: THREE.AnimationClip): void {
+    if (this.walk) return;
+    this.walk = this.mixer.clipAction(pinRoot(clip, this.anchor));
+    this.walk.timeScale = WALK_RATE;
+  }
+
+  get hasWalk(): boolean {
+    return this.walk !== null;
   }
 
   get room(): string | null {
@@ -74,17 +115,21 @@ export class Resident {
   }
 
   /**
-   * Stand at `placement` (null hides the figure), working or not. A new spot
-   * fades out and in; the same spot only cross-fades the clips.
+   * Stand at `placement` (null hides the figure), doing `work`. A new spot,
+   * or the end of a job away from the spot, fades out and in; otherwise the
+   * clips cross-fade where it stands.
    */
-  set(placement: Placement | null, working: boolean): void {
-    if (this.next || !samePlace(this.placement, placement)) {
-      this.next = { placement, working };
+  set(placement: Placement | null, work: AgentWork): void {
+    const away = work === "idle" && this.placement !== null && Math.hypot(this.root.position.x - this.placement.x, this.root.position.z - this.placement.z) > 0.05;
+    if (this.next || away || !samePlace(this.placement, placement)) {
+      this.next = { placement, work };
       return;
     }
     // Same spot; the room's group may be a new one after a rebuild.
     this.placement = placement;
-    this.setWorking(working, false);
+    if (work === "idle") this.paced = TURN_S;
+    this.work = work;
+    this.showRing();
   }
 
   /** The figure's middle and reach, for culling; null when hidden. */
@@ -95,32 +140,66 @@ export class Resident {
     return sphere;
   }
 
-  /** Advance the fades; `animate` false skips the skeleton, for a figure no one can see. */
+  /** Advance the fades and the pacing; `animate` false skips the skeleton, for a figure no one can see. */
   update(dt: number, animate: boolean): void {
     if (this.next) {
       this.fade(-dt / FADE_S);
       if (this.opacity === 0) {
-        const { placement, working } = this.next;
+        const { placement, work } = this.next;
         this.next = null;
         this.placement = placement;
-        this.setWorking(working, true);
+        this.work = work;
+        this.paced = TURN_S;
+        this.showRing();
+        this.play(this.target(), true);
         if (placement) {
           this.root.position.set(placement.x, 0, placement.z);
           this.root.rotation.y = placement.facing;
         }
       }
-    } else if (this.placement) this.fade(dt / FADE_S);
+    } else if (this.placement) {
+      this.fade(dt / FADE_S);
+      this.move(dt);
+    }
     if (this.placement) this.root.position.y = this.placement.group.position.y;
     if (animate && this.root.visible) this.mixer.update(dt);
   }
 
-  private setWorking(working: boolean, now: boolean): void {
-    if (working === this.working) return;
-    this.working = working;
-    const [from, to] = working ? [this.idle, this.work] : [this.work, this.idle];
+  /** Pace while working; stand where it is while waiting; at its spot otherwise. */
+  private move(dt: number): void {
+    const p = this.placement;
+    if (!p) return;
+    const pacing = this.work !== "idle" && p.pace !== null && this.walk !== null;
+    if (pacing && p.pace) {
+      if (this.work === "working") this.paced += dt;
+      const speed = (WALK_SPEED * WALK_RATE * this.height) / REF_HEIGHT;
+      const pose = paceAt(p, p.pace, this.paced, speed);
+      this.root.position.x = pose.x;
+      this.root.position.z = pose.z;
+      this.root.rotation.y = pose.facing;
+      this.play(this.work === "working" && pose.walking ? (this.walk ?? this.working) : this.work === "working" ? this.working : this.idle, false);
+      return;
+    }
+    this.play(this.target(), false);
+  }
+
+  /** The clip for standing still in the current work. */
+  private target(): THREE.AnimationAction {
+    return this.work === "working" ? this.working : this.idle;
+  }
+
+  private play(to: THREE.AnimationAction, now: boolean): void {
+    const from = this.current;
+    if (to === from) return;
+    this.current = to;
     to.reset().play();
     if (now) from.stop();
-    else from.crossFadeTo(to, CROSS_S, false);
+    else from.crossFadeTo(to, to === this.walk || from === this.walk ? STEP_CROSS_S : CROSS_S, false);
+  }
+
+  private showRing(): void {
+    this.ring.visible = this.work !== "idle";
+    this.ring.material.color.setHex(this.work === "waiting" ? palette.alert : palette.mustard);
   }
 
   private fade(step: number): void {
@@ -134,6 +213,7 @@ export class Resident {
       }
       m.opacity = opacity;
     }
+    this.ring.material.opacity = RING.opacity * opacity;
     this.opacity = opacity;
     this.root.visible = opacity > 0;
   }
