@@ -65,6 +65,19 @@ export class Api {
     }
   }
 
+  /** A route that answers raw bytes, such as an image; null when it is not there (404). */
+  async blob(path: string): Promise<Result<Blob | null>> {
+    let res: Response;
+    try {
+      res = await fetch(path, { headers: { authorization: `Bearer ${this.token}` } });
+    } catch {
+      return refused(UNREACHABLE);
+    }
+    if (res.status === 404) return ok(null);
+    if (!res.ok) return refused(readRefusal(res.status, await res.text()).message);
+    return ok(await res.blob());
+  }
+
   async proposeTools(folder: string): Promise<ProposeResult> {
     let res: Response;
     try {

@@ -42,6 +42,7 @@ _FIELDS = {
     "context": int,
     "tools": bool,
     "tools_recommended": bool,
+    "images": bool,
     "license": str,
 }
 
@@ -62,6 +63,9 @@ class LocalModel:
     context: int
     tools: bool
     tools_recommended: bool
+    images: bool
+    """The weights include a vision encoder. Vision still sends such a model no images: mlx-lm
+    loads only the text part, and reading images would need mlx-vlm (`local.SEES_IMAGES`)."""
     license: str
 
 

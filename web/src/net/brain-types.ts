@@ -12,6 +12,8 @@ export interface BrainMode {
   local_backend: string;
   local_model: string;
   local_tools: boolean | null;
+  /** Whether the local model can read images; an older daemon leaves it out, which counts as no. */
+  local_images?: boolean;
 }
 
 export type Fit = "comfortable" | "tight" | "too_big";

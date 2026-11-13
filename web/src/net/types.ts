@@ -3,8 +3,13 @@
 
 import { asBrainMode } from "./brain-guards";
 import type { BrainMode } from "./brain-types";
+import type { ImageRef } from "./image-types";
 import { asAgentState, asJob, gateFieldsOk } from "./job-guards";
 import type { AgentWork, Job } from "./job-types";
+import { asProcedureChanged } from "./procedure-guards";
+import type { ProcedureChanged } from "./procedure-types";
+import { asMadeToolChanged, asProposalChanged } from "./proposal-guards";
+import type { MadeToolChanged, ProposalChanged } from "./proposal-types";
 
 export type AssistantState = "idle" | "listening" | "transcribing" | "thinking" | "speaking";
 export type BrainName = "claude" | "local" | "fake";
@@ -79,7 +84,8 @@ export interface OutboundData {
   "state.changed": { state: AssistantState; brain: BrainName | null };
   budget: { month: string; spent_usd: number; cap_usd: number };
   "house.changed": { revision: number };
-  "user.utterance": { text: string; source: "voice" | "text" | "phone" };
+  /** `text` may be empty when images came with it; an older daemon leaves `images` out. */
+  "user.utterance": { text: string; source: "voice" | "text" | "phone"; images?: ImageRef[] };
   "vision.delta": { text: string };
   "vision.reply": { text: string; turn_id: string };
   "voice.level": { level: number };
@@ -106,6 +112,9 @@ export interface OutboundData {
   "job.changed": Job;
   "agent.state": { agent: string; state: AgentWork; job: string | null };
   presence: Presence;
+  "proposal.changed": ProposalChanged;
+  "made_tool.changed": MadeToolChanged;
+  "procedure.changed": ProcedureChanged;
   notice: { level: NoticeLevel; text: string };
 }
 
@@ -132,7 +141,8 @@ export type GateRequest = OutboundData["gate.request"];
 
 export interface InboundData {
   hello: { token: string };
-  "input.text": { text: string };
+  /** `images`: ids from `POST /api/images`, left out when there are none; `text` may then be empty. */
+  "input.text": { text: string; images?: string[] };
   "input.ptt": { down: boolean };
   "input.interrupt": Record<string, never>;
   "gate.decision": { id: string; decision: "allow" | "deny" };
@@ -204,6 +214,9 @@ const OUTBOUND_TYPES: ReadonlySet<string> = new Set<OutboundType>([
   "job.changed",
   "agent.state",
   "presence",
+  "proposal.changed",
+  "made_tool.changed",
+  "procedure.changed",
   "notice",
 ]);
 
@@ -213,6 +226,9 @@ const DATA_CHECKS: Partial<Record<OutboundType, (data: Record<string, unknown>) 
   "agent.state": (d) => asAgentState(d) !== null,
   "brain.mode": (d) => asBrainMode(d) !== null,
   "gate.request": gateFieldsOk,
+  "proposal.changed": (d) => asProposalChanged(d) !== null,
+  "made_tool.changed": (d) => asMadeToolChanged(d) !== null,
+  "procedure.changed": (d) => asProcedureChanged(d) !== null,
   presence: (d) => typeof d["away"] === "boolean" && typeof d["known"] === "boolean" && typeof d["since"] === "number",
 };
 

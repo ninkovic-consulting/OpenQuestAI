@@ -184,6 +184,13 @@ class GateConfig(_Section):
             "edit_file": "ask",
             "run_program": "ask",
             "send_to_phone": "free",
+            "save_procedure": "free",
+            "list_procedures": "free",
+            "read_procedure": "free",
+            "remove_procedure": "free",
+            "propose_tool": "free",
+            "propose_change": "free",
+            "my_proposals": "free",
         }
     )
 
@@ -246,6 +253,11 @@ class PathsConfig(_Section):
     @property
     def token(self) -> Path:
         return self.home / "token"
+
+    @property
+    def images(self) -> Path:
+        """The images the owner sent (`vision.attachments`), part of the conversation."""
+        return self.home / "images"
 
     @property
     def config_file(self) -> Path:

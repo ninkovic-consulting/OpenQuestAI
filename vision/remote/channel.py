@@ -13,6 +13,13 @@ From the owner:
   a leading slash;
 - a voice note: downloaded, decoded and transcribed locally, then its words
   are the turn;
+- images (any other attachment, up to `MAX_IMAGES` per message): each is
+  downloaded from Discord's attachment hosts only (the transport checks), then
+  checked, cleaned and kept like an image from the window (`Host.keep_image`,
+  which reads the type from the bytes), and all that are accepted go with the
+  message's turn; the text is the message, and images alone are put to the
+  brain as the owner sending them. What is not used gets one line saying why;
+  a message with nothing usable gets the "text, voice notes and images" line;
 - any other text: a turn.
 
 Turns wait their turn: each is queued (at most five waiting) and starts only
@@ -30,8 +37,10 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from vision.core.events import Notice
-from vision.core.interfaces import TurnRecord
+from vision.attachments.clean import MAX_BYTES as MAX_IMAGE_BYTES
+from vision.attachments.clean import NOT_AN_IMAGE, TOO_BIG, ImageRefused
+from vision.core.events import MAX_IMAGES, Notice
+from vision.core.interfaces import Picture, TurnRecord
 from vision.remote import audio, words
 from vision.remote.approvals import Approvals
 from vision.remote.ears import Ears
@@ -60,6 +69,7 @@ class _Job:
     chat_id: str
     text: str
     voice: bool
+    images: tuple[Picture, ...] = ()
 
 
 def command(text: str) -> str | None:
@@ -142,7 +152,8 @@ class PhoneChannel:
             await self._link.save()
         transport = self._link.transport
         voice = next((a for a in m.attachments if a.voice or a.content_type.startswith("audio/")), None)
-        match command(m.text):
+        files = list(m.attachments) if voice is None else []
+        match command(m.text) if not files else None:
             case "status":
                 await transport.send(m.chat_id, words.status_line(self._link.host.status(), self.waiting))
             case "stop":
@@ -151,6 +162,8 @@ class PhoneChannel:
                 await transport.send(m.chat_id, words.help_line())
             case None if voice is not None:
                 await self._voice_note(m.chat_id, voice)
+            case None if files:
+                await self._with_images(m.chat_id, m.text.strip(), files)
             case None if m.text.strip():
                 await self._enqueue(_Job(m.chat_id, m.text.strip(), voice=False))
             case _:
@@ -178,6 +191,34 @@ class PhoneChannel:
             await self._link.transport.send(job.chat_id, words.TOO_MANY)
             return
         await self._link.transport.typing(job.chat_id)
+
+    # ------------------------------------------------------------ images
+
+    async def _with_images(self, chat_id: str, text: str, files: list[Attachment]) -> None:
+        """Keep every attachment that is an accepted image and run the message with them."""
+        transport = self._link.transport
+        await transport.typing(chat_id)
+        kept: list[Picture] = []
+        refused: list[str] = []
+        for file in files[:MAX_IMAGES]:
+            if file.size > MAX_IMAGE_BYTES:
+                refused.append(TOO_BIG)
+                continue
+            try:
+                data = await transport.fetch(file, MAX_IMAGE_BYTES)
+                kept.append(await self._link.host.keep_image(data))
+            except Unreachable:
+                refused.append(words.IMAGE_NOT_FETCHED)
+            except ImageRefused as exc:
+                refused.append(str(exc))
+        left_out = max(0, len(files) - MAX_IMAGES)
+        if not kept and not text and not left_out and set(refused) == {NOT_AN_IMAGE}:
+            await transport.send(chat_id, words.ONLY_TEXT)
+            return
+        if refused or left_out:
+            await transport.send(chat_id, words.not_used(refused, left_out, MAX_IMAGES))
+        if kept or text:
+            await self._enqueue(_Job(chat_id, text, voice=False, images=tuple(kept)))
 
     # ------------------------------------------------------------ voice notes
 
@@ -242,7 +283,7 @@ class PhoneChannel:
     async def _serve(self, job: _Job) -> None:
         typing = asyncio.create_task(self._keep_typing(job.chat_id))
         try:
-            record = await self._run_when_idle(job.text)
+            record = await self._run_when_idle(job.text, job.images)
         finally:
             typing.cancel()
             await asyncio.gather(typing, return_exceptions=True)
@@ -257,13 +298,14 @@ class PhoneChannel:
         if job.voice and self._link.state().voice_replies and record.reply.strip():
             await self._voice_reply(job.chat_id, record.reply)
 
-    async def _run_when_idle(self, text: str) -> TurnRecord:
+    async def _run_when_idle(self, text: str, images: tuple[Picture, ...]) -> TurnRecord:
         host = self._link.host
+        extra = {"images": images} if images else {}
         while True:
             while host.busy():
                 await asyncio.sleep(IDLE_POLL_S)
             try:
-                return await host.run_turn(text, speak=self._link.state().speak_on_mac)
+                return await host.run_turn(text, speak=self._link.state().speak_on_mac, **extra)
             except TurnsBusy:
                 await asyncio.sleep(IDLE_POLL_S)
 

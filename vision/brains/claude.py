@@ -14,13 +14,25 @@ volatile goes into it.
 History stays append-only between trims. A turn that did not finish normally
 (interrupted, refused, cut off mid tool call) is stored as the user's message
 plus the text that was actually said, so the transcript is always valid.
+
+Images go in the user's message of their turn, as base64 `image` blocks before
+the words (Claude reads images best before the text about them). They stay in
+the history, so a later turn can still refer to them, and they are part of the
+cached prefix, read back at the cache-read price on every later call. They are
+dropped only at a trim, because editing an earlier message would invalidate the
+cache and every later thinking block: the history is trimmed when it reaches
+`history_turns`, or sooner when keeping its images would put more than
+`MAX_CARRIED_IMAGES` in one request, and a trim replaces every image in the
+kept turns with a one-line note. Image tokens are input tokens in the usage
+the API returns, so `charge` counts them in the budget like any other.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass, field
 from typing import Any
@@ -38,6 +50,7 @@ from vision.core.interfaces import (
     BrainEvent,
     Budget,
     Memory,
+    Picture,
     TextDelta,
     ToolHost,
     TurnDone,
@@ -51,6 +64,10 @@ MAX_TOOL_ROUNDS = 8
 DEFAULT_HISTORY_TURNS = 20
 DEFAULT_HEAVY_MAX_TOKENS = 8192
 REFUSAL_LINE = "I can't help with that one."
+MAX_CARRIED_IMAGES = 20
+"""The most images one request carries: above 20 the API applies a stricter size limit to
+every image in it, and each one is paid for again (at the cache-read price) on every call."""
+DROPPED_IMAGE = {"type": "text", "text": "[An image the owner sent earlier; no longer attached.]"}
 _THINKING = frozenset({"thinking", "redacted_thinking"})
 
 ClientFactory = Callable[[str, float], Any]
@@ -115,10 +132,40 @@ def charge(budget: Budget, stream: Any) -> Charged:
 
 def _without_thinking(message: Message) -> Message | None:
     content = message["content"]
-    if message["role"] != "assistant" or isinstance(content, str):
+    if isinstance(content, str):
         return message
+    if message["role"] == "user":
+        return {**message, "content": [DROPPED_IMAGE if b.get("type") == "image" else b for b in content]}
     kept = [b for b in content if b.get("type") not in _THINKING]
     return {**message, "content": kept} if kept else None
+
+
+def user_content(text: str, images: Sequence[Picture]) -> str | list[Message]:
+    """The user's message: the words alone, or the images first and then the words."""
+    if not images:
+        return text
+    blocks: list[Message] = [
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": p.media_type,
+                "data": base64.standard_b64encode(p.data).decode("ascii"),
+            },
+        }
+        for p in images
+    ]
+    return [*blocks, {"type": "text", "text": text}]
+
+
+def count_images(messages: list[Message]) -> int:
+    return sum(
+        1
+        for m in messages
+        if m["role"] == "user" and not isinstance(m["content"], str)
+        for b in m["content"]
+        if b.get("type") == "image"
+    )
 
 
 @dataclass
@@ -189,15 +236,17 @@ class ClaudeBrain:
 
     # ------------------------------------------------------------ one turn
 
-    async def send(self, text: str, *, heavy: bool = False) -> AsyncIterator[BrainEvent]:
+    async def send(
+        self, text: str, *, heavy: bool = False, images: Sequence[Picture] = ()
+    ) -> AsyncIterator[BrainEvent]:
         if self._client is None:
             yield BrainError("auth", "No Anthropic API key is stored. Add one in Settings, under API key.", False)
             return
-        self._trim()
+        self._trim(len(images))
         if self._system is None:
             self._system = self._memory.core()
         model = self._models.heavy if heavy else self._models.talk
-        turn = _Turn(model=model, heavy=heavy, messages=[{"role": "user", "content": text}])
+        turn = _Turn(model=model, heavy=heavy, messages=[{"role": "user", "content": user_content(text, images)}])
         error: BrainError | None = None
         said: list[str] = []
         try:
@@ -314,9 +363,15 @@ class ClaudeBrain:
             reply = {"role": "assistant", "content": [{"type": "text", "text": text}]}
             self._history.append([turn.messages[0], reply])
 
-    def _trim(self) -> None:
-        """Keep the history bounded: drop the oldest half and every thinking block."""
-        if len(self._history) < self._max_turns:
+    def _trim(self, new_images: int = 0) -> None:
+        """Keep the history bounded: drop the oldest half, every thinking block and every image.
+
+        It runs when the history is full, or when its images and the `new_images` of the
+        coming turn would be more than `MAX_CARRIED_IMAGES`.
+        """
+        carried = sum(count_images(past) for past in self._history)
+        full = len(self._history) >= self._max_turns
+        if not full and (carried + new_images <= MAX_CARRIED_IMAGES or not carried):
             return
         kept = self._history[-(self._max_turns // 2) :]
         self._history = [

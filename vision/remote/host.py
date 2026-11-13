@@ -6,15 +6,18 @@ a fake); `DaemonHost` is the real one over a running `Daemon`.
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from vision.core.bus import Bus
 from vision.core.events import GateRequest, State
-from vision.core.interfaces import AuditRecord, TurnRecord
+from vision.core.interfaces import AuditRecord, Picture, TurnRecord
 from vision.house.tools import load_catalog
 from vision.presence import Seen
+from vision.proposals.model import TOOL_PREFIX
 
 if TYPE_CHECKING:
     import numpy as np
@@ -26,6 +29,9 @@ PHONE_NEVER = frozenset({"shell"})
 PHONE_OFF_BY_DEFAULT = frozenset({"run_program"})
 """Tools the phone does not approve until the owner adds them in Settings, Phone: a
 resident's `run_program` runs code from the project."""
+MADE_PREFIX = TOOL_PREFIX
+"""The tools agents wrote (`vision.proposals`) run only after a yes at the Mac: the owner
+approved the script there and reads each run's input and reach there."""
 
 
 class TurnsBusy(RuntimeError):
@@ -50,8 +56,14 @@ class Host(Protocol):
         """True while a turn runs, someone speaks at the Mac, or a gate request waits."""
         ...
 
-    async def run_turn(self, text: str, *, speak: bool) -> TurnRecord:
-        """Run a phone turn now and wait for it. Raises `TurnsBusy`."""
+    async def run_turn(self, text: str, *, speak: bool, images: Sequence[Picture] = ()) -> TurnRecord:
+        """Run a phone turn now, with the images that came with it, and wait for it.
+        Raises `TurnsBusy`."""
+        ...
+
+    async def keep_image(self, data: bytes) -> Picture:
+        """Check, clean and keep an image the owner sent, as the window's upload does.
+        Raises `vision.attachments.ImageRefused` with a line for people."""
         ...
 
     async def interrupt(self) -> None: ...
@@ -98,14 +110,17 @@ class DaemonHost:
     def busy(self) -> bool:
         return self._d.busy()
 
-    async def run_turn(self, text: str, *, speak: bool) -> TurnRecord:
+    async def run_turn(self, text: str, *, speak: bool, images: Sequence[Picture] = ()) -> TurnRecord:
         session = self._d.session
         if session is None or self.busy():
             raise TurnsBusy
         try:
-            return await session.run_phone(text, speak=speak)
+            return await session.run_phone(text, speak=speak, images=images)
         except RuntimeError as exc:
             raise TurnsBusy from exc
+
+    async def keep_image(self, data: bytes) -> Picture:
+        return await asyncio.to_thread(self._d.images.add, data)
 
     async def interrupt(self) -> None:
         if self._d.session is not None:

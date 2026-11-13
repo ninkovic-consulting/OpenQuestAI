@@ -6,6 +6,8 @@
   channel itself, which could not arrive anyway;
 - requests that need a yes (`gate.request`), handed to `Approvals`, which
   also edits each one when it ends (`gate.resolved`);
+- a line saying an agent's proposal waits at the Mac (`proposal`, by the
+  approvals choice), with no buttons: proposals are decided in the window;
 - the host's report of every finished job, wherever it was handed off from
   (`job_result`, called by the daemon's job reporter, not from the bus); a
   job handed off from the phone reports there unless job results are never.
@@ -102,6 +104,12 @@ class Notifier:
                     await self._outbox.send(f"automation:{event.id}:{started}", automation_line(event))
             case Notice(level="warn" | "error") if not event.text.startswith(APP_ONLY) and self.wants("warnings"):
                 await self._outbox.send(f"notice:{event.ts}:{event.text}", notice_line(event))
+
+    async def proposal(self, key: str, text: str) -> None:
+        """An agent's proposal arrived: a short line pointing at the Mac, by the approvals choice.
+        It never carries buttons: proposals are decided in the window only."""
+        if self.wants("approvals"):
+            await self._outbox.send(key, text)
 
     async def job_result(self, job_id: str, text: str, *, from_phone: bool, started_at: float) -> None:
         """The host's words about a finished job; `started_at` is when the report's turn began."""

@@ -5,6 +5,7 @@
 
 import type { Caption, ViewState } from "../../net/store";
 import { asOrigin, type HistoryTurn, type Origin } from "../chat/entries";
+import { imageMark } from "../chat/thumbs";
 import { gateCard, type GateCard } from "../gate";
 
 export type WidgetState = "idle" | "listening" | "thinking" | "speaking" | "connecting" | "offline";
@@ -56,25 +57,34 @@ export interface Exchange {
 /** Still at work on a turn: what was said has no reply yet, but one may come. */
 const busy = (assistant: ViewState["assistant"]): boolean => assistant !== "idle";
 
+/** The label with how many images came with the words: "You · typed · 2 images". */
+export function withImageMark(label: string, images: number): string {
+  const mark = imageMark(images);
+  return mark ? `${label} · ${mark}` : label;
+}
+
 /**
- * The latest exchange: a message just sent from the widget (`pending`), else the
- * live caption, else the last turn from before the widget opened (`earlier`).
+ * The latest exchange: a message just sent from the widget (`pending`, with
+ * `pendingImages` images), else the live caption, else the last turn from
+ * before the widget opened (`earlier`).
  */
 export function latestExchange(
   caption: Caption,
   assistant: ViewState["assistant"],
   pending: string | null,
   earlier: HistoryTurn | null,
+  pendingImages = 0,
 ): Exchange | null {
-  if (pending !== null) return { who: whoLabel("text"), user: pending, reply: "", status: "Sent", streaming: false };
-  if (caption.user !== "" || caption.reply !== "") {
+  if (pending !== null) return { who: withImageMark(whoLabel("text"), pendingImages), user: pending, reply: "", status: "Sent", streaming: false };
+  if (caption.user !== "" || caption.reply !== "" || caption.images) {
     const origin = asOrigin(caption.source);
     const status = caption.reply !== "" ? "" : busy(assistant) ? "Waiting for the reply" : "No reply";
-    return { who: whoLabel(origin, caption.agent), user: caption.user, reply: caption.reply, status, streaming: caption.streaming };
+    const who = withImageMark(whoLabel(origin, caption.agent), caption.images?.length ?? 0);
+    return { who, user: caption.user, reply: caption.reply, status, streaming: caption.streaming };
   }
   if (earlier === null) return null;
   return {
-    who: whoLabel(earlier.origin, earlier.agent),
+    who: withImageMark(whoLabel(earlier.origin, earlier.agent), earlier.images?.length ?? 0),
     user: earlier.user,
     reply: earlier.reply,
     status: earlier.reply !== "" ? "" : "No reply",
@@ -90,11 +100,11 @@ export interface WidgetView {
   gate: GateCard | null;
 }
 
-export function widgetView(s: ViewState, held: boolean, pending: string | null, earlier: HistoryTurn | null): WidgetView {
+export function widgetView(s: ViewState, held: boolean, pending: string | null, earlier: HistoryTurn | null, pendingImages = 0): WidgetView {
   return {
     name: s.plan?.assistant.name ?? "",
     state: widgetState(s, held),
-    exchange: latestExchange(s.caption, s.assistant, pending, earlier),
+    exchange: latestExchange(s.caption, s.assistant, pending, earlier, pendingImages),
     gate: gateCard(s),
   };
 }

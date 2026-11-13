@@ -80,3 +80,18 @@ def short_core(core: str) -> str:
         return core
     cut = core.rfind("\n", 0, LOCAL_CORE_CHARS)
     return core[: cut if cut > 0 else LOCAL_CORE_CHARS]
+
+
+def cannot_see(images: int, *, offline: bool) -> str:
+    """What the assistant says when a message with images reaches the local model, which
+    cannot read them: plainly, so an image is never silently dropped."""
+    what = "the image you sent" if images == 1 else f"the {images} images you sent"
+    if offline:
+        return (
+            f"The model answering now runs on this Mac and can't see images, so I haven't looked at "
+            f"{what}. Images need Claude: turn offline mode off in Settings, under Models, and send it again."
+        )
+    return (
+        f"Claude can't be reached right now, and the local model answering instead can't see images, "
+        f"so I haven't looked at {what}. Send it again once Claude is back."
+    )

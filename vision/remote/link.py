@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from vision.core.interfaces import AuditRecord
-from vision.remote.host import PHONE_NEVER, PHONE_OFF_BY_DEFAULT, Host
+from vision.remote.host import MADE_PREFIX, PHONE_NEVER, PHONE_OFF_BY_DEFAULT, Host
 from vision.remote.pairing import Pairing
 from vision.remote.store import PhoneState
 from vision.remote.transport import Transport, Unreachable
@@ -37,7 +37,7 @@ class Link:
         return state.paired and user_id == state.owner_id
 
     def phone_may_approve(self, tool: str) -> bool:
-        if tool in PHONE_NEVER:
+        if tool in PHONE_NEVER or tool.startswith(MADE_PREFIX):
             return False
         allowed = self.state().phone_tools
         if allowed is None:

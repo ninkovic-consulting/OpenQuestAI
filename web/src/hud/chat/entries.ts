@@ -4,6 +4,7 @@
 // the thread can set it apart when the owner is back. Every function is
 // pure; the dock feeds them.
 
+import type { ImageRef } from "../../net/image-types";
 import type { Caption } from "../../net/store";
 
 /** Where a turn came from, when that is known. */
@@ -30,6 +31,8 @@ export interface Entry {
   toGate: boolean;
   /** Arrived or changed while the window was not being looked at, and not seen since. */
   away?: true;
+  /** Images the owner sent with the words; left out when there are none. */
+  images?: ImageRef[];
 }
 
 export interface Thread {
@@ -45,6 +48,8 @@ export interface HistoryTurn {
   user: string;
   reply: string;
   status: "ok" | "interrupted" | "failed";
+  /** Missing counts as none. */
+  images?: ImageRef[];
 }
 
 export const emptyThread = (): Thread => ({ entries: [], nextId: 1 });
@@ -64,9 +69,15 @@ function add(t: Thread, entry: Omit<Entry, "id">, beforePending: boolean): Threa
   return { entries: [...t.entries.slice(0, at), made, ...t.entries.slice(at)], nextId: t.nextId + 1 };
 }
 
-/** A message typed here: shown at once, below everything, until the daemon echoes it. */
-export function sent(t: Thread, text: string, toGate: boolean): Thread {
-  return add(t, { user: text, origin: "text", reply: "", phase: "sending", ended: null, toGate }, false);
+/** Only a non-empty list is kept on an entry. */
+const withImages = (images: readonly ImageRef[] | undefined): { images?: ImageRef[] } => (images && images.length > 0 ? { images: [...images] } : {});
+
+/** Which images, so an echo is matched to the message it repeats. */
+const imageKey = (images: readonly ImageRef[] | undefined): string => (images ?? []).map((i) => i.id).join(",");
+
+/** A message typed here, perhaps with images: shown at once, below everything, until the daemon echoes it. */
+export function sent(t: Thread, text: string, toGate: boolean, images: readonly ImageRef[] = []): Thread {
+  return add(t, { user: text, origin: "text", reply: "", phase: "sending", ended: null, toGate, ...withImages(images) }, false);
 }
 
 /** A request was answered: typed messages sent to it that were never echoed were the answer. */
@@ -81,10 +92,10 @@ export function gateResolved(t: Thread): Thread {
 /** The resident a job report is about, when the caption names one. */
 const about = (c: Caption): { agent?: string } => (c.agent === undefined ? {} : { agent: c.agent });
 
-/** True when `next` opens a new turn: a `user.utterance` or `automation.started`. */
+/** True when `next` opens a new turn: a `user.utterance` (words, images or both) or `automation.started`. */
 function startsTurn(prev: Caption, next: Caption): boolean {
-  if (next.user === "" || next.reply !== "" || next.streaming) return false;
-  return prev.user !== next.user || prev.source !== next.source || prev.reply !== "" || prev.streaming;
+  if ((next.user === "" && !next.images) || next.reply !== "" || next.streaming) return false;
+  return prev.user !== next.user || prev.source !== next.source || prev.images !== next.images || prev.reply !== "" || prev.streaming;
 }
 
 /** Fold one change of the store's caption into the thread. */
@@ -94,7 +105,8 @@ export function fromCaption(t: Thread, prev: Caption, next: Caption): Thread {
   if (startsTurn(prev, next)) {
     // Whatever was still open closed before this turn began.
     const closed = t.entries.map((e) => (open(e.phase) ? { ...e, phase: "done" as const, ended: e.ended ?? "ok" } : e));
-    const mine = origin === "text" ? closed.findIndex((e) => e.phase === "sending" && e.user === next.user) : -1;
+    const said = imageKey(next.images);
+    const mine = origin === "text" ? closed.findIndex((e) => e.phase === "sending" && e.user === next.user && imageKey(e.images) === said) : -1;
     if (mine !== -1) {
       const claimed = { ...closed[mine]!, phase: "waiting" as const };
       // The claimed message moves above any later ones still unconfirmed.
@@ -103,7 +115,7 @@ export function fromCaption(t: Thread, prev: Caption, next: Caption): Thread {
       const at = firstPending === -1 ? rest.length : firstPending;
       return { ...t, entries: [...rest.slice(0, at), claimed, ...rest.slice(at)] };
     }
-    return add({ ...t, entries: closed }, { user: next.user, origin, ...about(next), reply: "", phase: "waiting", ended: null, toGate: false }, true);
+    return add({ ...t, entries: closed }, { user: next.user, origin, ...about(next), reply: "", phase: "waiting", ended: null, toGate: false, ...withImages(next.images) }, true);
   }
   const phase: Phase = next.streaming ? "streaming" : "done";
   const ended = next.streaming ? null : next.reply === "" ? "interrupted" : "ok";
@@ -117,7 +129,7 @@ export function fromCaption(t: Thread, prev: Caption, next: Caption): Thread {
   if (current === -1) {
     // A reply with no turn shown for it, as when the page opens mid-turn.
     if (next.reply === "") return t;
-    return add(t, { user: next.user, origin, ...about(next), reply: next.reply, phase, ended, toGate: false }, true);
+    return add(t, { user: next.user, origin, ...about(next), reply: next.reply, phase, ended, toGate: false, ...withImages(next.images) }, true);
   }
   const entries = t.entries.slice();
   entries[current] = { ...entries[current]!, reply: next.reply, phase, ended };
@@ -140,6 +152,7 @@ export function withHistory(t: Thread, turns: readonly HistoryTurn[]): Thread {
     phase: "done",
     ended: h.status,
     toGate: false,
+    ...withImages(h.images),
   }));
   return { entries: [...made, ...t.entries], nextId };
 }

@@ -198,7 +198,7 @@ async def test_credits_exhausted_stays_local_for_the_month(config: Config) -> No
 
 async def test_partial_reply_then_failure_is_reported_not_repeated(config: Config) -> None:
     class Flaky(FakeClaude):
-        async def send(self, text: str, *, heavy: bool = False):
+        async def send(self, text: str, *, heavy: bool = False, images=()):
             self.sent.append((text, heavy))
             yield TextDelta("Half")
             yield RATE

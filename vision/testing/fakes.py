@@ -22,6 +22,7 @@ from vision.core.interfaces import (
     BrainEvent,
     BudgetStatus,
     Hit,
+    Picture,
     TextDelta,
     ToolResult,
     ToolSpec,
@@ -41,7 +42,7 @@ class FakeBrain:
 
     `replies` are used in turn, then the last one repeats. A reply that is a
     `BrainError` is yielded as the turn's failure. `sent` records every
-    `(text, heavy)` it was given.
+    `(text, heavy)` it was given, and `images` the pictures that came with each.
     """
 
     def __init__(
@@ -60,6 +61,7 @@ class FakeBrain:
         self._name: BrainName = name
         self.model = model
         self.sent: list[tuple[str, bool]] = []
+        self.images: list[tuple[Picture, ...]] = []
         self.interrupts = 0
         self.started = False
         self.closed = False
@@ -72,8 +74,11 @@ class FakeBrain:
     async def start(self) -> None:
         self.started = True
 
-    async def send(self, text: str, *, heavy: bool = False) -> AsyncIterator[BrainEvent]:
+    async def send(
+        self, text: str, *, heavy: bool = False, images: Sequence[Picture] = ()
+    ) -> AsyncIterator[BrainEvent]:
         self.sent.append((text, heavy))
+        self.images.append(tuple(images))
         reply = self._replies[min(self._turn, len(self._replies) - 1)]
         self._turn += 1
         self._stop.clear()

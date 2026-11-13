@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator, Callable, Iterator
 import keyring
 import pytest
 from conftest import free_port, served
+from image_fixtures import SECRET, jpeg_with_location
 from settings_fakes import client, use
 from test_phone_discord import TOKEN, serve
 
@@ -176,3 +177,23 @@ async def test_start_over_unpairs_and_keeps_the_token_unless_asked(
         await http.post("/api/reset", json={"level": "everything", "remove_key": True})
     assert not any(a == KEYRING_ACCOUNT for _, a in keychain)
     assert daemon.phone.connection == "no_token"
+
+
+async def test_an_image_from_the_phone_end_to_end(daemon: Daemon, fake: FakeDiscord) -> None:
+    await connect_and_pair(daemon, fake)
+    async with daemon.bus.subscribe({UserUtterance.TYPE}) as said:
+        await fake.dm(OWNER, "Look at this", attach=[("IMG_0001.jpg", "image/jpeg", jpeg_with_location())])
+        utterance = await asyncio.wait_for(said.__anext__(), 10)
+    assert isinstance(utterance, UserUtterance) and utterance.source == "phone"
+    (image,) = utterance.images
+    stored = daemon.config.paths.images / f"{image.id}.jpg"
+    assert stored.is_file() and SECRET not in stored.read_bytes()
+    turns: list[dict[str, object]] = []
+    async with client(daemon) as http:
+        for _ in range(200):
+            turns = (await http.get("/api/history")).json()["turns"]
+            if turns and turns[-1]["source"] == "phone":
+                break
+            await asyncio.sleep(0.05)
+    assert turns[-1]["images"] == [{"id": image.id, "width": 40, "height": 30}]
+    assert turns[-1]["user_text"] == "Look at this"

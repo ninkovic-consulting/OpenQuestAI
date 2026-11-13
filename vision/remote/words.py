@@ -13,7 +13,11 @@ PRIVATE = (
 STOPPED = "Stopped."
 NOTHING_TO_STOP = "Nothing is running."
 TOO_MANY = "Still working on your earlier messages. Send this one again in a moment."
-ONLY_TEXT = "I can read text and voice notes; other attachments are not read."
+ONLY_TEXT = (
+    "I can read text, voice notes and images (PNG, JPEG, GIF or WebP); "
+    "other attachments are not read."
+)
+IMAGE_NOT_FETCHED = "I couldn't download that image. Try sending it again."
 CUT_SHORT = "(Stopped before the end.)"
 NO_REPLY = "(No reply.)"
 
@@ -32,6 +36,17 @@ VOICE_NOT_HEARD = "I couldn't turn that voice note into words. Try again, or typ
 VOICE_EMPTY = "I couldn't make out any words in that voice note."
 
 
+def not_used(reasons: list[str], left_out: int, most: int) -> str:
+    """Why some of a message's attachments were not used; the rest went with the message."""
+    parts: list[str] = []
+    if reasons:
+        what = "one attachment" if len(reasons) == 1 else f"{len(reasons)} attachments"
+        parts.append(f"I couldn't use {what}: " + " ".join(dict.fromkeys(reasons)))
+    if left_out:
+        parts.append(f"Only the first {most} images of a message are read; {left_out} more were left out.")
+    return " ".join(parts)
+
+
 def heard(text: str) -> str:
     return f"Heard: “{text}”"
 
@@ -42,7 +57,7 @@ def paired(name: str) -> str:
 
 def help_line() -> str:
     return (
-        "Send text or a voice note. Plain words: status, stop, help. "
+        "Send text, a voice note or images. Plain words: status, stop, help. "
         "Requests that need your yes come here with Yes and Not now buttons; "
         "shell commands are only ever approved at the Mac."
     )

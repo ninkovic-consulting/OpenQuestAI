@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from vision.core.config import Config
+from vision.core.config import Config, Tier
 from vision.core.interfaces import Memory, ToolSpec
 
 DEFAULT_SHELL_TIMEOUT_S = 30.0
@@ -55,6 +55,11 @@ class Tool:
     """Words for the card's detail, when the bare argument would not say enough."""
     unattended_refusal: str | None = None
     """When set, the tool is refused during an automation's run, with this explanation."""
+    tier: Tier | None = None
+    """The tool's own tier, overriding `[gate.tiers]`: a tool an agent wrote carries the tier the
+    owner chose when approving it, kept with the tool rather than in `config.toml`."""
+    stamp: Callable[[], dict[str, str]] | None = None
+    """Fields added to every audit row of a call, such as the hash of the exact script that runs."""
 
 
 async def run_command(
@@ -64,16 +69,19 @@ async def run_command(
     limit: int,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
+    stdin: bytes | None = None,
 ) -> CommandResult:
-    """Run a process with no stdin, capturing at most `limit` bytes of combined output.
+    """Run a process, capturing at most `limit` bytes of combined output.
 
     The process gets its own process group, which is killed on timeout or
     cancellation so nothing it started keeps running. `env`, when given, is
     the child's whole environment; otherwise it inherits the daemon's.
+    `stdin`, when given, is written to the child and then closed; otherwise
+    the child has no stdin.
     """
     proc = await asyncio.create_subprocess_exec(
         *argv,
-        stdin=asyncio.subprocess.DEVNULL,
+        stdin=asyncio.subprocess.DEVNULL if stdin is None else asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         cwd=cwd,
@@ -83,7 +91,18 @@ async def run_command(
     kept = bytearray()
     truncated = False
 
-    async def collect() -> None:
+    async def feed() -> None:
+        if proc.stdin is None:
+            return
+        try:
+            proc.stdin.write(stdin or b"")
+            await proc.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # The child need not read its input.
+        finally:
+            proc.stdin.close()
+
+    async def read() -> None:
         nonlocal truncated
         assert proc.stdout is not None
         while chunk := await proc.stdout.read(4096):
@@ -91,6 +110,9 @@ async def run_command(
             if len(chunk) > room:
                 truncated = True
             kept.extend(chunk[: max(room, 0)])
+
+    async def collect() -> None:
+        await asyncio.gather(feed(), read())
         await proc.wait()
 
     try:

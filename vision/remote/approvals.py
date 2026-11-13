@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass
 
 from vision.core.events import GateChoice, GateDecision, GateOutcome, GateRequest, GateResolved
-from vision.remote.host import PHONE_NEVER
+from vision.remote.host import MADE_PREFIX, PHONE_NEVER
 from vision.remote.link import Link
 from vision.remote.transport import Button, Press, Unreachable
 
@@ -72,7 +72,7 @@ class Approvals:
 
     def mac_only_reason(self, req: GateRequest) -> str | None:
         """Why this request must be approved at the Mac, or None when the phone may."""
-        if req.tool in PHONE_NEVER:
+        if req.tool in PHONE_NEVER or req.tool.startswith(MADE_PREFIX):
             return f"Approve this at the Mac: {req.tool} is never approved from the phone."
         if not self._link.phone_may_approve(req.tool):
             return f"Approve this at the Mac: {req.tool} is not one of the tools the phone may approve (Settings, Phone)."

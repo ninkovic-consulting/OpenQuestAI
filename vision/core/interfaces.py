@@ -63,7 +63,7 @@ user-facing text.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, runtime_checkable
 
@@ -120,6 +120,38 @@ class BrainError:
 BrainEvent = TextDelta | TurnDone | BrainError
 
 
+# ---------------------------------------------------------------- images
+
+
+@dataclass(frozen=True, slots=True)
+class ImageRef:
+    """An image the owner sent, as the log, the history and the events name it.
+
+    `id` is 32 hex characters; the file is in `vision.attachments.ImageStore`
+    (which may have deleted it since). `width` and `height` are the stored size.
+    """
+
+    id: str
+    width: int
+    height: int
+
+
+@dataclass(frozen=True, slots=True)
+class Picture:
+    """An image as a brain is handed it: the clean, stored file (`vision.attachments`)."""
+
+    id: str
+    media_type: str
+    """`image/png` or `image/jpeg`: what the store writes."""
+    width: int
+    height: int
+    data: bytes
+
+    @property
+    def ref(self) -> ImageRef:
+        return ImageRef(self.id, self.width, self.height)
+
+
 @runtime_checkable
 class Brain(Protocol):
     """Something that turns the user's words into a streamed reply.
@@ -144,13 +176,18 @@ class Brain(Protocol):
         """Prepare clients and load state. Called once before the first `send`."""
         ...
 
-    def send(self, text: str, *, heavy: bool = False) -> AsyncIterator[BrainEvent]:
+    def send(
+        self, text: str, *, heavy: bool = False, images: Sequence[Picture] = ()
+    ) -> AsyncIterator[BrainEvent]:
         """Send one user message and stream the reply.
 
         Yields zero or more `TextDelta`, then exactly one `TurnDone` or
         `BrainError`, then stops. `heavy=True` asks for the heavy model (the
-        user asked Vision to think something through). Only one `send` runs
-        at a time; the session never overlaps them.
+        user asked Vision to think something through). `images` go with this
+        message; a brain whose model cannot read them must say so in its reply
+        rather than drop them. The session passes `images` only when there are
+        some, so a text turn calls `send` as it always did. Only one `send`
+        runs at a time; the session never overlaps them.
 
         If the consumer stops iterating early (the session cancels the turn),
         the brain must clean up and keep its history consistent, recording
@@ -274,6 +311,8 @@ class TurnRecord:
     input_tokens: int = 0
     output_tokens: int = 0
     error: str = ""
+    images: tuple[ImageRef, ...] = ()
+    """The images the owner's message carried, in the order sent."""
 
 
 @dataclass(frozen=True, slots=True)

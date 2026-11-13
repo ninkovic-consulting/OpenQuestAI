@@ -46,6 +46,15 @@ while the session is idle, so turns never overlap.
 So is a job report (`run_job`), with source `job`: a resident's work ended,
 and the host tells the owner in its own words. No `user.utterance`; the
 reply is spoken only when asked.
+
+Images: typed input and a phone message may carry the ids of images already
+kept in the `ImageStore` (`vision.attachments`). The session loads them before
+the turn starts, puts their ids and sizes on `user.utterance` and in the log,
+and hands them to the brain with the words (only when there are some, so a
+text turn reaches the brain exactly as before). An id the store no longer has
+starts no turn: a `notice` says to attach the image again. An image sent
+without words is described to the brain as the owner sending it
+(`turns.brain_text`).
 """
 
 from __future__ import annotations
@@ -55,7 +64,7 @@ import logging
 import re
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -66,6 +75,7 @@ from vision.core.events import (
     InputPtt,
     InputText,
     Notice,
+    SentImage,
     State,
     StateChanged,
     TurnSource,
@@ -74,10 +84,12 @@ from vision.core.events import (
     VisionDelta,
     VisionReply,
 )
+from vision.attachments.store import ImageStore, NoSuchImage
 from vision.core.interfaces import (
     Brain,
     BrainError,
     Memory,
+    Picture,
     Speaker,
     TextDelta,
     ToolHost,
@@ -94,6 +106,7 @@ log = logging.getLogger(__name__)
 SayFn = Callable[[str], None]
 
 FAILED_LINE = "Sorry, I can't reach any of my models right now."
+IMAGE_GONE = "An image in that message is no longer here (it was removed). Attach it again to send it."
 SURROUNDINGS_EVERY = 8
 """Repeat an unchanged house summary after this many turns: the brain keeps at least
 half its history when it trims, so one is always in view."""
@@ -118,6 +131,7 @@ class _Turn:
     origin: TurnOrigin
     speak: bool = True
     """False for an automation that is only shown: the reply is not spoken."""
+    images: tuple[Picture, ...] = ()
     turn_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     started_at: float = field(default_factory=time.time)
     parts: list[str] = field(default_factory=list)
@@ -153,8 +167,10 @@ class Session:
         tools: ToolHost,
         *,
         surroundings: Callable[[], str] | None = None,
+        images: ImageStore | None = None,
     ) -> None:
         self.bus = bus
+        self._images = images
         self._surroundings = surroundings
         self._said_surroundings: str | None = None
         self._turns_since_surroundings = 0
@@ -184,8 +200,8 @@ class Session:
             try:
                 async for event in sub:
                     match event:
-                        case InputText(text=text):
-                            await self._accept(text, "text")
+                        case InputText(text=text, images=ids):
+                            await self._accept(text, "text", ids)
                         case UserUtterance(text=text, source="voice"):
                             await self._accept(text, "voice")
                         case InputInterrupt() | InputPtt(down=True):
@@ -195,18 +211,34 @@ class Session:
             finally:
                 await self.interrupt()
 
-    async def _accept(self, text: str, source: UtteranceSource) -> None:
+    async def _accept(self, text: str, source: UtteranceSource, image_ids: Sequence[str] = ()) -> None:
         """Use the input as the gate's answer if it is one, else start a turn with it."""
-        if self.tools.waiting and self.tools.answer(text):
+        if not image_ids and self.tools.waiting and self.tools.answer(text):
             return
-        await self.submit(text, source)
+        await self.submit(text, source, image_ids)
 
-    async def submit(self, text: str, source: UtteranceSource) -> None:
-        """Start a turn, interrupting the one in progress."""
+    async def submit(self, text: str, source: UtteranceSource, image_ids: Sequence[str] = ()) -> None:
+        """Start a turn, interrupting the one in progress. An image that is gone starts none."""
+        pictures = await self.load_images(image_ids)
+        if pictures is None:
+            return
         await self.interrupt()
         if source == "text":
-            self.bus.publish(UserUtterance(text=text, source="text"))
-        self._task = asyncio.create_task(self._run_turn(_Turn(text, TurnOrigin(source))))
+            self.bus.publish(UserUtterance(text=text, source="text", images=_sent(pictures)))
+        self._task = asyncio.create_task(self._run_turn(_Turn(text, TurnOrigin(source), images=pictures)))
+
+    async def load_images(self, image_ids: Sequence[str]) -> tuple[Picture, ...] | None:
+        """The kept images for these ids, or None (with a notice) when one is gone."""
+        if not image_ids:
+            return ()
+        try:
+            if self._images is None:
+                raise NoSuchImage(image_ids[0])
+            store = self._images
+            return tuple([await asyncio.to_thread(store.get, i) for i in image_ids])
+        except NoSuchImage:
+            self.bus.publish(Notice(level="warn", text=IMAGE_GONE))
+            return None
 
     async def run_automation(
         self, text: str, *, automation_id: str, name: str, speak: bool
@@ -220,18 +252,21 @@ class Session:
         origin = TurnOrigin("automation", automation_id, name)
         return await self._run_alone(_Turn(text, origin, speak=speak)), origin
 
-    async def run_phone(self, text: str, *, speak: bool) -> TurnRecord:
+    async def run_phone(
+        self, text: str, *, speak: bool, images: Sequence[Picture] = ()
+    ) -> TurnRecord:
         """Run a message from the paired phone as a turn and wait for it to end.
 
         Like `run_automation`, only while the session is idle (it raises
-        `RuntimeError` otherwise, before anything is published). The words go
-        into the caption as `user.utterance` with source `phone`; the reply is
-        spoken on the Mac only when `speak` is true.
+        `RuntimeError` otherwise, before anything is published). The words and
+        the images' ids go into the caption as `user.utterance` with source
+        `phone`; the reply is spoken on the Mac only when `speak` is true.
         """
         if self.busy:
             raise RuntimeError("a turn is already running")
-        self.bus.publish(UserUtterance(text=text, source="phone"))
-        return await self._run_alone(_Turn(text, TurnOrigin("phone"), speak=speak))
+        pictures = tuple(images)
+        self.bus.publish(UserUtterance(text=text, source="phone", images=_sent(pictures)))
+        return await self._run_alone(_Turn(text, TurnOrigin("phone"), speak=speak, images=pictures))
 
     async def run_job(self, text: str, *, speak: bool) -> TurnRecord:
         """Run a job report as a turn and wait for it to end, only while idle (like
@@ -311,9 +346,11 @@ class Session:
 
     async def _stream(self, turn: _Turn, say: SayFn) -> None:
         splitter = SentenceSplitter()
-        text = brain_text(turn.text, turn.origin, datetime.now(local_zone()), self._fresh_surroundings())
+        now = datetime.now(local_zone())
+        text = brain_text(turn.text, turn.origin, now, self._fresh_surroundings(), images=len(turn.images))
+        extra = {"images": turn.images} if turn.images else {}
         try:
-            async for event in self.brain.send(text, heavy=wants_heavy(turn.text)):
+            async for event in self.brain.send(text, heavy=wants_heavy(turn.text), **extra):
                 turn.brain = self.brain.name
                 match event:
                     case TextDelta(text=text) if text:
@@ -403,9 +440,13 @@ class Session:
             input_tokens=turn.input_tokens,
             output_tokens=turn.output_tokens,
             error=turn.error,
+            images=tuple(p.ref for p in turn.images),
         )
         try:
             await self.memory.log_turn(record)
         except Exception:
             log.exception("could not log turn %s", turn.turn_id)
 
+
+def _sent(pictures: Sequence[Picture]) -> list[SentImage]:
+    return [SentImage(id=p.id, width=p.width, height=p.height) for p in pictures]

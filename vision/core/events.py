@@ -20,10 +20,11 @@ it lives in the envelope, not in `data`.
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 Direction = Literal["out", "in"]
 """`out` is daemon to window, `in` is window to daemon."""
@@ -44,6 +45,13 @@ AgentWork = Literal["idle", "working", "waiting"]
 """What a resident is doing: nothing, a job, or a job blocked on a gate request."""
 PresenceReason = Literal["idle", "locked", "asleep"]
 """Why the owner counts as away from the Mac."""
+ProcedureChange = Literal["saved", "removed"]
+ProposalKind = Literal["tool", "change"]
+ProposalStatus = Literal["waiting", "approved", "declined"]
+MadeToolChange = Literal["approved", "enabled", "disabled", "updated", "deleted", "ran"]
+
+
+_IMAGE_ID = re.compile(r"^[0-9a-f]{32}$")
 
 
 class EventError(ValueError):
@@ -98,13 +106,38 @@ class BudgetUpdate(Event):
     cap_usd: float = Field(ge=0)
 
 
+class SentImage(BaseModel):
+    """An image the owner sent with a message: its id in `/api/images` and its stored size."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    width: int = Field(ge=1)
+    height: int = Field(ge=1)
+
+
+MAX_IMAGES = 6
+"""Images per message, from the window or the phone."""
+
+
 class UserUtterance(Event):
-    """What the user said or typed, once it is accepted as addressed to Vision."""
+    """What the user said or typed, once it is accepted as addressed to Vision.
+
+    `images` are the images the message carried (typed in the window or sent from the
+    phone); `text` may be empty only when there are some.
+    """
 
     TYPE: ClassVar[str] = "user.utterance"
     DIRECTION: ClassVar[Direction] = "out"
-    text: str = Field(min_length=1)
+    text: str
     source: UtteranceSource
+    images: list[SentImage] = Field(default_factory=list, max_length=MAX_IMAGES)
+
+    @model_validator(mode="after")
+    def _says_something(self) -> UserUtterance:
+        if not self.text and not self.images:
+            raise ValueError("an utterance needs words or images")
+        return self
 
 
 class VisionDelta(Event):
@@ -196,6 +229,8 @@ class BrainMode(Event):
     local_backend: str
     local_model: str
     local_tools: bool | None
+    local_images: bool = False
+    """Whether the local model can read images (none in the catalog can yet)."""
 
 
 class HouseChanged(Event):
@@ -309,6 +344,48 @@ class PresenceChanged(Event):
     away_after_s: float
 
 
+class ProcedureChanged(Event):
+    """An agent's procedure was saved or removed (`vision.procedures`).
+
+    `owner` is the agent whose own procedure it is, or `shared` for one every
+    agent sees; `name` is its file name without `.md`. The window refetches.
+    """
+
+    TYPE: ClassVar[str] = "procedure.changed"
+    DIRECTION: ClassVar[Direction] = "out"
+    owner: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    change: ProcedureChange
+
+
+class ProposalChanged(Event):
+    """A proposal arrived or the owner decided it (`vision.proposals`).
+
+    `kind` is `tool` (a new tool or a new version of one) or `change` (an
+    agent's persona, model or thinking level); `waiting` counts the proposals
+    still waiting for the owner, for the count on the window's control.
+    """
+
+    TYPE: ClassVar[str] = "proposal.changed"
+    DIRECTION: ClassVar[Direction] = "out"
+    id: str = Field(min_length=1)
+    kind: ProposalKind
+    status: ProposalStatus
+    agent: str = Field(min_length=1)
+    waiting: int = Field(ge=0)
+
+
+class MadeToolChanged(Event):
+    """A tool an agent wrote changed: approved, enabled, disabled (by the owner or because its
+    script changed on disk), given another tier, deleted, or run."""
+
+    TYPE: ClassVar[str] = "made_tool.changed"
+    DIRECTION: ClassVar[Direction] = "out"
+    name: str = Field(min_length=1)
+    change: MadeToolChange
+    enabled: bool
+
+
 class Notice(Event):
     """A message for the user, shown in the window."""
 
@@ -330,11 +407,23 @@ class Hello(Event):
 
 
 class InputText(Event):
-    """Typed input."""
+    """Typed input, with the ids of the images uploaded for it (`POST /api/images`).
+
+    `text` may be empty only when at least one image goes with it.
+    """
 
     TYPE: ClassVar[str] = "input.text"
     DIRECTION: ClassVar[Direction] = "in"
-    text: str = Field(min_length=1, max_length=20_000)
+    text: str = Field(default="", max_length=20_000)
+    images: list[str] = Field(default_factory=list, max_length=MAX_IMAGES)
+
+    @model_validator(mode="after")
+    def _says_something(self) -> InputText:
+        if not self.text and not self.images:
+            raise ValueError("input.text needs text or images")
+        if len(set(self.images)) != len(self.images) or not all(_IMAGE_ID.match(i) for i in self.images):
+            raise ValueError("images must be distinct image ids")
+        return self
 
 
 class InputPtt(Event):
@@ -384,6 +473,9 @@ EVENT_TYPES: dict[str, type[Event]] = {
         JobChanged,
         AgentState,
         PresenceChanged,
+        ProcedureChanged,
+        ProposalChanged,
+        MadeToolChanged,
         Notice,
         Hello,
         InputText,

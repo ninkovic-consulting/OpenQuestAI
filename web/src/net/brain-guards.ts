@@ -76,6 +76,7 @@ export function asBrainMode(v: unknown): BrainMode | null {
     oneOf("claude", "local", "fake")(v["answering"]) &&
     isStr(v["local_backend"]) &&
     isStr(v["local_model"]) &&
-    orNull(isBool)(v["local_tools"]);
+    orNull(isBool)(v["local_tools"]) &&
+    (v["local_images"] === undefined || isBool(v["local_images"]));
   return ok ? (v as unknown as BrainMode) : null;
 }

@@ -14,6 +14,12 @@
 #               again from the tokenizer when the model loads, so this column
 #               is only what the window shows before a download
 #   tools_recommended  calls tools reliably enough to work offline
+#   images      the repo's config.json has a vision_config (a vision encoder
+#               ships with the weights), checked 2026-11-13. Vision sends
+#               none of them images: the installed mlx-lm loads only the
+#               text model, and reading images would need mlx-vlm, which is
+#               not installed. A message with images on a local model gets
+#               a plain line saying the model cannot see them.
 #
 # memory_gb is the Mac memory that runs the model comfortably: the smallest
 # usual Mac size whose 65 percent holds the weights plus 2 GB for the context
@@ -33,6 +39,7 @@ memory_gb = 8
 context = 262_144
 tools = true
 tools_recommended = false
+images = false
 license = "apache-2.0"
 
 [[models]]
@@ -46,6 +53,7 @@ memory_gb = 8
 context = 262_144
 tools = true
 tools_recommended = false
+images = true
 license = "apache-2.0"
 
 [[models]]
@@ -59,6 +67,7 @@ memory_gb = 16
 context = 40_960
 tools = true
 tools_recommended = false
+images = false
 license = "apache-2.0"
 
 [[models]]
@@ -72,6 +81,7 @@ memory_gb = 16
 context = 262_144
 tools = true
 tools_recommended = true
+images = true
 license = "apache-2.0"
 
 [[models]]
@@ -85,6 +95,7 @@ memory_gb = 24
 context = 131_072
 tools = false
 tools_recommended = false
+images = false
 license = "apache-2.0"
 
 [[models]]
@@ -98,6 +109,7 @@ memory_gb = 32
 context = 262_144
 tools = true
 tools_recommended = true
+images = true
 license = "apache-2.0"
 
 [[models]]
@@ -111,6 +123,7 @@ memory_gb = 32
 context = 262_144
 tools = true
 tools_recommended = true
+images = false
 license = "apache-2.0"
 
 [[models]]
@@ -124,6 +137,7 @@ memory_gb = 32
 context = 262_144
 tools = true
 tools_recommended = true
+images = true
 license = "apache-2.0"
 
 [[models]]
@@ -137,6 +151,7 @@ memory_gb = 36
 context = 262_144
 tools = true
 tools_recommended = true
+images = true
 license = "apache-2.0"
 
 [[models]]
@@ -150,6 +165,7 @@ memory_gb = 96
 context = 131_072
 tools = false
 tools_recommended = false
+images = false
 license = "llama3.3"
 
 [[models]]
@@ -163,6 +179,7 @@ memory_gb = 128
 context = 131_072
 tools = false
 tools_recommended = false
+images = false
 license = "apache-2.0"
 
 [[models]]
@@ -176,4 +193,5 @@ memory_gb = 128
 context = 262_144
 tools = true
 tools_recommended = true
+images = true
 license = "apache-2.0"

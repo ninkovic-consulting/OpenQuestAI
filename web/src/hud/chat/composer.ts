@@ -6,6 +6,8 @@ import type { Talk } from "./talk";
 
 export interface Composer {
   row: HTMLElement;
+  /** The bordered box around the field; attach.ts adds the images waiting to go, and their control. */
+  box: HTMLElement;
   field: HTMLTextAreaElement;
   /** Re-measure after the text changed from code. */
   fit(): void;
@@ -42,7 +44,7 @@ export function makeComposer(talk: Talk): Composer {
   };
   field.addEventListener("input", fit);
   box.addEventListener("mousedown", (ev) => {
-    if (ev.target === field) return;
+    if (ev.target === field || (ev.target instanceof Element && ev.target.closest("button"))) return;
     ev.preventDefault();
     field.focus();
   });
@@ -66,6 +68,7 @@ export function makeComposer(talk: Talk): Composer {
 
   return {
     row,
+    box,
     field,
     fit,
     setName(name: string): void {

@@ -3,10 +3,15 @@
 One connection shared by every thread, serialised by a lock. All methods
 block; callers run them with `asyncio.to_thread`. The database and its `-wal`
 and `-shm` files are private to the user (mode 0600).
+
+A turn's `images` column holds the images the owner's message carried, as JSON
+(`[{"id", "width", "height"}]`); the files themselves are in
+`$VISION_HOME/images/` (`vision.attachments`).
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import re
@@ -15,7 +20,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from vision.core.interfaces import AuditRecord, Hit, TurnRecord
+from vision.core.interfaces import AuditRecord, Hit, ImageRef, TurnRecord
 from vision.memory.vault import Note
 
 _SCHEMA = """
@@ -31,7 +36,8 @@ CREATE TABLE IF NOT EXISTS turns (
     model TEXT NOT NULL,
     input_tokens INTEGER NOT NULL,
     output_tokens INTEGER NOT NULL,
-    error TEXT NOT NULL
+    error TEXT NOT NULL,
+    images TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS turns_started ON turns (started_at);
 CREATE TABLE IF NOT EXISTS audit (
@@ -61,12 +67,19 @@ CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
 
 _TURN_COLUMNS = (
     "turn_id, started_at, ended_at, source, user_text, reply, status, brain, model, "
-    "input_tokens, output_tokens, error"
+    "input_tokens, output_tokens, error, images"
 )
 _SNIPPET_TOKENS = 32
 _AUDIT_COLUMNS = "ts, tool, args, tier, decision, result, request_id, agent, job"
 _ADDED_AUDIT_COLUMNS = ("agent", "job")
 """Columns added after the first release; older logs get them on open."""
+_ADDED_TURN_COLUMNS = {"images": "TEXT NOT NULL DEFAULT '[]'"}
+
+
+def _turn(row: tuple[object, ...]) -> TurnRecord:
+    *fields, images = row
+    refs = tuple(ImageRef(str(i["id"]), int(i["width"]), int(i["height"])) for i in json.loads(str(images)))
+    return TurnRecord(*fields, images=refs)  # type: ignore[arg-type]
 
 
 class Log:
@@ -89,6 +102,10 @@ class Log:
         for column in _ADDED_AUDIT_COLUMNS:
             if column not in have:
                 db.execute(f"ALTER TABLE audit ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+        have = {row[1] for row in db.execute("PRAGMA table_info(turns)")}
+        for column, kind in _ADDED_TURN_COLUMNS.items():
+            if column not in have:
+                db.execute(f"ALTER TABLE turns ADD COLUMN {column} {kind}")
         for suffix in ("", "-wal", "-shm"):
             path = self._path.with_name(self._path.name + suffix)
             if path.exists():
@@ -116,10 +133,11 @@ class Log:
                 db.execute("DELETE FROM turns_fts WHERE turn_id = ?", (t.turn_id,))
                 db.execute(
                     f"INSERT OR REPLACE INTO turns ({_TURN_COLUMNS}) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         t.turn_id, t.started_at, t.ended_at, t.source, t.user_text, t.reply,
                         t.status, t.brain, t.model, t.input_tokens, t.output_tokens, t.error,
+                        json.dumps([dataclasses.asdict(i) for i in t.images]),
                     ),
                 )
                 db.execute(
@@ -149,7 +167,7 @@ class Log:
                 f"SELECT {_TURN_COLUMNS} FROM turns ORDER BY started_at DESC, rowid DESC LIMIT ?",
                 (limit,),
             ).fetchall()
-        return [TurnRecord(*row) for row in reversed(rows)]
+        return [_turn(row) for row in reversed(rows)]
 
     def audits(self) -> list[AuditRecord]:
         with self._lock:

@@ -20,6 +20,13 @@ The job board (`vision.jobs`) starts with them: residents' work runs as
 their own sessions (`vision.residents`), and a finished job is reported to
 the owner as a host turn of its own.
 
+Agents learn and extend themselves under the owner's control: each keeps
+written procedures (`vision.procedures`), and may propose a new tool or a
+change to itself (`vision.proposals`), decided by the owner in the window
+only. The host's procedure and proposal tools sit behind its gate with the
+rest; the tools agents wrote and the owner approved are offered as they come
+and go (`more`), and a resident gets its own at the start of each job.
+
 The automations belong to the daemon, not to `Components`, so a daemon on
 fakes has them too; their tools are offered to the real gate only. So are the
 read-only awareness tools (`vision.aware`), whose short summary of the house
@@ -38,14 +45,39 @@ import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import uvicorn
 
-from vision import aware, brains, gate, house, jobs, memory, presence, remote, residents, scheduler, voice
+from vision import (
+    aware,
+    brains,
+    gate,
+    house,
+    jobs,
+    memory,
+    presence,
+    procedures,
+    proposals,
+    remote,
+    residents,
+    scheduler,
+    voice,
+)
+from vision.attachments import ImageStore
 from vision.core.bus import Bus, Subscription
 from vision.core.config import Config
-from vision.core.events import BudgetUpdate, Notice, NoticeLevel, RoomLight, RoomState, StateChanged
-from vision.core.interfaces import Brain, Budget, House, Memory, ToolHost, TurnRecord, Voice
+from vision.core.events import (
+    BudgetUpdate,
+    Notice,
+    NoticeLevel,
+    ProcedureChange,
+    ProcedureChanged,
+    RoomLight,
+    RoomState,
+    StateChanged,
+)
+from vision.core.interfaces import AuditRecord, Brain, Budget, House, Memory, ToolHost, TurnRecord, Voice
 from vision.jobs.model import Job
 from vision.core.server import create_app
 from vision.core.session import Session
@@ -53,6 +85,7 @@ from vision.core.snapshot import Snapshot
 from vision.core.token import ensure_token
 from vision.gate.gate import Actor, JobHooks, ToolGate
 from vision.gate.tools import Tool
+from vision.house.tools import load_catalog
 from vision.residents.client import ResidentClient
 from vision.scheduler.model import Automation, RunStatus
 from vision.testing.fakes import FakeBrain, FakeVoice
@@ -61,6 +94,7 @@ log = logging.getLogger(__name__)
 
 HALL = "hall"
 """The host's room; its light follows the conversation."""
+HOST = "host"
 
 ComponentsFactory = Callable[[Bus], "Components"]
 VoiceFactory = Callable[[Config, Bus], Voice]
@@ -85,13 +119,16 @@ def build_components(
     board: jobs.Board | None = None,
     engine: brains.LocalEngine | None = None,
     phone: remote.Phone | None = None,
+    own: Sequence[Tool] = (),
+    more: Callable[[], Sequence[Tool]] | None = None,
     fake_brain: bool = False,
     voice_factory: VoiceFactory | None = None,
 ) -> tuple[Components, list[Notice]]:
     """Call every package's factory. `voice_factory` replaces `vision.voice.make_voice`;
     `automations`, `awareness` and `board` put the scheduler's, the read-only awareness
     and the job tools behind the gate, and `phone` the host's `send_to_phone`; `engine` is
-    the local model the residents share.
+    the local model the residents share. `own` are the host's procedure and proposal tools,
+    and `more` gives, at each turn, the tools agents wrote that the owner approved.
     The owner's profile and library tools always come first among the extra tools."""
     notices: list[Notice] = []
     mem = memory.make_memory(config)
@@ -105,7 +142,8 @@ def build_components(
         extra += jobs.build_tools(board)
     if phone is not None:
         extra += remote.build_tools(phone)
-    tools = gate.make_tool_host(config, bus, mem, extra)
+    extra += own
+    tools = gate.make_tool_host(config, bus, mem, extra, more)
     brain: Brain
     if fake_brain:
         notices.append(Notice(level="info", text="Running on the fake brain (--fake-brain)."))
@@ -116,6 +154,16 @@ def build_components(
     vox = (voice_factory or voice.make_voice)(config, bus)
     home = house.make_house(config, bus)
     return Components(brain, tools, mem, budget, vox, home), notices
+
+
+class _Audit:
+    """The memory's audit log, reached when used: the proposals exist before the memory does."""
+
+    def __init__(self, daemon: Daemon) -> None:
+        self._daemon = daemon
+
+    async def audit(self, entry: AuditRecord) -> None:
+        await self._daemon.components.memory.audit(entry)
 
 
 def ensure_home(home: Path) -> None:
@@ -150,6 +198,8 @@ class Daemon:
         ensure_home(config.paths.home)
         self.bus = Bus()
         self.token = ensure_token(config.paths.token)
+        self.images = ImageStore(config.paths.images)
+        """The images the owner sends from the window and the phone."""
         self.automations = scheduler.Automations(config, self.bus)
         self.presence = presence.make_presence(config, self.bus)
         """Whether the owner is at the Mac; it decides what goes to the phone."""
@@ -157,6 +207,22 @@ class Daemon:
         self.awareness = aware.Awareness(self)
         self.local = brains.make_engine(config, self.bus)
         """The local model, shared by the host's local brain and the residents' local jobs."""
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self.procedures = procedures.Procedures(config.paths.house, changed=self._procedure_changed)
+        """Each agent's written procedures (`vision.procedures`)."""
+        self.proposals = proposals.Proposals(
+            self.bus,
+            config.paths.home,
+            vault=config.paths.house,
+            plan=lambda: self.components.house.plan(),
+            memory=_Audit(self),
+            settings=lambda body: self.app.state.settings.patch(body),
+            host_now=lambda: (config.brain.talk_model, config.brain.talk_effort),
+            tell_phone=self.phone.tell_about_proposal,
+            reserved=frozenset(t for t, info in load_catalog().items() if info.built_in),
+            models=lambda: config.budget.prices.keys(),
+        )
+        """What agents propose for the owner's yes at the Mac, and the tools approved so far."""
         self.board = jobs.Board(
             config,
             self.bus,
@@ -173,6 +239,8 @@ class Daemon:
                 board=self.board,
                 engine=self.local,
                 phone=self.phone,
+                own=self._host_learning(),
+                more=lambda: self.proposals.tools_for(self.host_context()),
                 fake_brain=fake_brain,
                 voice_factory=voice,
             )
@@ -189,6 +257,8 @@ class Daemon:
             host_tools=self._lent_tools(),
             project_tools=residents.load_project_tools(),
             local=self.local,
+            procedures=self.procedures,
+            proposals=self.proposals,
         )
         self._voice_factory = voice
         self._voice_lock = asyncio.Lock()
@@ -205,11 +275,31 @@ class Daemon:
         self._presence_task: asyncio.Task[None] | None = None
         self.app = create_app(self)
 
+    def host_context(self) -> proposals.Context:
+        """The host as a proposer: no job, no room, so no project folders."""
+        return proposals.Context(HOST, self.config.assistant.name)
+
+    def _host_learning(self) -> list[Tool]:
+        """The host's own procedure tools and its proposal tools."""
+        return [
+            *procedures.build_tools(self.procedures, HOST),
+            *self.proposals.agent_tools(self.host_context()),
+        ]
+
+    def _procedure_changed(self, owner: str, name: str, change: str) -> None:
+        """Called from the thread that wrote the procedure; the bus lives on the loop."""
+        event = ProcedureChanged(owner=owner, name=name, change=cast(ProcedureChange, change))
+        if self._loop is None:
+            self.bus.publish(event)
+        else:
+            self._loop.call_soon_threadsafe(self.bus.publish, event)
+
     def notice(self, level: NoticeLevel, text: str) -> None:
         log.log(logging.WARNING if level != "info" else logging.INFO, "notice: %s", text)
         self.bus.publish(Notice(level=level, text=text))
 
     async def start(self) -> None:
+        self._loop = asyncio.get_running_loop()
         self.snapshot.start()
         self._presence_task = asyncio.create_task(self.presence.run())
         for n in self._notices:
@@ -233,7 +323,13 @@ class Daemon:
         states = self.bus.subscribe({StateChanged.TYPE})
         self._lights_task = asyncio.create_task(self._light_the_hall(states))
         self.session = Session(
-            self.bus, c.brain, c.voice.speaker, c.memory, c.tools, surroundings=self.surroundings
+            self.bus,
+            c.brain,
+            c.voice.speaker,
+            c.memory,
+            c.tools,
+            surroundings=self.surroundings,
+            images=self.images,
         )
         self._session_task = asyncio.create_task(self.session.run())
         runner = scheduler.Runner(self.config, self.automations, self._run_automation, self.busy)
@@ -251,8 +347,24 @@ class Daemon:
         await self.phone.start()
 
     def surroundings(self) -> str:
-        """The house's summary and who the owner is, for the start of the user's message."""
-        return f"{self.awareness.summary()}\n{memory.surroundings_line(self.config.paths.house)}"
+        """The house's summary, who the owner is, the host's procedures and how many proposals
+        wait for the owner, for the start of the user's message."""
+        names = {a["id"]: a["name"] for a in self.components.house.plan()["agents"]}
+        waiting = self.proposals.waiting_count()
+        said = (
+            f"{waiting} proposal{'s' if waiting != 1 else ''} from the agents wait{'s' if waiting == 1 else ''} "
+            "for the owner in Proposals, in the window."
+            if waiting
+            else "No proposal waits for the owner."
+        )
+        return "\n".join(
+            [
+                self.awareness.summary(),
+                memory.surroundings_line(self.config.paths.house),
+                said,
+                procedures.prompt_part(self.procedures, HOST, names=names),
+            ]
+        )
 
     def busy(self) -> bool:
         """An automation or a phone message waits while a turn runs, someone speaks,

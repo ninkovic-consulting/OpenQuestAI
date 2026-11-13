@@ -9,8 +9,9 @@
 
 import type { Store } from "../net/store";
 import { followAttention, looking } from "./chat/attention";
-import { chatDock } from "./chat/dock";
+import { type ChatDock, chatDock } from "./chat/dock";
 import { awayStart, type Entry, type Origin, replyStarted, type Thread } from "./chat/entries";
+import { imageMark, type ThumbRow, thumbRow } from "./chat/thumbs";
 import { el, setText } from "./dom";
 
 export type ReplySize = "normal" | "long" | "longer";
@@ -65,7 +66,12 @@ export function entryStatus(e: Entry): string {
 interface EntryView {
   root: HTMLElement;
   who: HTMLElement;
+  mark: HTMLElement;
   user: HTMLElement;
+  userCol: HTMLElement;
+  thumbs: ThumbRow | null;
+  /** Which images the thumbnails show, so they are rebuilt only when that changes. */
+  thumbsKey: string;
   name: HTMLElement;
   reply: HTMLElement;
   status: HTMLElement;
@@ -78,6 +84,10 @@ function entryView(): EntryView {
   const userCol = el("div", "user-col");
   const replyCol = el("div", "reply-col");
   const who = el("div", "who caps");
+  const whoText = el("span", "who-text");
+  const mark = el("span", "image-mark");
+  mark.hidden = true;
+  who.append(whoText, mark);
   const user = el("div", "user");
   const name = el("div", "who caps");
   const reply = el("div", "reply");
@@ -87,15 +97,31 @@ function entryView(): EntryView {
   userCol.append(who, user);
   replyCol.append(name, reply, status);
   root.append(userCol, replyCol);
-  return { root, who, user, name, reply, status, statusText, shown: null };
+  return { root, who: whoText, mark, user, userCol, thumbs: null, thumbsKey: "", name, reply, status, statusText, shown: null };
 }
 
-function paint(v: EntryView, e: Entry, assistant: string): void {
+/** The owner's images under their words; drawn again only when they are other images. */
+function paintImages(v: EntryView, e: Entry, source: ChatDock["images"]): void {
+  const images = e.images ?? [];
+  const key = images.map((i) => i.id).join(",");
+  if (key === v.thumbsKey) return;
+  v.thumbsKey = key;
+  v.thumbs?.dispose();
+  v.thumbs?.root.remove();
+  v.thumbs = images.length > 0 ? thumbRow(images, source) : null;
+  if (v.thumbs) v.userCol.append(v.thumbs.root);
+  setText(v.mark, imageMark(images.length));
+  v.mark.hidden = images.length === 0;
+}
+
+function paint(v: EntryView, e: Entry, assistant: string, source: ChatDock["images"]): void {
   setText(v.name, assistant);
   if (v.shown === e) return;
   v.shown = e;
   setText(v.who, entryLabel(e.origin, e.agent));
   setText(v.user, e.user);
+  v.user.hidden = e.user === "";
+  paintImages(v, e, source);
   setText(v.reply, e.reply);
   v.reply.dataset["size"] = replySize(e.reply);
   const status = entryStatus(e);
@@ -152,6 +178,7 @@ export function mountCaption(parent: HTMLElement, store: Store): void {
     for (const [id, v] of views) {
       if (!ids.has(id)) {
         v.root.remove();
+        v.thumbs?.dispose();
         views.delete(id);
       }
     }
@@ -163,7 +190,7 @@ export function mountCaption(parent: HTMLElement, store: Store): void {
         v = entryView();
         views.set(e.id, v);
       }
-      paint(v, e, assistant);
+      paint(v, e, assistant, dock.images);
       v.root.classList.toggle("is-latest", i === t.entries.length - 1);
       if (away?.id === e.id) nodes.push(divider);
       nodes.push(v.root);

@@ -1,6 +1,8 @@
 // One small store that the HUD and the scene both read. `reduce` is pure.
 
 import type { BrainMode } from "./brain-types";
+import { asImageRefs } from "./image-guards";
+import type { ImageRef } from "./image-types";
 import { isOpen, type AgentStatus, type Job, type JobList } from "./job-types";
 import type {
   AssistantState,
@@ -27,6 +29,8 @@ export interface Caption {
   reply: string;
   /** True while deltas are still streaming in. */
   streaming: boolean;
+  /** Images the owner sent with the words; left out when there are none. */
+  images?: ImageRef[];
 }
 
 export interface Toast {
@@ -66,6 +70,12 @@ export interface ViewState {
   turnOpen: boolean;
   /** Whether the owner is at the Mac, as the daemon reads it; null until it says. */
   presence: Presence | null;
+  /** Proposals waiting for the owner, for the count on the panel's control; null until the daemon says. */
+  proposalsWaiting: number | null;
+  /** Count proposal, made-tool and procedure changes, so the Proposals view knows to refetch. */
+  proposalsRevision: number;
+  madeToolsRevision: number;
+  proceduresRevision: number;
 }
 
 export type Action =
@@ -75,6 +85,8 @@ export type Action =
   | { kind: "snapshot"; snapshot: StateSnapshot; initial: boolean }
   /** `GET /api/jobs`, after every (re)connect. */
   | { kind: "jobs"; list: JobList }
+  /** `GET /api/proposals` answered: how many wait for the owner. */
+  | { kind: "proposals"; waiting: number }
   | { kind: "connection"; connection: Connection }
   | { kind: "toast"; level: NoticeLevel; text: string }
   | { kind: "dismiss"; id: number };
@@ -105,6 +117,10 @@ export function initialState(): ViewState {
     reports: [],
     turnOpen: false,
     presence: null,
+    proposalsWaiting: null,
+    proposalsRevision: 0,
+    madeToolsRevision: 0,
+    proceduresRevision: 0,
   };
 }
 
@@ -158,12 +174,14 @@ function reduceEvent(s: ViewState, e: OutboundEvent): ViewState {
       return { ...s, budget: e.data };
     case "house.changed":
       return { ...s, houseRevision: Math.max(s.houseRevision, e.data.revision) };
-    case "user.utterance":
+    case "user.utterance": {
+      const images = asImageRefs(e.data.images);
       return {
         ...s,
         turnOpen: true,
-        caption: { user: e.data.text, source: e.data.source, reply: "", streaming: false },
+        caption: { user: e.data.text, source: e.data.source, reply: "", streaming: false, ...(images.length > 0 ? { images } : {}) },
       };
+    }
     case "vision.delta": {
       const fresh = !s.caption.streaming;
       return {
@@ -210,6 +228,12 @@ function reduceEvent(s: ViewState, e: OutboundEvent): ViewState {
       return { ...s, agents: { ...s.agents, [e.data.agent]: { state: e.data.state, job: e.data.job } } };
     case "presence":
       return { ...s, presence: e.data };
+    case "proposal.changed":
+      return { ...s, proposalsWaiting: e.data.waiting, proposalsRevision: s.proposalsRevision + 1 };
+    case "made_tool.changed":
+      return { ...s, madeToolsRevision: s.madeToolsRevision + 1 };
+    case "procedure.changed":
+      return { ...s, proceduresRevision: s.proceduresRevision + 1 };
     case "notice":
       return addToast(s, e.data.level, e.data.text);
   }
@@ -247,6 +271,8 @@ export function reduce(s: ViewState, a: Action): ViewState {
       return reduceSnapshot(s, a.snapshot, a.initial);
     case "jobs":
       return { ...s, jobs: Object.fromEntries(a.list.jobs.map((j) => [j.id, j])), agents: a.list.agents };
+    case "proposals":
+      return s.proposalsWaiting === a.waiting ? s : { ...s, proposalsWaiting: a.waiting };
     case "connection":
       return { ...s, connection: a.connection };
     case "toast":

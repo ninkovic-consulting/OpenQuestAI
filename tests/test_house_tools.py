@@ -48,6 +48,13 @@ BUILT_IN = [
     "update_document",
     "remove_document",
     "send_to_phone",
+    "save_procedure",
+    "list_procedures",
+    "read_procedure",
+    "remove_procedure",
+    "propose_tool",
+    "propose_change",
+    "my_proposals",
 ]
 RESIDENT = [
     "note_progress",

@@ -1,5 +1,5 @@
-// The left panel: wordmark, state, residents, budget, and the build, jobs and
-// settings toggles. The gate card mounts into its foot.
+// The left panel: wordmark, state, residents, budget, and the build, jobs,
+// proposals and settings toggles. The gate card mounts into its foot.
 
 import type { AgentWork } from "../net/job-types";
 import { hostAgentId } from "../net/plan";
@@ -23,6 +23,8 @@ export interface Panel {
   modeSlot: HTMLElement;
   buildToggle: HTMLButtonElement;
   jobsToggle: HTMLButtonElement;
+  /** Opens the Proposals view; its count is the proposals waiting for the owner. */
+  proposalsToggle: HTMLButtonElement;
   settingsToggle: HTMLButtonElement;
 }
 
@@ -61,12 +63,16 @@ export function mountPanel(parent: HTMLElement, store: Store, rooms: Rooms): Pan
   jobsToggle.type = "button";
   const jobsCount = el("span", "count");
   jobsToggle.append(jobsCount);
+  const proposalsToggle = el("button", "proposals-toggle caps", "Proposals");
+  proposalsToggle.type = "button";
+  const proposalsCount = el("span", "count");
+  proposalsToggle.append(proposalsCount);
   const settingsToggle = el("button", "settings-toggle caps", "Settings");
   settingsToggle.type = "button";
   settingsToggle.title = "Settings (⌘ ,)";
   const quit = makeQuit();
   const actions = el("div", "panel-actions");
-  actions.append(buildToggle, jobsToggle, settingsToggle, quit.button);
+  actions.append(buildToggle, jobsToggle, proposalsToggle, settingsToggle, quit.button);
   const foot = el("div", "gate-slot");
   root.append(wordmark, state, modeSlot, residents, budget, actions, quit.confirm, el("div", "spacer"), foot);
   parent.append(root);
@@ -91,6 +97,9 @@ export function mountPanel(parent: HTMLElement, store: Store, rooms: Rooms): Pan
     const working = runningCount(s.jobs);
     setText(jobsCount, working > 0 ? String(working) : "");
     jobsToggle.title = working > 0 ? `${working} ${working === 1 ? "job" : "jobs"} running` : "Jobs";
+    const waiting = s.proposalsWaiting ?? 0;
+    setText(proposalsCount, waiting > 0 ? String(waiting) : "");
+    proposalsToggle.title = waiting > 0 ? `${waiting} ${waiting === 1 ? "proposal waits" : "proposals wait"} for you` : "Proposals, approved tools and procedures";
 
     const selected = selectionIn(s.plan, rooms.selection.get());
     const listed = open && s.plan ? agentRooms(s.plan, open, s, s.roomLights, selected) : [];
@@ -122,7 +131,7 @@ export function mountPanel(parent: HTMLElement, store: Store, rooms: Rooms): Pan
   });
   render(store.get());
   store.subscribe(render);
-  return { root, foot, modeSlot, buildToggle, jobsToggle, settingsToggle };
+  return { root, foot, modeSlot, buildToggle, jobsToggle, proposalsToggle, settingsToggle };
 }
 
 const WORK_WORD: Record<AgentWork, string> = { idle: "idle", working: "working", waiting: "waiting for your yes" };

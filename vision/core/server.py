@@ -6,7 +6,10 @@
   `GET /api/house` (plus the house package's own routes under `/api/house`,
   the settings package's under `/api`: settings, models, voice, downloads,
   folders, doctor, reset and backups, the scheduler's `/api/automations` and
-  the job board's `/api/jobs` and the phone channel's `/api/phone`),
+  the job board's `/api/jobs`, the phone channel's `/api/phone`, the
+  owner's images, `/api/images`, the agents' procedures, `/api/procedures`,
+  and their proposals and the tools they made, `/api/proposals` and
+  `/api/made-tools`),
   each needing `Authorization: Bearer <token>`. Other packages protect their
   routers with `require_token`.
 - `WS /ws`: the first message must be `hello` with the token, else the
@@ -171,6 +174,19 @@ def create_app(daemon: Daemon) -> FastAPI:
     from vision.remote import build_router as phone_router
 
     app.include_router(phone_router(daemon.phone), prefix="/api", dependencies=auth)
+
+    from vision.procedures.routes import build_router as procedures_router
+    from vision.proposals.routes import build_router as proposals_router
+
+    def agents() -> list[dict[str, Any]]:
+        return list(daemon.components.house.plan()["agents"])
+
+    app.include_router(procedures_router(daemon.procedures, agents), prefix="/api", dependencies=auth)
+    app.include_router(proposals_router(daemon.proposals), prefix="/api", dependencies=auth)
+
+    from vision.attachments import build_router as images_router
+
+    app.include_router(images_router(daemon.images), prefix="/api", dependencies=auth)
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:

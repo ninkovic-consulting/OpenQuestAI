@@ -103,6 +103,7 @@ def summary(view: HouseView) -> str:
     if attached:
         lines.append(f"- Project folders: {'; '.join(attached)}.")
     lines.append(f"- {limits.limits_line(view.project_tools)}")
+    lines.append(f"- {limits.learning_line()}")
     if view.offline:
         lines.append(f"- {limits.offline_line(view.local_model, view.local_tools)}")
     return "\n".join(lines)
@@ -138,7 +139,7 @@ def overview(view: HouseView) -> str:
     out += ["", "Agents:"]
     for a in plan["agents"]:
         out.append(agent_block(view, a))
-    out += ["", f"Limits: {limits.limits_line(view.project_tools)}"]
+    out += ["", f"Limits: {limits.limits_line(view.project_tools)}", "", limits.learning_line()]
     if view.offline:
         out.append(limits.offline_line(view.local_model, view.local_tools))
     return "\n".join(out)

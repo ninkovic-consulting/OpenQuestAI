@@ -20,6 +20,11 @@ or typed yes or no always settles the oldest, whoever asked. A scope's
 `JobHooks` hear when a request opens and closes (the agent is waiting) and
 when nobody answered (the job needed approval).
 
+Tools that come and go while the daemon runs (those an agent wrote and the
+owner approved) are read from `more` on every listing and call, so an approval,
+a disabled tool or a script changed on disk takes effect at the next turn. Such
+a tool carries its own tier and an audit stamp (the hash of its script).
+
 The bus subscription for `gate.decision` is opened only while a request is
 waiting. `answer(text)` lets a caller settle the waiting request from a spoken
 or typed yes or no; it publishes the same `gate.decision` the window would.
@@ -33,7 +38,7 @@ import logging
 import re
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -112,6 +117,7 @@ class ToolGate:
         actor: Actor | None = None,
         hooks: JobHooks | None = None,
         waiting: list[str] | None = None,
+        more: Callable[[], Sequence[Tool]] | None = None,
     ) -> None:
         self._config = config
         self._gate = config.gate
@@ -121,6 +127,7 @@ class ToolGate:
         self._actor = actor
         self._hooks = hooks
         self._waiting: list[str] = [] if waiting is None else waiting
+        self._more = more
 
     def scoped(self, tools: Sequence[Tool], actor: Actor, hooks: JobHooks | None = None) -> ToolGate:
         """A gate for one job: its own tools, the same tiers, audit, bus and waiting list."""
@@ -129,18 +136,35 @@ class ToolGate:
         )
 
     def specs(self) -> list[ToolSpec]:
-        return [tool.spec for tool in self._tools.values()]
+        return [tool.spec for tool in self._all().values()]
+
+    def _all(self) -> dict[str, Tool]:
+        """The fixed tools, then those `more` offers now (never replacing a fixed one)."""
+        if self._more is None:
+            return self._tools
+        extra = {t.spec.name: t for t in self._more() if t.spec.name not in self._tools}
+        return {**self._tools, **extra}
+
+    def _find(self, name: str) -> Tool | None:
+        tool = self._tools.get(name)
+        if tool is None and self._more is not None:
+            tool = next((t for t in self._more() if t.spec.name == name), None)
+        return tool
 
     def tier(self, name: str) -> Tier:
         """The tier in the turn this runs in. A resident's call is never the owner's own turn,
-        whichever turn handed the job off, so a tier free only at the Mac asks there."""
+        whichever turn handed the job off, so a tier free only at the Mac asks there. A tool
+        that carries its own tier (one an agent wrote) uses that instead of `[gate.tiers]`."""
         origin = current_origin()
         source = origin.source if origin is not None and self._actor is None else None
+        tool = self._find(name)
+        if tool is not None and tool.tier is not None:
+            return tool.tier
         return tier_for(self._gate, name, source)
 
     def line(self, name: str, args: dict[str, Any]) -> str:
         """One line saying what a call does, for a job's steps: "Run a program: pytest -q"."""
-        tool = self._tools.get(name)
+        tool = self._find(name)
         if tool is None:
             return name
         detail = _detail(tool, args)
@@ -189,16 +213,17 @@ class ToolGate:
 
     async def call(self, name: str, args: dict[str, Any]) -> ToolResult:
         tier = self.tier(name)
-        tool = self._tools.get(name)
+        tool = self._find(name)
         if tool is None:
             await self._audit(name, args, tier, "deny", "unknown tool")
             return ToolResult(False, f"There is no tool called {name}.")
+        audited = {**args, **tool.stamp()} if tool.stamp is not None else args
         if tier == "never":
-            await self._audit(name, args, tier, "deny", "refused by policy")
+            await self._audit(name, audited, tier, "deny", "refused by policy")
             return ToolResult(False, "That action is not allowed.")
         origin = current_origin()
         if tool.unattended_refusal and origin is not None and origin.source == "automation":
-            await self._audit(name, args, tier, "deny", "refused during an automation")
+            await self._audit(name, audited, tier, "deny", "refused during an automation")
             return ToolResult(False, tool.unattended_refusal)
         request_id = ""
         if tier == "ask":
@@ -206,7 +231,7 @@ class ToolGate:
             try:
                 outcome = await self._ask(request_id, tool.spec.name, tool.summary, _detail(tool, args))
             except asyncio.CancelledError:
-                await self._audit(name, args, tier, "deny", "cancelled", request_id)
+                await self._audit(name, audited, tier, "deny", "cancelled", request_id)
                 raise
             if outcome == "timeout":
                 origin = current_origin()
@@ -214,15 +239,15 @@ class ToolGate:
                     self._hooks.unanswered()
                 elif origin is not None and origin.source == "automation":
                     origin.needed_approval = True
-                await self._audit(name, args, tier, "timeout", "no answer", request_id)
+                await self._audit(name, audited, tier, "timeout", "no answer", request_id)
                 return ToolResult(
                     False, f"Nobody answered within {self._gate.timeout_s:g} seconds, so it did not run."
                 )
             if outcome == "deny":
-                await self._audit(name, args, tier, "deny", "declined by the user", request_id)
+                await self._audit(name, audited, tier, "deny", "declined by the user", request_id)
                 return ToolResult(False, "The user declined, so it did not run.")
         result = await self._run(tool, args)
-        await self._audit(name, args, tier, "allow", result.content, request_id)
+        await self._audit(name, audited, tier, "allow", result.content, request_id)
         return result
 
     async def _ask(self, request_id: str, name: str, summary: str, detail: str) -> GateOutcome:

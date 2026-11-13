@@ -12,7 +12,7 @@ from __future__ import annotations
 from vision.brains.budget import MonthlyBudget
 from vision.brains.claude import ClaudeBrain
 from vision.brains.engine import LocalEngine
-from vision.brains.local import LocalBrain
+from vision.brains.local import SEES_IMAGES, LocalBrain
 from vision.brains.router import Router
 from vision.core.bus import Bus
 from vision.core.config import Config
@@ -47,4 +47,5 @@ def mode(config: Config, answering: BrainName, engine: LocalEngine) -> BrainMode
         local_backend=engine.backend,
         local_model=engine.model,
         local_tools=engine.known_tools(),
+        local_images=SEES_IMAGES,
     )

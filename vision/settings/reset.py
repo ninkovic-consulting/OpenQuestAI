@@ -4,9 +4,11 @@
   asked for only when something a restart applies changed (the models, say).
 - `house`: house.toml back to the default house; the house reloads at once.
 - `everything`: both, plus the memory vault (with the owner's profile and
-  the library's documents and their files), `log.db`, `budget.json`, the
-  automations, the job board (work in progress is cancelled first) and the
-  phone channel's settings and pairing (`phone.json`);
+  the library's documents and their files), `log.db` with the images the
+  owner sent (`images/`, which the log names), `budget.json`, the
+  automations, the job board (work in progress is cancelled first), the
+  phone channel's settings and pairing (`phone.json`), and the agents'
+  proposals and the tools they made (`proposals.json`, `made-tools/`);
   setup counts as not completed again. Memory is closed while its files move
   and opened again on fresh ones, so nothing writes into a backup; a restart
   is still asked for, because the brain keeps the conversation in memory.
@@ -25,6 +27,8 @@ from vision import house
 from vision.core.config import load_config
 from vision.core.events import BudgetUpdate
 from vision.jobs.store import FILE_NAME as JOBS_FILE
+from vision.proposals.made import FOLDER as MADE_TOOLS
+from vision.proposals.store import FILE_NAME as PROPOSALS_FILE
 from vision.remote.store import FILE_NAME as PHONE_FILE
 from vision.scheduler.store import FILE_NAME as AUTOMATIONS_FILE
 from vision.settings import backups, live
@@ -43,10 +47,13 @@ NAMES: dict[Level, list[str]] = {
         "house.toml",
         "house",
         *LOG_ITEMS,
+        "images",
         "budget.json",
         AUTOMATIONS_FILE,
         JOBS_FILE,
         PHONE_FILE,
+        PROPOSALS_FILE,
+        MADE_TOOLS,
     ],
 }
 MEMORY_ITEMS = frozenset({"house", *LOG_ITEMS})
@@ -55,8 +62,8 @@ MESSAGES: dict[Level, str] = {
     "house": "The house is back to the default house.",
     "everything": (
         "Everything is back to a fresh start: settings, house, memory (with what it knew about you "
-        "and your library's documents), log, budget, automations, "
-        "jobs and the phone's pairing."
+        "and your library's documents), log with the images you sent, budget, automations, "
+        "jobs, the phone's pairing, and the agents' proposals and the tools they made."
     ),
 }
 
@@ -137,4 +144,6 @@ class Resetter:
             await d.board.reload()
         if PHONE_FILE in names:
             await d.phone.reload()
+        if PROPOSALS_FILE in names or MADE_TOOLS in names:
+            await d.proposals.reload()
         return backup, restart

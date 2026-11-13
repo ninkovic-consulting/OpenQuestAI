@@ -3,6 +3,8 @@
 // dock, found by the store they share.
 
 import "../../styles/chat.css";
+import type { ImageRef } from "../../net/image-types";
+import type { ImageSource } from "../../net/image-source";
 import type { Store } from "../../net/store";
 import { el } from "../dom";
 import { looking } from "./attention";
@@ -17,6 +19,12 @@ export class ChatDock {
   private readonly listeners = new Set<ThreadListener>();
   /** Folds the expanded thread back to the latest exchange; false when it was not expanded. Set by the thread view. */
   collapse: () => boolean = () => false;
+  private giveImages: (source: ImageSource) => void = () => {};
+  /**
+   * Where the thread's images come from. The thread is drawn before the daemon
+   * client exists; its thumbnails wait for this.
+   */
+  readonly images: Promise<ImageSource> = new Promise((resolve) => (this.giveImages = resolve));
 
   constructor(private readonly store: Store) {
     store.subscribe((s, prev) => {
@@ -35,9 +43,14 @@ export class ChatDock {
     this.listeners.add(listener);
   }
 
-  /** A message typed here, shown before the daemon echoes it. */
-  sent(text: string): void {
-    this.set(sent(this.thread, text, this.store.get().gates.length > 0));
+  /** A message typed here, perhaps with images, shown before the daemon echoes it. */
+  sent(text: string, images: readonly ImageRef[] = []): void {
+    this.set(sent(this.thread, text, this.store.get().gates.length > 0, images));
+  }
+
+  /** The daemon client is here: the thread's images can be fetched. */
+  provideImages(source: ImageSource): void {
+    this.giveImages(source);
   }
 
   /** What arrived while away has been seen. */

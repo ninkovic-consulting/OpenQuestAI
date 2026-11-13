@@ -102,9 +102,11 @@ async def test_stop_interrupts_the_reply_and_drops_the_waiting(running: Rig) -> 
 
 async def test_other_attachments_are_not_read(running: Rig) -> None:
     r = running
-    picture = voice_note().__class__("cdn://pic", "cat.png", "image/png", 10, voice=False)
-    await r.channel.on_message(dm("", attachments=(picture,)))
+    r.transport.files["cdn://doc"] = b"%PDF-1.7 not a picture"
+    document = voice_note().__class__("cdn://doc", "cat.png", "image/png", 22, voice=False)
+    await r.channel.on_message(dm("", attachments=(document,)))
     assert r.transport.texts() == [words.ONLY_TEXT]
+    assert "images" in words.ONLY_TEXT
 
 
 # ---------------------------------------------------------------- voice notes

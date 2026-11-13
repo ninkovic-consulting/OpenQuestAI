@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -11,7 +12,8 @@ import numpy as np
 
 from vision.core.bus import Bus
 from vision.core.events import GateRequest
-from vision.core.interfaces import AuditRecord, TurnRecord
+from vision.attachments.clean import clean
+from vision.core.interfaces import AuditRecord, Picture, TurnRecord
 from vision.presence import Seen
 from vision.remote.channel import PhoneChannel
 from vision.remote.host import Status, TurnsBusy
@@ -87,6 +89,9 @@ class FakeHost:
     bus: Bus = field(default_factory=Bus)
     is_busy: bool = False
     turns: list[tuple[str, bool]] = field(default_factory=list)
+    pictures: list[tuple[Picture, ...]] = field(default_factory=list)
+    """The images that went with each turn, in step with `turns`."""
+    kept: list[Picture] = field(default_factory=list)
     audits: list[AuditRecord] = field(default_factory=list)
     pending: dict[str, GateRequest] = field(default_factory=dict)
     tool_ids: tuple[str, ...] = ("remember", "recall", "open_app", "open_url", "shell", "delete_automation")
@@ -117,7 +122,14 @@ class FakeHost:
     def busy(self) -> bool:
         return self.is_busy or self.running > 0
 
-    async def run_turn(self, text: str, *, speak: bool) -> TurnRecord:
+    async def keep_image(self, data: bytes) -> Picture:
+        """The real checks and cleaning (`clean`), without a store on disk."""
+        cleaned = clean(data)
+        picture = Picture(uuid.uuid4().hex, cleaned.media_type, cleaned.width, cleaned.height, cleaned.data)
+        self.kept.append(picture)
+        return picture
+
+    async def run_turn(self, text: str, *, speak: bool, images: tuple[Picture, ...] = ()) -> TurnRecord:
         if self.busy():
             raise TurnsBusy
         self.running += 1
@@ -132,6 +144,7 @@ class FakeHost:
             except TimeoutError:
                 pass
             self.turns.append((text, speak))
+            self.pictures.append(tuple(images))
         finally:
             self.running -= 1
         reply = f"Echo: {text}" if status == "ok" else "Echo"

@@ -146,6 +146,8 @@ export class MockSettings implements SettingsApi {
       local_backend: c.backend,
       local_model: c.local,
       local_tools: c.backend === "mlx" ? MockLocal.tools(c.local) : true,
+      // No local model in the catalog reads images yet, as on the daemon.
+      local_images: false,
     };
   }
 

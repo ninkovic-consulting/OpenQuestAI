@@ -264,3 +264,43 @@ body.widget-page {
   letter-spacing: 0.16em;
   white-space: nowrap;
 }
+
+/* ---------------------------------------------------------------- images, smaller: one row, and the control as its mark */
+
+.widget .attach-tray {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 6px;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-strong) transparent;
+}
+
+.widget .tray-item {
+  width: 44px;
+  height: 44px;
+}
+
+.widget .tray-remove {
+  width: 18px;
+  height: 18px;
+  font-size: 12px;
+}
+
+.widget .attach {
+  padding: 5px 6px 4px;
+}
+
+/* The word stays the control's name; the mark alone is shown, the field is narrow. */
+.widget .attach span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.widget .attach-refusal {
+  font-size: 12px;
+}

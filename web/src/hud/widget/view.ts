@@ -6,9 +6,11 @@
 // global shortcuts.
 
 import type { Daemon } from "../../net/daemon";
+import { imageSource } from "../../net/image-source";
 import { nativeHelpers } from "../../net/native";
 import type { Store } from "../../net/store";
 import { envelope } from "../../net/types";
+import { mountAttach } from "../chat/attach";
 import { makeComposer } from "../chat/composer";
 import type { HistoryTurn } from "../chat/entries";
 import { asTurns } from "../chat/history";
@@ -70,6 +72,7 @@ export function mountWidget(parent: HTMLElement, store: Store, daemon: Daemon, p
   exchange.append(who, user, reply, status);
 
   let pending: string | null = null;
+  let pendingImages = 0;
   let earlier: HistoryTurn | null = null;
   let shown: Exchange | null = null;
 
@@ -81,6 +84,7 @@ export function mountWidget(parent: HTMLElement, store: Store, daemon: Daemon, p
   const { field } = composer;
   const compose = el("div", "w-compose");
   compose.append(composer.row);
+  const attach = mountAttach(composer, store, imageSource(daemon.images));
 
   root.append(head, gateSlot, exchange, compose);
   parent.append(root);
@@ -88,7 +92,7 @@ export function mountWidget(parent: HTMLElement, store: Store, daemon: Daemon, p
 
   function render(): void {
     const s = store.get();
-    const v = widgetView(s, talk.held, pending, earlier);
+    const v = widgetView(s, talk.held, pending, earlier, pendingImages);
     root.dataset["state"] = v.state;
     setText(name, v.name);
     setText(word, v.state);
@@ -131,13 +135,18 @@ export function mountWidget(parent: HTMLElement, store: Store, daemon: Daemon, p
   const log = new SentLog();
   const send = (): void => {
     const text = field.value.trim();
-    if (!text) return;
+    // Nothing to send, or images that cannot go yet: the box says why.
+    const images = attach.take(text);
+    if (images === null) return;
+    const message = envelope("input.text", images.length > 0 ? { text, images: images.map((i) => i.id) } : { text });
     // Not connected: the daemon client says so, and the draft stays.
-    if (store.get().connection !== "open") return daemon.send(envelope("input.text", { text }));
+    if (store.get().connection !== "open") return daemon.send(message);
     pending = text;
-    daemon.send(envelope("input.text", { text }));
-    log.remember(text);
+    pendingImages = images.length;
+    daemon.send(message);
+    if (text) log.remember(text);
     field.value = "";
+    attach.sent();
     composer.fit();
     render();
   };

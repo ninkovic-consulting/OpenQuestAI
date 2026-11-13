@@ -28,7 +28,10 @@ def tool_works(built_in: bool, project_tools: bool) -> bool:
 def can_do(agent_id: str) -> str:
     """One resident's abilities at work, in a sentence."""
     extra = [abilities.WORDS[t] for t in abilities.extra(agent_id) if t in abilities.WORDS]
-    said = "keeps its own notes, can ask another resident for help through the board"
+    said = (
+        "keeps its own notes and procedures, can propose a new tool or a change to its own persona, model "
+        "or thinking level (the owner decides at the Mac), can ask another resident for help through the board"
+    )
     if extra:
         said += ", " + ", ".join(extra)
     said += (
@@ -59,6 +62,24 @@ def limits_line(project_tools: bool) -> str:
         "shell, change automations and hand out work; residents never talk to the owner, and the "
         "envoy cannot send or read mail or messages yet. Say so plainly when asked for something "
         "nobody here can do; do not pretend."
+    )
+
+
+def learning_line() -> str:
+    """What every agent can now do for itself, and the line nobody crosses, for the model."""
+    return (
+        "Every agent, you included, keeps written procedures: open one with read_procedure before work it "
+        "covers, and save or improve one with save_procedure after work that went well; that needs nobody's "
+        "yes. An agent may also propose a new tool (a small script) with propose_tool, or a change to its own "
+        "persona, model or thinking level with propose_change; you may propose one for a resident too. A "
+        "proposal does nothing until the owner approves it in the window at the Mac: a yes in the "
+        "conversation, by voice or from the phone does not approve it, so tell the owner it waits in "
+        "Proposals. Tools named made_... were written by an agent and approved by the owner; they run "
+        "confined by macOS to the folders and network the owner allowed, asking first unless the owner made "
+        "them free. Nobody can change the approval rules, their own permissions, spending caps, keys, the "
+        "phone's approval list or the assistant's own code. When something is refused or nobody answers, try "
+        "another approach, ask a resident or say what blocked it, but never look for another route to the "
+        "same thing."
     )
 
 

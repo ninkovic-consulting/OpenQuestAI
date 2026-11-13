@@ -11,19 +11,21 @@
 - Offline mode (`[brain] offline`, switched in Settings while running) sends
   every turn to the local model and nothing to Anthropic, with no spoken line
   (the owner chose it). Turning it off sends the next turn to Claude again.
+- Images go wherever the words go; the local brain says plainly that it cannot
+  see them (`LocalBrain`), so nothing is silently dropped.
 """
 
 from __future__ import annotations
 
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import aclosing
 
 from vision.brains.claude import ClaudeBrain
 from vision.core.bus import Bus
 from vision.core.config import Config
 from vision.core.events import BrainFallback, BrainName, Notice
-from vision.core.interfaces import Brain, BrainError, BrainEvent, Budget, TextDelta
+from vision.core.interfaces import Brain, BrainError, BrainEvent, Budget, Picture, TextDelta
 
 FALLBACK_KINDS = frozenset({"rate_limit", "auth", "credits", "timeout", "offline", "unavailable"})
 LOCAL_LINE = "I'm running on the local model right now. "
@@ -80,9 +82,11 @@ class Router:
         await self._claude.close()
         await self._local.close()
 
-    async def send(self, text: str, *, heavy: bool = False) -> AsyncIterator[BrainEvent]:
+    async def send(
+        self, text: str, *, heavy: bool = False, images: Sequence[Picture] = ()
+    ) -> AsyncIterator[BrainEvent]:
         if self._config.brain.offline:
-            async with aclosing(self._local.send(text, heavy=heavy)) as events:
+            async with aclosing(self._local.send(text, heavy=heavy, images=images)) as events:
                 async for event in events:
                     yield event
             return
@@ -90,7 +94,7 @@ class Router:
             failure: BrainError | None = None
             for attempt in range(2):
                 failure, spoke = None, False
-                async with aclosing(self._claude.send(text, heavy=heavy)) as events:
+                async with aclosing(self._claude.send(text, heavy=heavy, images=images)) as events:
                     async for event in events:
                         if isinstance(event, BrainError):
                             failure = event
@@ -110,7 +114,7 @@ class Router:
             assert failure is not None
             self._fall_back(failure)
         first = True
-        async with aclosing(self._local.send(text, heavy=heavy)) as events:
+        async with aclosing(self._local.send(text, heavy=heavy, images=images)) as events:
             async for event in events:
                 if first and self._announce and isinstance(event, TextDelta):
                     self._announce = False

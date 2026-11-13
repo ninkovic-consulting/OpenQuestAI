@@ -2,7 +2,9 @@
 
 A backup holds copies of some of these items, by name: `config.toml`,
 `house.toml`, `house` (the memory vault), `log.db` with its `-wal` and `-shm`
-files, `budget.json`, `automations.json`, `jobs.json` and `phone.json`. The API key and the
+files, `images` (the images the owner sent, part of the conversation), `budget.json`,
+`automations.json`, `jobs.json`, `phone.json`, and the agents' proposals and the
+tools they made (`proposals.json`, `made-tools`). The API key and the
 phone's bot token are never among them. Nothing here
 decides what to reset; `reset.py` does.
 """
@@ -21,6 +23,8 @@ from typing import Any
 from vision.brains.budget import FILE_NAME as BUDGET_FILE
 from vision.core.config import Config
 from vision.jobs.store import FILE_NAME as JOBS_FILE
+from vision.proposals.made import FOLDER as MADE_TOOLS
+from vision.proposals.store import FILE_NAME as PROPOSALS_FILE
 from vision.remote.store import FILE_NAME as PHONE_FILE
 from vision.scheduler.store import FILE_NAME as AUTOMATIONS_FILE
 
@@ -55,10 +59,13 @@ def items(config: Config) -> dict[str, Path]:
         "log.db": log_db,
         "log.db-wal": log_db.with_name(log_db.name + "-wal"),
         "log.db-shm": log_db.with_name(log_db.name + "-shm"),
+        "images": config.paths.images,
         "budget.json": config.paths.home / BUDGET_FILE,
         AUTOMATIONS_FILE: config.paths.home / AUTOMATIONS_FILE,
         JOBS_FILE: config.paths.home / JOBS_FILE,
         PHONE_FILE: config.paths.home / PHONE_FILE,
+        PROPOSALS_FILE: config.paths.home / PROPOSALS_FILE,
+        MADE_TOOLS: config.paths.home / MADE_TOOLS,
     }
 
 

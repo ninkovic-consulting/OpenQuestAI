@@ -6,11 +6,15 @@ import { cellKey, cellOwners } from "../scene/grid";
 import type { Automation, RunStatus } from "./automation-types";
 import type { Daemon } from "./daemon";
 import type { JobDetails } from "./job-types";
+import type { ImageRef } from "./image-types";
 import { MockAutomations } from "./mock-automations";
 import { folderRefusal } from "./mock-folders";
+import { MockImages } from "./mock-images";
 import { MockJobs } from "./mock-jobs";
 import { MockLibrary } from "./mock-library";
 import { MockPhone } from "./mock-phone";
+import { MockProcedures } from "./mock-procedures";
+import { MockProposals } from "./mock-proposals";
 import { MockSettings } from "./mock-settings";
 import { hostAgentId, hostRefusal, hostRoom } from "./plan";
 import { HOST_TOOLS, samplePlan } from "./sample-plan";
@@ -69,6 +73,9 @@ export class MockDaemon implements Daemon {
   });
   readonly phone = new MockPhone();
   readonly library = new MockLibrary();
+  readonly images = new MockImages();
+  readonly proposals = new MockProposals({ emit: (type, data) => this.emit(type, data) });
+  readonly procedures = new MockProcedures({ emit: (type, data) => this.emit(type, data), plan: () => this.plan });
   readonly jobs = new MockJobs({
     emit: <K extends OutboundType>(type: K, data: OutboundData[K]) => this.emit(type, data),
     plan: () => this.plan,
@@ -136,7 +143,7 @@ export class MockDaemon implements Daemon {
   send(event: InboundEvent): void {
     switch (event.type) {
       case "input.text":
-        this.answer(event.data.text, "text");
+        this.answerText(event.data.text, event.data.images ?? []);
         break;
       case "input.ptt":
         if (event.data.down) {
@@ -163,11 +170,13 @@ export class MockDaemon implements Daemon {
     }
   }
 
-  /** A few earlier turns, in the shape `/api/history` answers with. */
-  history(): Promise<Result<unknown>> {
+  /** A few earlier turns, in the shape `/api/history` answers with; one carries two sketches, one an image since removed. */
+  async history(): Promise<Result<unknown>> {
+    const sketches = await this.images.sketches();
+    const removed: ImageRef = { id: "0".repeat(32), width: 400, height: 300 };
     const hour = 3600;
     const now = Date.now() / 1000;
-    const turn = (ago: number, source: string, user_text: string, reply: string, status = "ok"): Record<string, unknown> => ({
+    const turn = (ago: number, source: string, user_text: string, reply: string, status = "ok", images: ImageRef[] = []): Record<string, unknown> => ({
       turn_id: `earlier-${ago}`,
       started_at: now - ago,
       ended_at: now - ago + 4,
@@ -175,12 +184,22 @@ export class MockDaemon implements Daemon {
       user_text,
       reply,
       status,
+      images,
     });
-    return Promise.resolve({
+    return {
       ok: true,
       value: {
         turns: [
+          turn(6 * hour, "text", "The photo of the old shelf, for the record.", "Kept. It is with the Library's notes.", "ok", [removed]),
           turn(5 * hour, "text", "Remember that the renderer rewrite is due in March.", "Noted. I will keep that with the engine notes."),
+          turn(
+            4 * hour,
+            "text",
+            "Here are the bench sketch and the ground floor. Where should the bench go?",
+            "The Workshop has the room: put the bench along its east wall, where the plan leaves a gap of two metres.",
+            "ok",
+            sketches,
+          ),
           turn(3 * hour, "automation", "", "It is time: there are two notes for today, both about the engine."),
           turn(
             2.8 * hour,
@@ -192,7 +211,7 @@ export class MockDaemon implements Daemon {
           turn(1 * hour, "voice", "Open the project notes.", "Opening them", "interrupted"),
         ],
       },
-    });
+    };
   }
 
   proposeTools(folder: string): Promise<ProposeResult> {
@@ -246,10 +265,28 @@ export class MockDaemon implements Daemon {
     if (hall) this.emit("room.state", { room: hall, state: state === "thinking" || state === "speaking" ? "active" : "idle" });
   }
 
-  private answer(text: string, source: "voice" | "text"): void {
+  /** Typed, perhaps with images. One the daemon no longer has stops the message, as on the daemon. */
+  private answerText(text: string, ids: readonly string[]): void {
+    const images = this.images.refs(ids);
+    if (images === null) {
+      this.emit("notice", { level: "warn", text: "An image in that message is no longer here; nothing was sent." });
+      return;
+    }
+    this.answer(text, "text", images);
+  }
+
+  private answer(text: string, source: "voice" | "text", images: ImageRef[] = []): void {
     this.interrupt();
-    this.emit("user.utterance", { text, source });
+    this.emit("user.utterance", { text, source, images });
     this.setState("thinking");
+    if (images.length > 0) {
+      const seen = images.length === 1 ? "the image" : `the ${images.length} images`;
+      this.pending = this.at(900, () => {
+        this.pending = null;
+        this.say(`I have ${seen} you sent. In mock mode I cannot look at them, but they reached me and they are in the thread.`);
+      });
+      return;
+    }
     if (ASK_TINK.test(text)) return this.askTink(text.replace(ASK_TINK, ""));
     // Asking for detail gets a reply several lines long, to exercise the caption.
     const long = /\b(more|detail|explain|why)\b/i.test(text);

@@ -3,7 +3,9 @@
 Free tier and behind the gate like every other tool. They are the host's
 only way to give work to a resident, and they are allowed during an
 automation's run and from the phone. The resident sees nothing of the
-conversation, so `hand_off` insists on a brief that stands on its own.
+conversation, so `hand_off` insists on a brief that stands on its own; the
+images the owner sent do not go with it either, so the brief has to say what
+matters in them.
 """
 
 from __future__ import annotations
@@ -28,7 +30,9 @@ HAND_OFF = (
     "on the Mac's screen, so it is never the way to look at a site for the owner. It returns at once; you are told the "
     "result later in a turn of its own, and then you tell the owner. The resident sees nothing "
     "of this conversation: write a complete brief that stands on its own, with the goal, every "
-    "fact, name, file or path it needs, and what to give back. A resident may work in any room "
+    "fact, name, file or path it needs, and what to give back. Images the owner sent never go "
+    "along: when the work depends on one, write into the brief everything that matters in it "
+    "(its text, numbers, names and what it shows). A resident may work in any room "
     "but the Hall, with that room's project folders and tools: when the work is about a project, "
     "send the resident to the room that holds it (for example the checker to the Workshop to "
     "test the maker's project). Leave room out to use the agent's own first room. Set careful "

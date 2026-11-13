@@ -181,6 +181,7 @@ async def test_offline_on_and_off_while_running(daemon: Daemon) -> None:
         "local_backend": "mlx",
         "local_model": DEFAULT,
         "local_tools": None,
+        "local_images": False,
     }
     assert off["settings"]["models"]["local"]["offline"] is False and daemon.config.brain.offline is False
     events: list[Any] = []

@@ -148,6 +148,41 @@ title = "Send a message to your phone"
 description = "Messages your paired phone on Discord, when you ask or an automation should ping you."
 built_in = true
 
+[tools.save_procedure]
+title = "Save a procedure"
+description = "An agent writes down how it did a kind of work, to follow and improve next time."
+built_in = true
+
+[tools.list_procedures]
+title = "List procedures"
+description = "An agent lists its own procedures and the shared ones."
+built_in = true
+
+[tools.read_procedure]
+title = "Read a procedure"
+description = "An agent opens one of its procedures before doing that kind of work."
+built_in = true
+
+[tools.remove_procedure]
+title = "Remove a procedure"
+description = "An agent removes one of its own procedures (a shared one only if it wrote it)."
+built_in = true
+
+[tools.propose_tool]
+title = "Propose a new tool"
+description = "An agent proposes a small script as a new tool; it does nothing until you approve it at the Mac."
+built_in = true
+
+[tools.propose_change]
+title = "Propose a change to itself"
+description = "An agent proposes a new persona, model or thinking level for itself; you approve it at the Mac."
+built_in = true
+
+[tools.my_proposals]
+title = "Its proposals"
+description = "An agent reads what became of its own proposals."
+built_in = true
+
 [tools.note_progress]
 title = "Note progress"
 description = "A resident shows a short progress line on its job."

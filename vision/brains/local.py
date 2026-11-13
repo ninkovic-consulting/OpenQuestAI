@@ -9,12 +9,17 @@ the tool loop (`local_tools`) through the same `ToolHost` Claude uses, so
 every call passes the gate. A model that cannot call tools is offered none
 and is told so; a small model is offered the short list
 (`local_rules.ESSENTIAL`).
+
+No local model here reads images (`SEES_IMAGES`), so a message with images is
+never sent to it: the brain answers with a plain line saying the model
+answering now cannot see them (`local_rules.cannot_see`), and keeps that
+exchange in its history like any other.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass, field
 from typing import Any
@@ -30,6 +35,7 @@ from vision.core.interfaces import (
     BrainError,
     BrainEvent,
     Memory,
+    Picture,
     TextDelta,
     ToolHost,
     ToolResult,
@@ -41,6 +47,10 @@ log = logging.getLogger(__name__)
 
 DEFAULT_HISTORY_TURNS = 20
 MAX_TOOL_ROUNDS = 6
+SEES_IMAGES = False
+"""Whether the local model can read images: no. mlx-lm loads only a model's text weights (the
+catalog's entries with a vision encoder would need mlx-vlm, which is not installed), and the
+OpenAI-compatible backend sends words only. `brain.mode` carries it as `local_images`."""
 
 
 @dataclass
@@ -90,7 +100,15 @@ class LocalBrain:
             specs = [s for s in specs if s.name in local_rules.ESSENTIAL]
         return specs
 
-    async def send(self, text: str, *, heavy: bool = False) -> AsyncIterator[BrainEvent]:
+    async def send(
+        self, text: str, *, heavy: bool = False, images: Sequence[Picture] = ()
+    ) -> AsyncIterator[BrainEvent]:
+        if images:
+            line = local_rules.cannot_see(len(images), offline=self._config.brain.offline)
+            yield TextDelta(line)
+            self._commit({"role": "user", "content": f"{text}\n\n[{len(images)} image(s) not shown]"}, line)
+            yield TurnDone(self.model, 0, 0, "end_turn")
+            return
         turn = _Turn(user={"role": "user", "content": text})
         error: BrainError | None = None
         try:

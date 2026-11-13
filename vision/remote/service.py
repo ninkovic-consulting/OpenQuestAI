@@ -304,6 +304,10 @@ class Phone:
         """The host's report of a finished job, sent by its choice (`Notifier.job_result`)."""
         await self.channel.notifier.job_result(job_id, text, from_phone=from_phone, started_at=started_at)
 
+    async def tell_about_proposal(self, key: str, text: str) -> None:
+        """An agent's proposal waits at the Mac (`Notifier.proposal`)."""
+        await self.channel.notifier.proposal(key, text)
+
     async def message(self, text: str) -> str:
         """`send_to_phone`: send now, whatever the away state. Answers in words for the model."""
         s = self.state

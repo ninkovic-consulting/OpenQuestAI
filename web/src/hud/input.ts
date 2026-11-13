@@ -6,8 +6,10 @@
 // whatever is open, one step at a time. The rules are in chat/keys.ts.
 
 import type { Daemon } from "../net/daemon";
+import { imageSource } from "../net/image-source";
 import type { Store } from "../net/store";
 import { envelope } from "../net/types";
+import { mountAttach } from "./chat/attach";
 import { makeComposer } from "./chat/composer";
 import { chatDock } from "./chat/dock";
 import type { HistoryLoader } from "./chat/history";
@@ -58,6 +60,9 @@ export function mountInput(
   const composer = makeComposer(talk);
   const { field } = composer;
   dock.root.append(composer.row);
+  const images = imageSource(daemon.images);
+  dock.provideImages(images);
+  const attach = mountAttach(composer, store, images, true);
   mountHints(parent);
   const log = new SentLog();
   const steps: EscapeStep[] = [() => dock.collapse(), ...escapeSteps];
@@ -73,14 +78,18 @@ export function mountInput(
 
   const send = (): void => {
     const text = field.value.trim();
-    if (!text) return;
+    // Nothing to send, or images that cannot go yet: the box says why.
+    const images = attach.take(text);
+    if (images === null) return;
+    const message = envelope("input.text", images.length > 0 ? { text, images: images.map((i) => i.id) } : { text });
     // Not connected: the daemon client says so, and the draft stays.
-    if (store.get().connection !== "open") return daemon.send(envelope("input.text", { text }));
+    if (store.get().connection !== "open") return daemon.send(message);
     // Shown first: the echo may come back before `send` returns.
-    dock.sent(text);
-    daemon.send(envelope("input.text", { text }));
-    log.remember(text);
+    dock.sent(text, images);
+    daemon.send(message);
+    if (text) log.remember(text);
     field.value = "";
+    attach.sent();
     composer.fit();
   };
 

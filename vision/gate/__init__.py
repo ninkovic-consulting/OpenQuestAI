@@ -6,7 +6,7 @@ the gate subscribes to `gate.decision` only while a request is waiting.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from vision.core.bus import Bus
 from vision.core.config import Config
@@ -18,11 +18,16 @@ __all__ = ["Actor", "JobHooks", "Tool", "ToolGate", "build_tools", "make_tool_ho
 
 
 def make_tool_host(
-    config: Config, bus: Bus, memory: Memory, extra: Sequence[Tool] = ()
+    config: Config,
+    bus: Bus,
+    memory: Memory,
+    extra: Sequence[Tool] = (),
+    more: Callable[[], Sequence[Tool]] | None = None,
 ) -> ToolHost:
-    """The gate in front of slice 1's five tools, then `extra` (the scheduler's).
+    """The gate in front of slice 1's five tools, then `extra` (the scheduler's), then
+    whatever `more` offers at each turn (the tools agents wrote that the owner approved).
 
     The returned `ToolGate` also has `waiting` and `answer(text)` for settling
     a waiting request from a spoken or typed yes or no.
     """
-    return ToolGate(config, bus, memory, [*build_tools(config, memory), *extra])
+    return ToolGate(config, bus, memory, [*build_tools(config, memory), *extra], more=more)

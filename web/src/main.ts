@@ -20,6 +20,7 @@ import { mountJobs } from "./hud/jobs/view";
 import { mountLabels } from "./hud/labels";
 import { mountOfflineSwitch } from "./hud/offline-switch";
 import { mountPanel } from "./hud/panel";
+import { mountProposals } from "./hud/proposals/view";
 import { modelSource } from "./hud/pickers/model-picker";
 import { mountRoomCard } from "./hud/rooms/card";
 import { RoomSelection } from "./hud/rooms/selection";
@@ -66,6 +67,7 @@ async function main(): Promise<void> {
   panel.buildToggle.addEventListener("click", () => {
     form.close();
     jobs.close();
+    proposals.close();
     setBuilding(!building);
   });
   stage.onSlot = (cell) => form.open(cell);
@@ -75,11 +77,18 @@ async function main(): Promise<void> {
     onShown: (open) => panel.settingsToggle.classList.toggle("is-on", open),
   });
   const jobs = mountJobs(stageRoot, { api: daemon.jobs, store, onShown: (open) => panel.jobsToggle.classList.toggle("is-on", open) });
+  const proposals = mountProposals(stageRoot, {
+    api: daemon.proposals,
+    procedures: daemon.procedures,
+    store,
+    onShown: (open) => panel.proposalsToggle.classList.toggle("is-on", open),
+  });
   const openSettings = (): void => {
     form.close();
     setBuilding(false);
     wizard.close();
     jobs.close();
+    proposals.close();
     view.open();
   };
   const openJobs = (jobId?: string): void => {
@@ -87,7 +96,16 @@ async function main(): Promise<void> {
     setBuilding(false);
     wizard.close();
     view.close();
+    proposals.close();
     jobs.open(jobId);
+  };
+  const openProposals = (): void => {
+    form.close();
+    setBuilding(false);
+    wizard.close();
+    view.close();
+    jobs.close();
+    proposals.open();
   };
   focusRoom = (id) => {
     setBuilding(false);
@@ -99,12 +117,14 @@ async function main(): Promise<void> {
     selection,
     onEdit: (id) => {
       jobs.close();
+      proposals.close();
       view.open("rooms", id);
     },
     onOpenJob: openJobs,
   });
   stage.coverLeft = card.cover;
   panel.jobsToggle.addEventListener("click", () => (jobs.isOpen() ? jobs.close() : openJobs()));
+  panel.proposalsToggle.addEventListener("click", () => (proposals.isOpen() ? proposals.close() : openProposals()));
   panel.settingsToggle.addEventListener("click", () => (view.isOpen() ? view.close() : openSettings()));
   window.addEventListener("keydown", (ev) => {
     if (ev.key === "," && (ev.metaKey || ev.ctrlKey)) {
@@ -119,6 +139,7 @@ async function main(): Promise<void> {
   mountInput(stageRoot, store, daemon, [
     () => view.close(),
     () => jobs.back(),
+    () => proposals.back(),
     () => wizard.close(),
     () => form.close(),
     () => {

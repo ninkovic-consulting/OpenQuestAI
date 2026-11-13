@@ -1,6 +1,7 @@
 // `GET /api/history` answers `{turns: [TurnRecord...]}`, oldest first. This
 // narrows it to what the thread shows; anything malformed is left out.
 
+import { asImageRefs } from "../../net/image-guards";
 import type { Result } from "../../net/settings-api";
 import { asOrigin, type HistoryTurn } from "./entries";
 
@@ -27,6 +28,7 @@ function asTurn(raw: unknown): HistoryTurn | null {
   if (typeof status !== "string" || !STATUSES.has(status)) return null;
   const origin = asOrigin(typeof source === "string" ? source : null);
   const report = origin === "job" ? reportOf(user_text) : null;
+  const images = asImageRefs(r["images"]);
   return {
     startedAt: started_at,
     origin,
@@ -34,6 +36,7 @@ function asTurn(raw: unknown): HistoryTurn | null {
     user: report ? report.title : user_text,
     reply,
     status: status as HistoryTurn["status"],
+    ...(images.length > 0 ? { images } : {}),
   };
 }
 

@@ -1,7 +1,10 @@
 import type { AutomationsApi } from "./automations-api";
+import type { ImagesApi } from "./images-api";
 import type { JobsApi } from "./jobs-api";
 import type { LibraryApi } from "./library-api";
 import type { PhoneApi } from "./phone-api";
+import type { ProceduresApi } from "./procedures-api";
+import type { ProposalsApi } from "./proposals-api";
 import type { Result, SettingsApi } from "./settings-api";
 import type { InboundEvent, NewRoom, PostResult, ProposeResult } from "./types";
 
@@ -24,4 +27,10 @@ export interface Daemon {
   readonly jobs: JobsApi;
   /** The library's documents. */
   readonly library: LibraryApi;
+  /** Images sent with a message. */
+  readonly images: ImagesApi;
+  /** Proposals of tools and changes, and the approved tools. */
+  readonly proposals: ProposalsApi;
+  /** Every agent's procedures. */
+  readonly procedures: ProceduresApi;
 }

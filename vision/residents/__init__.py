@@ -7,9 +7,11 @@
   so a visitor brings its own; the agent's `heavy_model` when the job is
   careful and it has one; and the thinking effort, the agent's `effort` (its
   `heavy_effort` when careful), lowered to the nearest level that model takes;
-- gathers the tools (`abilities`): the resident's own notes, `note_progress`,
-  `ask_resident` (not in a request from another resident), the steward's
-  and the scout's extras, and the project tools of the room the job runs in
+- gathers the tools (`abilities`): the resident's own notes and procedures,
+  `note_progress`, `ask_resident` (not in a request from another resident),
+  its proposal tools and the tools agents wrote that the owner approved for
+  it (`vision.proposals`, whose reach never goes past this job's room), the
+  steward's and the scout's extras, and the project tools of the room the job runs in
   (its own or another agent's) over those of its project folders that exist
   and the workbench accepts; a folder that cannot be used is named, with the
   reason, and the others still work. Nothing the host alone may do is ever
@@ -49,6 +51,9 @@ from vision.gate.tools import Tool
 from vision.house.tools import load_catalog
 from vision.jobs import Desk, Job, Outcome
 from vision.memory import resident_knowledge, resident_tools
+from vision.procedures import Procedures, prompt_part
+from vision.procedures import build_tools as procedure_tools
+from vision.proposals import Context, Proposals
 from vision.residents import abilities, prompt
 from vision.residents.machine import MacProbe, Probe
 from vision.residents.notes import ResidentNotes
@@ -87,6 +92,8 @@ class Residents:
         local: LocalEngine | None = None,
         probe: Probe | None = None,
         finder: Finder = find_program,
+        procedures: Procedures | None = None,
+        proposals: Proposals | None = None,
     ) -> None:
         self._config = config
         self._plan = plan
@@ -99,6 +106,8 @@ class Residents:
         self._probe = probe or MacProbe()
         self._finder = finder
         self._personas = Personas(config.paths.house)
+        self._procedures = procedures
+        self._proposals = proposals
 
     @property
     def has_project_tools(self) -> bool:
@@ -152,6 +161,7 @@ class Residents:
             desk.using(model, local=False)
         notes = ResidentNotes(self._config.paths.house, agent["id"])
         tools, folders = self._tools(agent["id"], job, desk, notes, room, _folders(room))
+        tools += self._learning(agent, job, room, folders)
         actor = Actor(agent["id"], agent["name"], job.id, room["name"] if room else None)
         gate = self._scope(tools, actor, desk)
         server: list[dict[str, Any]] = []
@@ -165,7 +175,7 @@ class Residents:
         names = [t.spec.name for t in tools] + [s["name"] for s in server]
         owner = next((a["name"] for a in plan["agents"] if room and a["id"] == room["agent"]), "")
         setting = prompt.Setting(agent, room, folders, owner)
-        system = await asyncio.to_thread(self._system, plan, setting, names, notes)
+        system = await asyncio.to_thread(self._system, plan, setting, names, notes, agent["id"])
         asker = desk.board.agent_name(job.asked_by)
         opening = prompt.opening(job, asker, datetime.now(local_zone()))
         if local:
@@ -222,6 +232,23 @@ class Residents:
             self._report_refused(desk, folders)
         return [t for t in tools if t.spec.name not in abilities.HOST_ONLY], _named(folders)
 
+    def _learning(
+        self, agent: dict[str, Any], job: Job, room: dict[str, Any] | None, folders: Sequence[prompt.Folder]
+    ) -> list[Tool]:
+        """Its procedures, its proposal tools, and the tools agents wrote that the owner approved
+        for it, reaching at most the folders of the room this job runs in."""
+        tools: list[Tool] = []
+        if self._procedures is not None:
+            tools += procedure_tools(self._procedures, agent["id"], self._names())
+        if self._proposals is not None:
+            usable = tuple((f.name, f.path) for f in folders if f.problem is None)
+            ctx = Context(agent["id"], agent["name"], job.id, room["id"] if room else None, usable)
+            tools += self._proposals.agent_tools(ctx) + self._proposals.tools_for(ctx)
+        return [t for t in tools if t.spec.name not in abilities.HOST_ONLY]
+
+    def _names(self) -> dict[str, str]:
+        return {a["id"]: a["name"] for a in self._plan()["agents"]}
+
     def _refusals(self, folders: list[prompt.Folder], exc: ValueError) -> list[prompt.Folder]:
         """Which folders the workbench refuses, each tried alone; when none is refused alone,
         the folders together are (the same folder twice), and all carry the reason."""
@@ -263,7 +290,9 @@ class Residents:
                 found[info.id] = path
         return found
 
-    def _system(self, plan: dict[str, Any], setting: prompt.Setting, names: list[str], notes: ResidentNotes) -> str:
+    def _system(
+        self, plan: dict[str, Any], setting: prompt.Setting, names: list[str], notes: ResidentNotes, agent: str
+    ) -> str:
         persona_file = setting.agent.get("persona")
         persona = ""
         if isinstance(persona_file, str) and persona_file:
@@ -279,6 +308,11 @@ class Residents:
             tools=names,
             library_text=resident_knowledge(self._config.paths.house),
             notes=notes.recent(prompt.NOTES_CHARS),
+            procedures=(
+                prompt_part(self._procedures, agent, prompt.PROCEDURES_CHARS, self._names())
+                if self._procedures is not None
+                else ""
+            ),
         )
 
 

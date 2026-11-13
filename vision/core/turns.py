@@ -62,11 +62,21 @@ def mentions_time(text: str) -> bool:
     return _MENTIONS_TIME.search(text) is not None
 
 
-def brain_text(text: str, origin: TurnOrigin, now: datetime, surroundings: str = "") -> str:
+def brain_text(
+    text: str, origin: TurnOrigin, now: datetime, surroundings: str = "", *, images: int = 0
+) -> str:
     """What the brain is sent for this turn: the words, with the local time when it helps,
-    and `surroundings` (a few lines about the house) when the session has new ones."""
-    said = _with_time(text, origin, now)
+    and `surroundings` (a few lines about the house) when the session has new ones. A message
+    of `images` with no words is put as the owner sending them, so the brain is asked about them."""
+    said = _with_time(text or image_only(images), origin, now)
     return f"{said}\n\n[{surroundings}]" if surroundings else said
+
+
+def image_only(images: int) -> str:
+    """The words for a message that is only images (none for a message with no images)."""
+    if images <= 0:
+        return ""
+    return "The owner sent this image." if images == 1 else f"The owner sent these {images} images."
 
 
 def _with_time(text: str, origin: TurnOrigin, now: datetime) -> str:

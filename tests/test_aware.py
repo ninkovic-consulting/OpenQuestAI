@@ -115,9 +115,10 @@ async def test_the_new_tools_are_free_and_audited(daemon: Daemon) -> None:
     for name in ("house_overview", "room_details", "assistant_status"):
         assert daemon.config.gate.tiers[name] == "free"
     names = [s.name for s in daemon.components.tools.specs()]
-    assert names[-8:] == [
+    assert names[-15:] == [
         "house_overview", "room_details", "assistant_status", "hand_off", "list_jobs", "job_details", "cancel_job",
-        "send_to_phone",
+        "send_to_phone", "save_procedure", "list_procedures", "read_procedure", "remove_procedure",
+        "propose_tool", "propose_change", "my_proposals",
     ]
 
 

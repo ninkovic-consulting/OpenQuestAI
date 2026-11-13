@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import json
+from collections.abc import Sequence
 from email.parser import BytesParser
 from dataclasses import dataclass, field
 from typing import Any
@@ -75,8 +76,11 @@ class FakeDiscord:
         name: str = "Owner",
         guild_id: str | None = None,
         voice: bytes | None = None,
+        attach: Sequence[tuple[str, str, bytes]] = (),
         bot: bool = False,
     ) -> str:
+        """Send a DM to the bot. `attach` holds plain files as `(filename, content_type, data)`,
+        served from the fake CDN like a voice note."""
         message_id = self.next_id()
         data: dict[str, Any] = {
             "id": message_id,
@@ -87,8 +91,19 @@ class FakeDiscord:
             "attachments": [],
             "flags": 0,
         }
+        for filename, content_type, blob in attach:
+            self.files[f"{message_id}/{filename}"] = blob
+            data["attachments"].append(
+                {
+                    "id": self.next_id(),
+                    "filename": filename,
+                    "content_type": content_type,
+                    "size": len(blob),
+                    "url": f"{self.base_url}/cdn/{message_id}/{filename}",
+                }
+            )
         if voice is not None:
-            self.files[message_id] = voice
+            self.files[f"{message_id}/voice-message.ogg"] = voice
             data["flags"] = 1 << 13
             data["attachments"] = [
                 {
@@ -186,10 +201,10 @@ class FakeDiscord:
         async def cdn(message_id: str, name: str, request: Request) -> Response:
             if "authorization" in request.headers:
                 raise HTTPException(status_code=400, detail="the CDN never gets the bot token")
-            data = self.files.get(message_id)
+            data = self.files.get(f"{message_id}/{name}")
             if data is None:
                 raise HTTPException(status_code=404)
-            return Response(data, media_type="audio/ogg")
+            return Response(data, media_type="audio/ogg" if name.endswith(".ogg") else "application/octet-stream")
 
         @app.post("/_fake/dm")
         async def fake_dm(request: Request) -> dict[str, Any]:

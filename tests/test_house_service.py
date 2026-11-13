@@ -128,6 +128,13 @@ def test_plan_shape_and_first_use(config: Config) -> None:
                 ("update_document", "Change a document"),
                 ("remove_document", "Remove a document"),
                 ("send_to_phone", "Send a message to your phone"),
+                ("save_procedure", "Save a procedure"),
+                ("list_procedures", "List procedures"),
+                ("read_procedure", "Read a procedure"),
+                ("remove_procedure", "Remove a procedure"),
+                ("propose_tool", "Propose a new tool"),
+                ("propose_change", "Propose a change to itself"),
+                ("my_proposals", "Its proposals"),
             ]
         ],
         "state": "idle",
