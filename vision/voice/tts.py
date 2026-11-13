@@ -69,7 +69,9 @@ class KokoroSynth:
         from mlx_audio.tts.utils import load
 
         folder = local_path(self.repo, TTS_PART)
-        model = load(str(folder))
+        # A `Path`, not text: from text mlx-audio takes the model's name from the last folder,
+        # which in the cache is a commit hash, and then cannot tell which model this is.
+        model = load(folder)
         # KokoroPipeline.__init__ would build misaki's G2P, which pip-installs spaCy's model.
         pipeline = KokoroPipeline.__new__(KokoroPipeline)
         pipeline.lang_code = "a"

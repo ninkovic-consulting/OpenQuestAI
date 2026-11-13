@@ -115,6 +115,32 @@ def test_whisper_is_handed_the_local_folder(
     assert given == [str(folder)]
 
 
+def test_kokoro_is_handed_the_folder_as_a_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """From text, mlx-audio names the model after the last folder: in the cache, a commit hash."""
+    pytest.importorskip("mlx_audio")
+    folder = tmp_path / "hub" / "models--mlx-community--Kokoro-82M-bf16" / "snapshots" / "a71e4d3"
+    folder.mkdir(parents=True)
+    given: list[object] = []
+
+    class Stop(Exception):
+        pass
+
+    def load(path: object) -> None:
+        given.append(path)
+        raise Stop
+
+    pipeline = types.ModuleType("mlx_audio.tts.models.kokoro.pipeline")
+    pipeline.KokoroPipeline = type("KokoroPipeline", (), {})  # type: ignore[attr-defined]
+    utils = types.ModuleType("mlx_audio.tts.utils")
+    utils.load = load  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "mlx_audio.tts.models.kokoro.pipeline", pipeline)
+    monkeypatch.setitem(sys.modules, "mlx_audio.tts.utils", utils)
+    monkeypatch.setattr(tts, "local_path", lambda repo, part: folder)
+    with pytest.raises(Stop):
+        tts.KokoroSynth(SETTINGS.tts_model, "af_heart").load()
+    assert given == [folder] and isinstance(given[0], Path)
+
+
 def test_kokoro_and_its_tagger_never_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.importorskip("mlx_audio")
     asked: list[str] = []
