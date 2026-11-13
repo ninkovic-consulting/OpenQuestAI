@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -79,3 +80,38 @@ def test_a_made_up_name_gets_phonemes_from_a_bundle_with_a_long_path(
     assert fallback.backend._espeak.data_path == Path(short)  # espeak reads the short link itself
     phonemes, _ = fallback(type("Token", (), {"text": "Zorbelwick"})())
     assert phonemes  # spelt out, not skipped
+
+
+def test_the_link_fits_under_the_default_home() -> None:
+    """The default home is `~/Library/Application Support/Vision`: a long user name still leaves room."""
+    from vision.core.config import DEFAULT_HOME
+    from vision.settings.erase import ESPEAK_LINK as ERASED
+
+    assert ERASED == ESPEAK_LINK  # Delete all data removes the link by this name
+    longest = Path("/Users") / ("s" * 64) / DEFAULT_HOME / ESPEAK_LINK
+    assert " " in str(longest) and len(str(longest).encode()) < ESPEAK_MAX_PATH
+
+
+def test_a_made_up_name_gets_phonemes_through_a_home_with_a_space(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Real espeak-ng, no sound, its data reached through the link in a home like the default one."""
+    loader = pytest.importorskip("espeakng_loader")
+    espeak = pytest.importorskip("misaki.espeak")
+    bundle = long_folder(tmp_path / "bundle") / "espeak-ng-data"
+    shutil.copytree(loader.get_data_path(), bundle)
+    base = Path(os.path.realpath(tempfile.mkdtemp(prefix="v ")))  # tmp_path itself is too long for espeak
+    try:
+        home = base / "Library" / "Application Support" / "Vision"
+        short = espeak_data_path(str(bundle), home)
+        assert short == str(home / ESPEAK_LINK) and " " in short
+        monkeypatch.setattr(espeak.EspeakWrapper, "_ESPEAK_DATA_PATH", espeak.EspeakWrapper._ESPEAK_DATA_PATH)
+        monkeypatch.delenv("PHONEMIZER_ESPEAK_DATA_PATH", raising=False)
+        monkeypatch.setenv("ESPEAK_DATA_PATH", "")
+        use_espeak_data(espeak.EspeakWrapper, short)
+        fallback = espeak.EspeakFallback(british=False)
+        assert fallback.backend._espeak.data_path == Path(short)
+        phonemes, _ = fallback(type("Token", (), {"text": "Zorbelwick"})())
+        assert phonemes
+    finally:
+        shutil.rmtree(base)

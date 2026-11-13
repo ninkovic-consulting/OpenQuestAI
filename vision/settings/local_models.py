@@ -131,6 +131,10 @@ class LocalModels:
         finally:
             self._tasks.pop(repo, None)
 
+    def downloading(self) -> set[str]:
+        """The repos a download is writing now."""
+        return {repo for repo, job in self._downloads.items() if job.state == "running"}
+
     async def delete(self, repo: Any) -> dict[str, Any]:
         name = _repo(repo)
         brain = self._daemon.config.brain

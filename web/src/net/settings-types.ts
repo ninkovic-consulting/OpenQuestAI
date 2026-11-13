@@ -73,6 +73,8 @@ export interface Settings {
   key: { stored: boolean; source: KeySource | null };
   setup: { completed: boolean; first_run: boolean };
   restart_pending: string[];
+  /** `home`: the data folder, its real path on this Mac. */
+  data: { home: string };
 }
 
 /** JSON a PATCH body may hold. */
@@ -198,6 +200,29 @@ export interface Backup {
 export interface ResetAnswer {
   backup: Backup;
   restart: boolean;
+  message: string;
+}
+
+/** `GET /api/delete-all`: what Delete all data would remove. `models` are the ones on disk that this app uses or lists. */
+export interface DeleteAllPreview {
+  home: string;
+  models: { repo: string; bytes: number }[];
+  models_bytes: number;
+}
+
+/** `POST /api/delete-all`: what went and what stayed. The assistant stops right after. */
+export interface DeleteAllAnswer {
+  home: string;
+  removed: string[];
+  /** What stayed in the data folder, each with the reason. */
+  left: { name: string; why: string }[];
+  folder_removed: boolean;
+  /** Data that `[paths]` kept outside the data folder; it is not removed. */
+  elsewhere: string[];
+  keychain: { ok: boolean; message: string };
+  /** Null when the models were not to be removed. */
+  models: { removed: string[]; left: { repo: string; why: string }[]; freed_bytes: number } | null;
+  launch_agent: { installed: boolean; removed: boolean; message: string };
   message: string;
 }
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
+import os
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -23,6 +24,7 @@ from vision.house.tools import load_catalog
 from vision.memory import profile
 from vision.settings import live, values
 from vision.settings.downloads import Downloads
+from vision.settings.erase import Eraser
 from vision.settings.local_models import LocalModels
 from vision.settings.models_list import ModelCatalog, Verdict
 from vision.settings.outside import MacOutside, Outside
@@ -54,6 +56,9 @@ class SettingsService:
         self.downloads = Downloads(self.saved, lambda: self.outside)
         self.local = LocalModels(daemon, self.saved, lambda: self.outside)
         self.resetter = Resetter(daemon, lambda: self.outside)
+        self.eraser = Eraser(
+            daemon, self.saved, lambda: self.outside, lambda: self.local.downloading() | self.downloads.downloading()
+        )
         self._window: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
 
@@ -120,6 +125,7 @@ class SettingsService:
             "key": {"stored": source is not None, "source": source},
             "setup": {"completed": completed, "first_run": source is None or not completed},
             "restart_pending": self.restart_pending(saved),
+            "data": {"home": os.path.realpath(c.paths.home)},
         }
 
     def _disk_state(self) -> tuple[Config, dict[str, Any], dict[str, Any], str | None]:

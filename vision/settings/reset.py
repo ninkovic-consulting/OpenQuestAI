@@ -14,6 +14,9 @@
   is still asked for, because the brain keeps the conversation in memory.
   With `remove_key` the Keychain key and the phone's bot token are deleted
   too (never backed up).
+
+None of these deletes for good: every level keeps a backup in the data
+folder. Delete all data, which keeps none, is `erase.py`.
 """
 
 from __future__ import annotations

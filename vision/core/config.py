@@ -1,7 +1,8 @@
 """Configuration: built-in defaults overlaid by `$VISION_HOME/config.toml`.
 
-`VISION_HOME` defaults to `~/.vision`. Tests and worktrees set it to a temp
-directory so they never touch the real home.
+`VISION_HOME` defaults to `~/Library/Application Support/Vision`, where Mac apps keep
+their data. Tests and worktrees set it to a temp directory so they never touch the
+real one.
 
 Every section accepts extra keys, so an owner of a subsystem can read a new
 setting with `config.voice.model_extra.get("my_key", default)` without
@@ -295,10 +296,14 @@ class Config(BaseModel):
     """Free-form; interpreted by `vision.house`, not validated here."""
 
 
+DEFAULT_HOME = Path("Library") / "Application Support" / "Vision"
+"""The data folder under the user's home folder when `$VISION_HOME` is not set."""
+
+
 def vision_home() -> Path:
-    """`$VISION_HOME`, or `~/.vision`."""
+    """`$VISION_HOME`, or `~/Library/Application Support/Vision`."""
     env = os.environ.get("VISION_HOME")
-    return Path(env).expanduser() if env else Path.home() / ".vision"
+    return Path(env).expanduser() if env else Path.home() / DEFAULT_HOME
 
 
 def _merge(base: dict[str, Any], over: dict[str, Any]) -> dict[str, Any]:

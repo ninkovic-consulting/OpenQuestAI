@@ -327,6 +327,11 @@ class Phone:
             "minute and a half; if it still fails the owner sees a notice in the app."
         )
 
+    async def delete_token(self) -> None:
+        """Remove the token from the Keychain only (Delete all data, after `stop`). Raises when the
+        Keychain refuses."""
+        await asyncio.to_thread(self._tokens.delete)
+
     async def forget_token(self) -> None:
         """Remove the token from the Keychain and disconnect (a reset that removes secrets)."""
         await asyncio.to_thread(self._tokens.delete)

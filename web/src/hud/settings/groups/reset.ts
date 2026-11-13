@@ -2,6 +2,7 @@ import type { Backup, ResetLevel } from "../../../net/settings-types";
 import { el } from "../../dom";
 import { RESTART_HELP, type Group, type SettingsContext } from "../context";
 import { block, confirmButton, note, statusLine } from "../fields";
+import { deleteAllBlock } from "../delete-all";
 import { backupWords, formatWhen } from "../format";
 
 export const resetGroup: Group = {
@@ -53,6 +54,12 @@ export const resetGroup: Group = {
         question: "Start over with everything fresh? A backup is made first.",
       }),
       block("Backups", restored, backups),
+      deleteAllBlock({
+        home: ctx.settings.data.home,
+        preview: () => ctx.api.deleteAllPreview(),
+        deleteAll: (models) => ctx.api.deleteAll(models),
+        finish: ctx.native.finishDeleteAll,
+      }),
     );
     refreshBackups();
     return root;

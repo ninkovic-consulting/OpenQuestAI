@@ -12,7 +12,9 @@ enum Phase: Equatable {
 ///
 /// A daemon already answering on the port is used as it is (for example one
 /// started by `vision run` or the LaunchAgent). Otherwise the app starts its
-/// own as a child, and only that one is stopped on Quit.
+/// own as a child, and only that one is stopped on Quit. After Delete all
+/// data (`end()`) it never starts or restarts one again, since a new daemon
+/// would make the data folder again.
 @MainActor
 final class Supervisor {
     static let startTimeout: TimeInterval = 90
@@ -22,6 +24,8 @@ final class Supervisor {
     private let client: DaemonClient
     private var child: DaemonProcess?
     private var watcher: Task<Void, Never>?
+    /// Set by `end()`: nothing is started again.
+    private(set) var ended = false
     private(set) var phase: Phase = .starting { didSet { if phase != oldValue { onChange(phase) } } }
     var onChange: (Phase) -> Void = { _ in }
     /// How the assistant listens, from the last poll; nil while it does not answer.
@@ -62,9 +66,19 @@ final class Supervisor {
 
     /// Starts (or restarts) watching; starts a daemon if none answers.
     func start() {
+        guard !ended else { return }
         watcher?.cancel()
         phase = .starting
         watcher = Task { [weak self] in await self?.run() }
+    }
+
+    /// For good, after Delete all data: stop watching, stop the daemon if this app started it,
+    /// and never start one again. Phase changes are no longer reported.
+    func end() {
+        ended = true
+        onChange = { _ in }
+        onListen = { _ in }
+        shutdown()
     }
 
     /// Stops the daemon if this app started it.
@@ -77,7 +91,7 @@ final class Supervisor {
     /// Stops the daemon this app started and starts it again, keeping the page up.
     /// Returns true once it answers again; false if the app did not start it.
     func restartOwned() async -> Bool {
-        guard let old = child else { return false }
+        guard !ended, let old = child else { return false }
         watcher?.cancel()
         old.stop()
         child = nil

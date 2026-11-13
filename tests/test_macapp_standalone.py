@@ -162,7 +162,7 @@ def test_build_standalone_hands_the_payload_over(
     assert not run.payload.exists()  # the staging folder is removed afterwards
     info = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
     assert info["VisionStandalone"] is True
-    assert info["VisionHome"] == "~/.vision" and info["VisionProjectPath"] == ""
+    assert info["VisionHome"] == "~/Library/Application Support/Vision" and info["VisionProjectPath"] == ""
     assert packaging.is_standalone(app)
 
 

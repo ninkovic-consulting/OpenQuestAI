@@ -11,7 +11,7 @@ the ordinary build:
 Run-time leftovers are stripped (caches, tests, headers, entry-point scripts,
 Tk, pip), fresh bytecode is compiled so nothing is ever written into the
 bundle, and every Mach-O file is signed ad hoc so the whole app verifies.
-User data stays in `~/.vision` and models in the Hugging Face cache.
+User data stays in `~/Library/Application Support/Vision` and models in the Hugging Face cache.
 """
 
 from __future__ import annotations

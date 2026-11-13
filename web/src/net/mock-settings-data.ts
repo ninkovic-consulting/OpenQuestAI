@@ -8,6 +8,10 @@ export const HAIKU = "claude-haiku-5-5";
 export const OPUS = "claude-opus-5-5";
 export { DEFAULT_REPO as LOCAL_MODEL } from "./mock-local-data";
 export const SPEECH_BYTES = 1_960_000_000;
+/** The data folder, as the daemon names it in the settings answer. */
+export const MOCK_HOME = "/Users/you/Library/Application Support/Vision";
+/** The speech models' repo, as the delete-all preview lists it. */
+export const SPEECH_REPO = "mlx-community/whisper-large-v3-turbo";
 
 const model = (id: string, display_name: string, price: [number, number] | null, retires_at: string | null = null): ModelInfo => ({
   id,

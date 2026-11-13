@@ -9,7 +9,7 @@ import { ok, refused, type Result } from "./settings-api";
 
 const MB = 1024 * 1024;
 export const MOCK_LIMITS = { max_file_bytes: 20 * MB, max_text_chars: 400_000, max_documents: 500, title_max: 120, endings: [".docx", ".markdown", ".md", ".pdf", ".text", ".txt"] };
-export const MOCK_FOLDER = "/Users/you/.vision/house/library";
+export const MOCK_FOLDER = "/Users/you/Library/Application Support/Vision/house/library";
 const PART_CHARS = 8000;
 const KINDS: Record<string, DocKind> = { ".md": "markdown", ".markdown": "markdown", ".txt": "text", ".text": "text", ".pdf": "pdf", ".docx": "docx" };
 const ENDINGS = "The library takes text (.txt), Markdown (.md), PDF (.pdf) and Word (.docx) files.";

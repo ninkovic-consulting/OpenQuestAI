@@ -4,7 +4,8 @@ The app is a small Swift shell around the daemon and the web window. The thin
 build (the default, for development) writes the project path, the port and
 the home into Info.plist so the app runs the project's `.venv`. The standalone
 build (`vision.macapp.standalone`) hands over a payload of Python, packages,
-house and window to put inside the bundle, and the app uses `~/.vision`.
+house and window to put inside the bundle, and the app keeps its data in
+`~/Library/Application Support/Vision`.
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ ICON = REPO_ROOT / "assets" / "icon" / "Vision.icns"
 DIST = REPO_ROOT / "dist"
 BUILD_NUMBER_ENV = "VISION_BUILD_NUMBER"
 """The pipeline's run number; a build made without it is build 0."""
-STANDALONE_HOME = "~/.vision"
+STANDALONE_HOME = "~/Library/Application Support/Vision"
 """Expanded by the app on the Mac it runs on, never on the one that built it."""
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -89,7 +90,7 @@ def info_plist(
     `CFBundleShortVersionString` is the version as people read it (`0.1.0-beta`, which
     the Settings page shows) and `CFBundleVersion` the build number.
 
-    A standalone app names no project and uses `~/.vision` on whichever Mac it runs.
+    A standalone app names no project and uses `STANDALONE_HOME` on whichever Mac it runs.
     """
     name = app_name(config)
     values = {

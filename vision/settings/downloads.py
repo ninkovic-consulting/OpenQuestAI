@@ -58,6 +58,10 @@ class Downloads:
             return [config.brain.local_model]
         return list(VoiceSettings.from_config(config).model_repos())
 
+    def downloading(self) -> set[str]:
+        """The repos a download is writing now. Reads the saved config."""
+        return {repo for what, job in self._jobs.items() if job.state == "running" for repo in self.repos(what)}
+
     def downloaded(self, what: What) -> bool:
         outside = self._outside()
         needs = LOCAL_NEEDS if what == "local_model" else "*"

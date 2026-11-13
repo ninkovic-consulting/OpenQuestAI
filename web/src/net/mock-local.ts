@@ -83,6 +83,15 @@ export class MockLocal {
     this.disk.set(repo, { started: Date.now(), done: false, failed: null });
   }
 
+  /** The catalog's models and these others that are on disk, with their size. */
+  present(others: readonly string[]): { repo: string; bytes: number }[] {
+    const repos = [...new Set([...CATALOG.map((m) => m.id), ...others])];
+    return repos.flatMap((repo) => {
+      const bytes = this.bytes(repo);
+      return bytes === null ? [] : [{ repo, bytes }];
+    });
+  }
+
   /** Remove a repo; the bytes freed. */
   remove(repo: string): number {
     const freed = this.bytes(repo) ?? 0;

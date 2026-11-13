@@ -14,10 +14,12 @@ from collections.abc import Awaitable
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
+from starlette.background import BackgroundTask
 
 from vision.core.server import require_token
 from vision.memory import routes as memory_routes
-from vision.settings import backups, folders
+from vision.settings import backups, erase, folders
 from vision.settings.downloads import WHATS
 from vision.settings.local_models import NotAllowed
 from vision.settings.reset import NAMES
@@ -133,6 +135,19 @@ def build_router(service: SettingsService) -> APIRouter:
         if not isinstance(remove_key, bool):
             raise HTTPException(status_code=400, detail="Send remove_key as true or false.")
         return await service.resetter.reset(level, remove_key=remove_key)
+
+    @router.get("/delete-all")
+    async def delete_all_preview() -> dict[str, Any]:
+        return await asyncio.to_thread(service.eraser.preview)
+
+    @router.post("/delete-all")
+    async def delete_all(request: Request) -> JSONResponse:
+        """Only here, from the window: no tool, automation or phone command leads to it."""
+        try:
+            answer = await service.eraser.erase(await _body(request))
+        except erase.Refused as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        return JSONResponse(answer, background=BackgroundTask(service.eraser.finish))
 
     @router.get("/backups")
     async def list_backups() -> dict[str, Any]:

@@ -17,7 +17,7 @@ final class SelfTest {
     /// Every bridge method; the probes look for each and call none.
     static let bridgeMethods = """
     ["token", "chooseFolder", "micStatus", "requestMic", "openSystemSettings",
-     "loginItemEnabled", "setLoginItem", "restartDaemon", "appInfo", "quit",
+     "loginItemEnabled", "setLoginItem", "restartDaemon", "appInfo", "quit", "finishDeleteAll",
      "widgetPrefs", "setWidgetPrefs", "showWidget", "dismissWidget", "openHouse", "fitWidget",
      "goToBackground", "safeAreaTop"]
     """

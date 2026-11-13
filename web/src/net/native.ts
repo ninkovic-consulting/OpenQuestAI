@@ -18,6 +18,7 @@ interface PywebviewApi {
   restartDaemon?: () => Promise<unknown>;
   appInfo?: () => Promise<unknown>;
   quit?: () => Promise<unknown>;
+  finishDeleteAll?: (summary: string) => Promise<unknown>;
   widgetPrefs?: () => Promise<unknown>;
   setWidgetPrefs?: (changes: WidgetPrefsChange) => Promise<unknown>;
   showWidget?: (shown: boolean) => Promise<unknown>;
@@ -71,6 +72,11 @@ export interface NativeHelpers {
   appInfo: (() => Promise<AppInfo | null>) | null;
   /** Quit the app, which also stops the assistant it started. */
   quit: (() => Promise<void>) | null;
+  /**
+   * After Delete all data: turn off Start at login, forget the window's stored data and the
+   * app's own preferences, show `summary`, and quit without starting the assistant again.
+   */
+  finishDeleteAll: ((summary: string) => Promise<void>) | null;
   /** The widget and the global shortcuts: the shell's own preferences (shell-prefs.ts). */
   widgetPrefs: (() => Promise<WidgetPrefs | null>) | null;
   setWidgetPrefs: ((changes: WidgetPrefsChange) => Promise<WidgetPrefs | null>) | null;
@@ -102,7 +108,7 @@ export function asAppInfo(v: unknown): AppInfo | null {
 export function nativeHelpers(): NativeHelpers {
   const api = window.pywebview?.api;
   if (!api) return withNone();
-  const { chooseFolder, micStatus, requestMic, openSystemSettings, loginItemEnabled, setLoginItem, restartDaemon, appInfo, quit } = api;
+  const { chooseFolder, micStatus, requestMic, openSystemSettings, loginItemEnabled, setLoginItem, restartDaemon, appInfo, quit, finishDeleteAll } = api;
   const { widgetPrefs, setWidgetPrefs, showWidget, dismissWidget, openHouse, fitWidget, goToBackground, safeAreaTop } = api;
   return {
     chooseFolder: chooseFolder
@@ -119,6 +125,7 @@ export function nativeHelpers(): NativeHelpers {
     restartDaemon: restartDaemon ? async () => void (await restartDaemon.call(api)) : null,
     appInfo: appInfo ? async () => asAppInfo(await appInfo.call(api)) : null,
     quit: quit ? async () => void (await quit.call(api)) : null,
+    finishDeleteAll: finishDeleteAll ? async (summary) => void (await finishDeleteAll.call(api, summary)) : null,
     widgetPrefs: widgetPrefs ? async () => asWidgetPrefs(await widgetPrefs.call(api)) : null,
     setWidgetPrefs: setWidgetPrefs ? async (changes) => asWidgetPrefs(await setWidgetPrefs.call(api, changes)) : null,
     showWidget: showWidget ? async (shown) => void (await showWidget.call(api, shown)) : null,
@@ -146,6 +153,7 @@ function withNone(): NativeHelpers {
     restartDaemon: null,
     appInfo: null,
     quit: null,
+    finishDeleteAll: null,
     widgetPrefs: null,
     setWidgetPrefs: null,
     showWidget: null,

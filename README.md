@@ -23,7 +23,7 @@ The details, and a Terminal command that does the same, are under "Opening an ap
 - **The standalone app**, for any Apple Silicon Mac. One `Vision.app` holds its own Python, every package, the default house and the window. Nothing else needs installing.
 - **From source**, for development. You need [uv](https://docs.astral.sh/uv/), which brings Python 3.12. Node.js builds the window, and Xcode or the Command Line Tools build the app.
 
-Both keep your data in `~/.vision/` and the downloaded models in the usual Hugging Face cache, `~/.cache/huggingface`. Replacing or deleting the app touches neither.
+Both keep your data in `~/Library/Application Support/Vision/`, where Mac apps keep theirs, and the downloaded models in the usual Hugging Face cache, `~/.cache/huggingface`. Replacing the app, or dragging it to the Trash, touches neither: to remove the data too, use **Delete all data** in Settings, Reset (see "Reset and backups").
 
 ## The standalone app
 
@@ -124,7 +124,8 @@ The packaged app is macOS only for now; Windows and Linux are planned. It is a s
 - **The menu bar item** (the armchair, with a small dot while a microphone stream is open) shows the assistant's name and state, then **Open the house**, **Show widget** or **Hide widget**, the three listening modes with a check on the current one (changeable from there), **Start at login** and **Quit**.
 - **The widget** is a small window that floats above every app, on every desktop and over full-screen apps, without taking the keyboard from the app you are in until you click it. It shows the assistant's name and state, the latest exchange, any request waiting for your yes (the oldest, with Yes, Not now and how many more wait), a message field and hold to talk. **House** opens the house; **Hide** hides it, which never stops the assistant. Drag it by its name to put it anywhere; it remembers its place for each arrangement of screens.
 - **Two shortcuts** work in any app, with no Accessibility permission: **Option+Space** brings up the widget with the cursor in its field (press it again to send it away), and **Control+Option+Space** held is push to talk (let go to stop). Choose others from a short list, or turn them off, in **Settings, This Mac, Widget and shortcuts**; if one is taken by another app or by macOS, that block says so. The same block turns the widget on or off and sets what the app shows when it opens: the house, only the widget, or only the menu bar.
-- **Images.** Paste an image into the message field, drop one on the window, or choose files with **Image** (the widget has paste and Image too). Thumbnails of what will be sent sit above the field, each with a remove button; Enter sends the words and the images together, and an image can go alone. PNG, JPEG, GIF and WebP are accepted, up to 15 MB, 50 megapixels and six per message; anything else is refused beside the field with the reason. Each image is kept as a clean copy, scaled to at most 1,568 px on its long side with all metadata (location included) stripped, in `~/.vision/images/`, and shows in the thread with your message, larger on click, after a reload too. Claude reads them; the local model cannot, so in offline mode Image says so, and an image that reaches the local model gets a plain answer that it cannot see it. Residents get no images: the assistant describes what matters in the brief.
+- **Images.** Paste an image into the message field, drop one on the window, or choose files with **Image** (the widget has paste and Image too). Thumbnails of what will be sent sit above the field, each with a remove button; Enter sends the words and the images together, and an image can go alone. PNG, JPEG, GIF and WebP are accepted, up to 15 MB, 50 megapixels and six per message; anything else is refused beside the field with the reason. Each image is kept as a clean copy, scaled to at most 1,568 px on its long side with all metadata (location included) stripped, in `~/Library/Application Support/Vision/images/`, and shows in the thread with your message, larger on click, after a reload too. Claude reads them; the local model cannot, so in offline mode Image says so, and an image that reaches the local model gets a plain answer that it cannot see it. Residents get no images: the assistant describes what matters in the brief.
+- **Replies are plain text.** They are spoken aloud and shown as they are, so the assistant is told to write plain sentences, with a hyphen at the start of each line of a list, and no Markdown marks such as asterisks or backticks. The rule is fixed and does not depend on the persona you give it.
 - **Talking while it answers.** The message field never blocks. While the assistant thinks, uses a tool or speaks, Enter queues: the message shows under the conversation as "Sends after this reply", with **Send now** and **Take back** (taken back, its words return to an empty field). Up to five wait; a sixth is refused with a line saying so. When the reply ends, however it ends, everything waiting goes as one message, in the order you wrote it, with its images, and the assistant is told you wrote it while it was replying, so it can treat it as an addition or a correction. **Cmd+Enter** stops the reply and sends at once (with anything already waiting ahead of it), so does **Send now**; **Escape** or the **Stop** button beside the field stops the reply, and what was waiting then goes at once. What the assistant had said stays in the conversation marked **Stopped**, and the next answer is told where you cut it off, so it neither repeats itself nor carries on as if it had finished. The key hints say what Enter does at that moment. The assistant holds what waits, so a reload or a second window shows the same list. A yes or no typed while a request card waits still answers the card. Your waiting words go before anything else that waits: then the phone's messages, then job reports and automations. The widget shows how many wait, the newest, and Stop.
 - **Quitting** (the **Quit** button in the window's left panel or in **Settings, This Mac**, Cmd+Q, or Quit in the menu bar item) stops the assistant, but only if the app started it. The button asks first.
 - **Start at login** is a checkmark in the menu bar item, and a switch in Settings. The app then opens hidden at login: the assistant runs and the window stays closed; with the widget on, the widget shows.
@@ -162,7 +163,7 @@ A reply is spoken on one output stream from its first sentence to its last, each
 | Display | The house's quality (Low, Balanced or High), stepping back while the assistant works on this Mac, and the frame readout. Kept by the window itself. |
 | Reset | The three reset levels and your backups. |
 
-**What the house costs the Mac.** The 3D house draws only when something changes or moves, not at the display's full rate: about 24 frames a second while it only idles (figures breathing, the faint streaks), 60 while a figure walks, the display's own rate only while you move the view, and nothing at all while the window is hidden, minimised or covered by Settings. The static house costs no shadow work; the shadow map is redrawn only when a figure moves. The sharpness drops a step by itself when frames run late and comes back when there is room. While the voice speaks or a local model answers, the house steps back (12 to 30 frames a second, standard resolution) so they get the graphics chip, and eases back afterwards. Settings, Display chooses Low, Balanced (the default, which looks the same as High) or High, turns the stepping back off, and shows a readout of frames, frame time, resolution and draw calls (`?stats=1` shows it too). These choices belong to the window and are kept in its own storage, so they survive a restart of the app but not a reset of the web view's data.
+**What the house costs the Mac.** The 3D house draws only when something changes or moves, not at the display's full rate: about 24 frames a second while it only idles (figures breathing, the faint streaks), 60 while a figure walks, the display's own rate only while you move the view, and nothing at all while the window is hidden, minimised or covered by Settings. The static house costs no shadow work; the shadow map is redrawn only when a figure moves. The sharpness drops a step by itself when frames run late and comes back when there is room; a stalled page or a window in the background is not counted, since fewer pixels would not have helped. While the voice speaks or a local model answers, the house steps back so they get more of the graphics chip: it draws at most 24 frames a second at rest, 30 while something moves and 60 while you move the view. Its sharpness does not change then, because a change of resolution as a reply starts and ends shows. Settings, Display chooses Low, Balanced (the default, which looks the same as High) or High, turns the stepping back off, and shows a readout of frames, frame time, resolution and draw calls (`?stats=1` shows it too). These choices belong to the window and are kept in its own storage, so they survive a restart of the app but not a reset of the web view's data.
 
 Each group saves on its own. Most changes apply at once, offline mode and the local model among them. A change of Claude model, or a replaced API key, says it needs a restart.
 
@@ -176,7 +177,7 @@ The window opens an eight-step wizard when no API key is found, or when setup ha
 
 1. Welcome.
 2. The API key.
-3. Downloads: the local model (about 2.1 GB) and the speech models (about 2.0 GB). Each starts only when you click it and runs in the background. Nothing downloads by itself: with voice on and no speech models, voice stays off with a notice naming what is missing and Settings, Voice offers the download (voice starts when it finishes). Speech models are never deleted by the app; no reset touches them.
+3. Downloads: the local model (about 2.1 GB) and the speech models (about 2.0 GB). Each starts only when you click it and runs in the background. Nothing downloads by itself: with voice on and no speech models, voice stays off with a notice naming what is missing and Settings, Voice offers the download (voice starts when it finishes). Speech models are deleted only by **Delete all data**, when you tick its box; no reset touches them.
 4. The microphone permission and a three-second test.
 5. The assistant's name.
 6. About you: what it should call you, what business you run, and anything else it should know. All optional; `vision setup` in a terminal asks the same.
@@ -193,11 +194,32 @@ Settings, Reset offers three levels:
 - **House**: back to the default house (removes `house.toml`).
 - **Everything**: both of the above, plus memory (with what it knows about you and your library, and the agents' procedures), the conversation log with the images you sent, this month's spend record, your automations, and the agents' proposals and the tools they made. This level asks you to type the assistant's name to confirm, can also delete the API key from the Keychain, and opens the wizard again.
 
-Every reset first copies what it is about to change into `~/.vision/backups/<date>-<time>-<level>/`. Settings lists the backups, and any of them can be restored. A restore backs up the current files first, so it can be undone too. The API key is never backed up. Backups are kept until you delete them yourself.
+Every reset first copies what it is about to change into `~/Library/Application Support/Vision/backups/<date>-<time>-<level>/`. Settings lists the backups, and any of them can be restored. A restore backs up the current files first, so it can be undone too. The API key is never backed up. Backups are kept until you delete them yourself.
+
+### Delete all data
+
+Dragging the app to the Trash removes the app only. **Delete all data**, below the reset levels, removes what the app keeps on this Mac, and keeps no backup:
+
+- the data folder, `~/Library/Application Support/Vision/`, with everything the app made in it (the backups too). Anything else you put in that folder is left where it is, and the answer lists it;
+- the API key and the phone's bot token in the Keychain;
+- `~/Library/LaunchAgents/com.vision.daemon.plist`, if `vision install` put it there;
+- if you tick the box, the speech models and local chat models this app uses or offers, from the Hugging Face cache. Other models in that cache stay.
+
+It asks once more before it starts. Then the assistant stops, and the app turns off Start at login, forgets the window's own stored data and its preferences, and quits. What stays is the app itself, which you can then drag to the Trash, and your project folders.
+
+### Data from an earlier build
+
+Builds before this one kept the data in `~/.vision/`. To keep it, quit the app (and run `vision uninstall` if you used `vision install`), and before this build first opens, move the folder once (`mv` cannot do it once the new folder exists):
+
+```sh
+mv ~/.vision ~/Library/Application\ Support/Vision
+```
+
+The app does not look for or move the old folder itself.
 
 ## Where settings and data live
 
-Everything personal lives in `~/.vision/`, never in the repo or the app:
+Everything personal lives in `~/Library/Application Support/Vision/`, never in the repo or the app (`$VISION_HOME` puts it somewhere else):
 
 | Path | What it is |
 |---|---|
@@ -213,7 +235,9 @@ Everything personal lives in `~/.vision/`, never in the repo or the app:
 | `made-tools/` | The tools agents wrote that you approved: per tool a `manifest.json` that pins each version's hash, `versions/<n>.py` or `.sh` with the exact text you approved, and `runs.json` with the newest 50 runs. |
 | `backups/` | Copies made before each reset or restore. |
 | `logs/` | The daemon's logs: `app-daemon.log` when the app starts it, `daemon.*.log` under the LaunchAgent. |
+| `phone.json` | The phone channel's settings and pairing (the bot token itself is in the Keychain). |
 | `token` | The secret the window uses to talk to the daemon (readable only by you). |
+| `espeak-ng-data` | A short link to the speech engine's data, made only when the app's own path to it is too long for the engine. |
 
 The API key is in the macOS Keychain. From source it can also be in a git-ignored `.env` file at the repo root, as `ANTHROPIC_API_KEY`; the standalone app never reads a `.env` file. The key never goes into a log, a prompt or the window.
 
@@ -221,11 +245,11 @@ The daemon listens on `127.0.0.1` only, and every request must carry the token, 
 
 ## What the assistant knows about you
 
-**Your profile.** Three things, all optional: what to call you, your business (its name and what it does, in your own words), and anything else it should always keep in mind. You give them in the wizard's About you step, in `vision setup`, or in Settings, Assistant; or just tell the assistant ("call me Dee from now on", "we've started a catering line"), and it saves the change itself with its `update_profile` tool. It addresses you by that name from the next thing you say. The profile is a short Markdown file, `~/.vision/house/owner.md`, which you can also edit by hand. It goes into every conversation, and the other agents get it with every job.
+**Your profile.** Three things, all optional: what to call you, your business (its name and what it does, in your own words), and anything else it should always keep in mind. You give them in the wizard's About you step, in `vision setup`, or in Settings, Assistant; or just tell the assistant ("call me Dee from now on", "we've started a catering line"), and it saves the change itself with its `update_profile` tool. It addresses you by that name from the next thing you say. The profile is a short Markdown file, `~/Library/Application Support/Vision/house/owner.md`, which you can also edit by hand. It goes into every conversation, and the other agents get it with every job.
 
 **Your documents.** The library holds what the assistant and the other agents should be able to look up: a price list, your terms, a handbook, notes about a project. Add them in Settings, Library, by choosing files or dropping them on the group (text, Markdown, PDF and Word `.docx`, up to 20 MB and 400,000 characters of text each), or paste text with a title. You can also ask the assistant to save something you dictate as a document, or write Markdown files into the folder yourself. A scanned PDF has no text in it and is refused with a line that says so.
 
-- **Where they are.** `~/.vision/house/library/`: each document's text as `<name>.md`, the file you added as it was in `originals/`, titles and kinds in `index.json`, and `.search.db`, the search index, rebuilt from the files whenever they change.
+- **Where they are.** `~/Library/Application Support/Vision/house/library/`: each document's text as `<name>.md`, the file you added as it was in `originals/`, titles and kinds in `index.json`, and `.search.db`, the search index, rebuilt from the files whenever they change.
 - **What is sent to the model.** Short documents (up to about 2,000 characters) are in every conversation in full. Every other one is only listed, with its title, size and a one-line gist; its text goes to the model only when a conversation needs it, when the assistant reads a part of it or searches the library (`read_document`, `search_documents`). The same holds for the other agents at work. What a document says is treated as information, never as an instruction.
 - **Removing them.** In Settings, Library, Remove deletes a document's text and its original after you confirm; when you ask the assistant to remove one, it asks first. Deleting the files from the folder works too. Reset, Everything clears the profile and the library with the rest of the memory, after copying them into a backup.
 
@@ -348,7 +372,7 @@ Double-click a room to fly into it and see its agent, model, project name, proje
 
 Residents know each folder by a short name, its own name: `~/Projects/shop` is `shop`. Two folders with the same name become `app` and `app-2`. Every path a resident uses starts with that name, such as `shop/src/app.py`, even when the room has only one folder, so what a resident wrote down still points to the same file after you add another folder.
 
-**In the file:** add a room to `~/.vision/house.toml` and it appears within a couple of seconds, without a restart:
+**In the file:** add a room to `~/Library/Application Support/Vision/house.toml` and it appears within a couple of seconds, without a restart:
 
 ```toml
 [[rooms]]
@@ -434,7 +458,7 @@ Residents work on Claude, and on the local model in offline mode (below). When t
 
 Every agent, the assistant and the five residents, can get better at its work, always under your control. There are three levels, and only the first needs nobody's yes.
 
-**1. Procedures: how it did something, written down.** After work that went well and is likely to come again, an agent saves the steps as a named procedure (`save_procedure`), and before doing that kind of work again it opens it (`read_procedure`) and follows it, improving it when it learns something. Each agent's prompt lists the names and "when to use it" lines of its own procedures and the shared ones. A procedure is a plain Markdown file you can read and edit: a title, "When to use", the author, when it last changed, how often it was opened, and the steps, in `~/.vision/house/agents/<id>/procedures/`. An agent may share one so every agent sees it (`~/.vision/house/procedures/`); a shared one can be changed only by its author or the assistant. In the window, Proposals, Procedures lists them per agent, and you can read, edit or delete any of them.
+**1. Procedures: how it did something, written down.** After work that went well and is likely to come again, an agent saves the steps as a named procedure (`save_procedure`), and before doing that kind of work again it opens it (`read_procedure`) and follows it, improving it when it learns something. Each agent's prompt lists the names and "when to use it" lines of its own procedures and the shared ones. A procedure is a plain Markdown file you can read and edit: a title, "When to use", the author, when it last changed, how often it was opened, and the steps, in `~/Library/Application Support/Vision/house/agents/<id>/procedures/`. An agent may share one so every agent sees it (`~/Library/Application Support/Vision/house/procedures/`); a shared one can be changed only by its author or the assistant. In the window, Proposals, Procedures lists them per agent, and you can read, edit or delete any of them.
 
 **2. New tools, approved by you.** An agent may write a small script, in Python with the standard library only or in POSIX shell, and propose it as a new tool (`propose_tool`): its name, a one-line description, its inputs, the script, what it needs to reach (which of its room's project folders to read, and whether it needs the network) and why. A proposal runs nothing. It waits in Proposals in the window, and the left panel's Proposals control shows how many wait; a notice says one arrived and, with a phone paired, the phone gets a short line saying to look at the Mac. You approve or decline it at the Mac only: the window shows the whole script, its reach, who proposed it and why. A press on the phone, a typed "yes" or a spoken "yes" never approves a proposal; only the window's Approve does. When you approve, you choose who may use it (that agent only, or every agent) and how it runs (ask each time, the default, or free).
 
@@ -446,7 +470,7 @@ Every agent, the assistant and the five residents, can get better at its work, a
 **What the confinement enforces.** Each run is confined by macOS itself, with a `sandbox-exec` profile built for that run (the same mechanism Apple uses for its own services; it needs no new permission and nothing to install). Tests in `tests/test_proposals_sandbox.py` try to break out of it, each beside a control run without it:
 
 - Writing is possible only in the run's own scratch folder, which is deleted afterwards; not elsewhere, and not in the folders it may read.
-- Reading is possible only for macOS system files, the Python runtime, the scratch folder and the approved folders. The assistant's own folder (`~/.vision`), `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, `~/.docker`, `~/.kube`, `~/.netrc` and the like, the Keychains and cookies are never readable, nor protected files (`.env`, private keys, credential and secrets files) inside an approved folder.
+- Reading is possible only for macOS system files, the Python runtime, the scratch folder and the approved folders. The assistant's own folder (`~/Library/Application Support/Vision`), `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, `~/.docker`, `~/.kube`, `~/.netrc` and the like, the Keychains and cookies are never readable, nor protected files (`.env`, private keys, credential and secrets files) inside an approved folder.
 - Without network approval no connection can be opened, not even to this Mac; with it, connections can go out but nothing can listen. Local sockets, the Keychain, the clipboard, Apple Events and opening apps are closed in both cases.
 - The environment holds no secrets. The time is limited, and CPU time, the size of each file, open files and the number of processes are capped. Any process the script leaves behind, even a detached one, is found through the sandbox and killed when the run ends.
 - Where macOS cannot confine a run (no `sandbox-exec`, or the self-check fails), made tools do not run at all; they never run unconfined.
@@ -455,7 +479,7 @@ Every agent, the assistant and the five residents, can get better at its work, a
 
 **3. Changes to itself, as proposals.** An agent may propose a new persona, model or thinking level for itself, with its reason (`propose_change`); the assistant may also propose one for a resident. Nothing else can be proposed: the code refuses anything outside those three. Proposals shows the before and after in full; you approve or decline at the Mac only. An approved change goes through the same checks as Settings (a model must be one the assistant knows), the previous value is kept so Restore puts it back, and approving, declining and restoring are each written to the audit log. A resident's change applies from its next job; the assistant's model and thinking level apply at once, and its own persona once the assistant restarts (it keeps its system prompt for the conversation).
 
-**The hard line.** An agent may try another approach, ask another agent, or report what blocked it, but it never looks for another route to something that was refused or needs your yes. No agent can change the approval rules, its own permissions or tiers, spending caps, keys, the phone's approval list, or the app's own code. One limit is worth knowing: if you make `shell` free, the assistant's shell runs as you, and could in principle edit files under `~/.vision` (a made tool's script and its manifest together, say) or call the daemon's own routes with its token. That is why `shell` asks by default.
+**The hard line.** An agent may try another approach, ask another agent, or report what blocked it, but it never looks for another route to something that was refused or needs your yes. No agent can change the approval rules, its own permissions or tiers, spending caps, keys, the phone's approval list, or the app's own code. One limit is worth knowing: if you make `shell` free, the assistant's shell runs as you, and could in principle edit files under `~/Library/Application Support/Vision` (a made tool's script and its manifest together, say) or call the daemon's own routes with its token. That is why `shell` asks by default.
 
 ## Local models and offline mode
 
@@ -471,7 +495,7 @@ The assistant can run on a model on this Mac instead of Claude. It does so by it
 | 36 to 96 GB | Qwen3.6 35B A3B, smart and fast | 20.4 GB |
 | 128 GB | Qwen3.5 122B A10B | 69.6 GB |
 
-A local model is downloaded, kept and removed only by your choice: only when you click Download (or answer yes in the first-start wizard or `vision setup`), with its size and progress, and only Delete removes one (not the model offline mode is using). The recommendation is a suggestion and changes nothing by itself, a fresh install downloads nothing, and resets and restores never touch downloaded models. If the assistant needs the local model (offline mode, or Claude cannot be used) and none is on this Mac, it fetches nothing: the answer, and a notice, say that no local model is downloaded and to choose one in Settings, under Models. You can type any other Hugging Face repo in MLX format, or use a local server that speaks the OpenAI format (LM Studio, Ollama and the like): choose the server backend, give its address and the model's name, and Test lists the server's models. A changed model is used from the next answer on.
+A local model is downloaded, kept and removed only by your choice: only when you click Download (or answer yes in the first-start wizard or `vision setup`), with its size and progress, and only Delete removes one (not the model offline mode is using), or **Delete all data** when you tick its box. The recommendation is a suggestion and changes nothing by itself, a fresh install downloads nothing, and resets and restores never touch downloaded models. If the assistant needs the local model (offline mode, or Claude cannot be used) and none is on this Mac, it fetches nothing: the answer, and a notice, say that no local model is downloaded and to choose one in Settings, under Models. You can type any other Hugging Face repo in MLX format, or use a local server that speaks the OpenAI format (LM Studio, Ollama and the like): choose the server backend, give its address and the model's name, and Test lists the server's models. A changed model is used from the next answer on.
 
 **When the model is in memory, and what the first message costs.** Turning offline mode on starts loading the chosen model at once (so does starting the assistant with offline mode on), and it stays in memory for as long as offline mode is on. The state line says `offline · <model> · loading` meanwhile, Settings says the same, and a message sent during the load waits for that load. When Claude answers and the local model is only the stand-in, it loads for the first message it answers and is freed after ten minutes without one (`[brain] local_idle_unload_s`); Settings, under Models, **Keep it ready** can keep it in memory always instead (`[brain] local_keep_loaded = "always"`). Changing the model frees the old one before the new one loads. Settings shows how much memory the loaded model holds (2.3 GB for the default Qwen3 4B) and how much the conversation it has already read holds. Before its first word a model reads its whole prompt (the memory, its rules, the tools and the conversation so far, about 2,200 tokens for the 4B model with its short tool list); what it has read is kept for the next message, so only what is new is read again. Measured on the M1 Max with the default model: about 2 seconds to load, about 5 seconds to the first word of the first message (while the state line says `reading`), then about 0.2 seconds for each message after it. Kept conversations hold memory too (about 150 KB per token for the 4B model, at most 2 GB in all).
 
@@ -491,7 +515,7 @@ npm test
 npm run build
 ```
 
-The Python tests use a temporary home, never touch the Keychain, the network or the microphone, and fake every brain. The app's build steps (the compiler, uv, codesign, ditto) are faked too.
+The Python tests use a temporary home and a Keychain that lives in memory, never touch the network, the microphone, `launchctl` or your own Keychain, and fake every brain. Reading, storing and deleting a key all stay in that stand-in, and a few guard tests fail if it is ever taken away. The app's build steps (the compiler, uv, codesign, ditto) are faked too.
 
 Tests with the real speech models are opt-in: `VISION_VOICE_MODELS=1 uv run pytest -s tests/test_voice_models.py`.
 
@@ -501,7 +525,7 @@ To check a built app end to end, run its self-test:
 dist/Vision.app/Contents/MacOS/Vision --self-test /tmp/result.json
 ```
 
-It uses a throwaway home, the fake brain and no microphone, and opens a normal window and the widget. It quits within about 30 seconds and writes whether the house and the widget connected, whether the widget showed and hid, whether Minimize put the app in the menu bar (no Dock icon) and opening the house brought it back, whether each shortcut registered (or why not), and the notch inset of each screen. To test a build without touching `dist/`, build it elsewhere with `vision app build --out <folder>`.
+It uses a throwaway home, the fake brain, no microphone and no Keychain (so it cannot read your keys or connect your phone bot), and opens a normal window and the widget. It quits within about 30 seconds and writes whether the house and the widget connected, whether the widget showed and hid, whether Minimize put the app in the menu bar (no Dock icon) and opening the house brought it back, whether each shortcut registered (or why not), and the notch inset of each screen. To test a build without touching `dist/`, build it elsewhere with `vision app build --out <folder>`.
 
 To work on the window without a daemon, run `npm run dev` in `web/` and open the page with `?mock=1`, which plays a scripted conversation; the widget is `widget.html?mock=1`.
 

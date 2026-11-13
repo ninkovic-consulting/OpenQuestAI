@@ -5,6 +5,8 @@
 import type { DeleteAnswer, LocalListing, ServerTest } from "./brain-types";
 import type {
   Backup,
+  DeleteAllAnswer,
+  DeleteAllPreview,
   Doctor,
   Downloads,
   DownloadWhat,
@@ -60,6 +62,10 @@ export interface SettingsApi {
   reset(level: ResetLevel, removeKey: boolean): Promise<Result<ResetAnswer>>;
   backups(): Promise<Result<Backup[]>>;
   restore(id: string): Promise<Result<RestoreAnswer>>;
+  /** The data folder and the downloaded models Delete all data would remove. */
+  deleteAllPreview(): Promise<Result<DeleteAllPreview>>;
+  /** Deletes everything the app keeps on this Mac, with no backup; the assistant stops after answering. */
+  deleteAll(models: boolean): Promise<Result<DeleteAllAnswer>>;
   patchRoom(id: string, patch: RoomPatch): Promise<Result<null>>;
   removeRoom(id: string): Promise<Result<null>>;
 }

@@ -42,6 +42,7 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
             restartDaemon: () => call("restartDaemon"),
             appInfo: () => call("appInfo"),
             quit: () => call("quit"),
+            finishDeleteAll: (summary) => call("finishDeleteAll", [String(summary ?? "")]),
             widgetPrefs: () => call("widgetPrefs"),
             setWidgetPrefs: (changes) => call("setWidgetPrefs", [JSON.parse(JSON.stringify(changes ?? {}))]),
             showWidget: (shown) => call("showWidget", [Boolean(shown)]),
@@ -107,6 +108,13 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
         case "quit":
             // Answer first, then quit on a later turn of the run loop, so the page's call does not hang.
             NSApp.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0.1)
+            return true
+        case "finishDeleteAll":
+            // The daemon has deleted the data and answered. Answer first, then finish on a later
+            // turn of the run loop: it ends with the app quitting, so the page's call does not hang.
+            let shell = try background()
+            let summary = args.first as? String ?? ""
+            Task { @MainActor in await shell.finishDeleteAll(summary) }
             return true
         case "widgetPrefs":
             return try background().prefsAnswer()

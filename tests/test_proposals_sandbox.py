@@ -289,6 +289,70 @@ async def test_protected_names_match_whatever_the_case(layout: Layout) -> None:
     assert result.output == f"{DENIED}\n"
 
 
+# --- The assistant's home where Mac apps keep their data ---------------------------------
+
+
+@pytest.fixture
+def mac_layout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Layout:
+    """As `layout`, with the assistant's home at its default place: under `~/Library`, with a space."""
+    home = Path(os.path.realpath(tmp_path)) / "user"
+    support = home / "Library" / "Application Support"
+    assistant = support / "Vision"
+    (assistant / "made-tools" / "scratch" / "run 1").mkdir(parents=True)
+    (assistant / "log.db").write_text("the assistant's log\n")
+    (support / "Other App").mkdir(parents=True)
+    (support / "Other App" / "notes.txt").write_text("another app\n")
+    project = home / "My Projects" / "harbor books"
+    project.mkdir(parents=True)
+    (project / "readme.txt").write_text("hello harbor\n")
+    outside = home / "outside"
+    outside.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    return Layout(home, assistant, assistant / "made-tools" / "scratch" / "run 1", project, outside)
+
+
+@pytest.mark.parametrize("approved", [".", "Library", "Library/Application Support"])
+async def test_the_home_under_application_support_stays_closed(mac_layout: Layout, approved: str) -> None:
+    """An approved folder above the home (a part of `~/Library` too) never opens the home itself."""
+    folder = mac_layout.home / approved
+    log = mac_layout.assistant / "log.db"
+    assert mac_layout.free("python", read_script(log)) == "the assistant's log\n"
+    assert (await mac_layout.run("python", read_script(log), read=(folder,))).output == f"{DENIED}\n"
+    listed = await mac_layout.run("sh", f"ls '{mac_layout.assistant}' || echo {DENIED}", read=(folder,))
+    assert DENIED in listed.output and "log.db" not in listed.output
+    beside = mac_layout.home / "Library" / "Application Support" / "Other App" / "notes.txt"
+    assert (await mac_layout.run("python", read_script(beside), read=(folder,))).output == "another app\n"
+
+
+async def test_a_scratch_folder_with_a_space_works(mac_layout: Layout) -> None:
+    script = "import os\nopen('out.txt', 'w').write('kept')\nprint(os.getcwd())"
+    result = await mac_layout.run("python", script)
+    assert result.exit_code == 0, result.output
+    assert result.output == f"{mac_layout.scratch}\n"
+    assert (mac_layout.scratch / "out.txt").read_text() == "kept"
+    shell = await mac_layout.run("sh", 'pwd; echo kept > "$HOME/sh.txt"')
+    assert shell.output == f"{mac_layout.scratch}\n" and (mac_layout.scratch / "sh.txt").is_file()
+    readme = await mac_layout.run("python", read_script(mac_layout.project / "readme.txt"), read=(mac_layout.project,))
+    assert readme.output == "hello harbor\n"
+
+
+def test_paths_with_a_space_are_whole_parameters(mac_layout: Layout) -> None:
+    marks = sandbox._Marks(read="/m.r", denied="/m.d")
+    argv = sandbox._argv(
+        "sh",
+        "true",
+        reach=Reach(read=(mac_layout.project,), network=False),
+        scratch=str(mac_layout.scratch),
+        marks=marks,
+        deny=(mac_layout.assistant,),
+        cpu=5,
+    )
+    profile = argv[argv.index("-p") + 1]
+    assert "Application Support" not in profile and "My Projects" not in profile
+    assert f"DENY0={mac_layout.assistant}" in argv and f"READ0={mac_layout.project}" in argv
+    assert f"SCRATCH={mac_layout.scratch}" in argv
+
+
 # --- Network and local sockets ----------------------------------------------------------
 
 

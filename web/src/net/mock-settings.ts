@@ -18,12 +18,14 @@ import {
   HAIKU,
   INPUTS,
   LOCAL_MODEL,
+  MOCK_HOME,
   MOCK_MODELS,
   OLD_BACKUPS,
   OPUS,
   OUTPUTS,
   SILENT_INPUT,
   SPEECH_BYTES,
+  SPEECH_REPO,
   TOOL_TEXT,
   VOICES,
 } from "./mock-settings-data";
@@ -31,6 +33,8 @@ import { emptyOwner, ownerProblem, type Owner } from "./owner";
 import { ok, refused, type Result, type SettingsApi } from "./settings-api";
 import type {
   Backup,
+  DeleteAllAnswer,
+  DeleteAllPreview,
   Doctor,
   Download,
   Downloads,
@@ -232,6 +236,7 @@ export class MockSettings implements SettingsApi {
       key: { stored: this.key.stored, source: this.key.stored ? "keychain" : null },
       setup: { completed: c.completed, first_run: !this.key.stored || !c.completed },
       restart_pending: this.key.replaced ? [...pending, "key"] : pending,
+      data: { home: MOCK_HOME },
     });
   }
 
@@ -608,6 +613,43 @@ export class MockSettings implements SettingsApi {
     const words = { settings: "Settings are back to their defaults.", house: "The house is back to the default rooms and agents.", everything: "Everything is fresh." }[level];
     const message = `${words}${removeKey && level === "everything" ? " The API key and the phone's bot token were removed from the Keychain." : ""}${restart ? " Restart the assistant to finish." : ""}`;
     return wait(400).then(() => ok({ backup, restart, message }));
+  }
+
+  // ------------------------------------------------------------ delete all data
+
+  deleteAllPreview(): Promise<Result<DeleteAllPreview>> {
+    const models = this.modelsOnDisk();
+    return Promise.resolve(ok({ home: MOCK_HOME, models, models_bytes: models.reduce((n, m) => n + m.bytes, 0) }));
+  }
+
+  /** Answers as the daemon would; mock mode keeps running, since nothing here is real. */
+  deleteAll(models: boolean): Promise<Result<DeleteAllAnswer>> {
+    const present = this.modelsOnDisk();
+    const freed = present.reduce((n, m) => n + m.bytes, 0);
+    if (models) {
+      for (const m of present) this.local.remove(m.repo);
+      this.config.voice.models_downloaded = false;
+      this.config.voice.models_size_bytes = null;
+    }
+    this.key = { stored: false, replaced: false };
+    const left = [{ name: "notes.txt", why: "The app did not make it." }];
+    const answer: DeleteAllAnswer = {
+      home: MOCK_HOME,
+      removed: ["backups", "config.toml", "house", "house.toml", "images", "log.db", "logs", "token"],
+      left,
+      folder_removed: false,
+      elsewhere: [],
+      keychain: { ok: true, message: "The API key and the phone's bot token are no longer in the Keychain." },
+      models: models ? { removed: present.map((m) => m.repo), left: [], freed_bytes: freed } : null,
+      launch_agent: { installed: false, removed: false, message: "" },
+      message: "Everything the app made in the data folder is gone. It still holds what the app did not make: notes.txt. The assistant stops now.",
+    };
+    return wait(600).then(() => ok(answer));
+  }
+
+  private modelsOnDisk(): { repo: string; bytes: number }[] {
+    const local = this.local.present(this.config.backend === "mlx" ? [this.config.local] : []);
+    return this.config.voice.models_downloaded ? [...local, { repo: SPEECH_REPO, bytes: SPEECH_BYTES }] : local;
   }
 
   backups(): Promise<Result<Backup[]>> {

@@ -6,6 +6,8 @@ import { asDeleteAnswer, asLocalListing, asServerTest } from "./brain-guards";
 import { ok, refused, type Result, type SettingsApi } from "./settings-api";
 import {
   asBackups,
+  asDeleteAllAnswer,
+  asDeleteAllPreview,
   asDoctor,
   asDownloads,
   asFixAnswer,
@@ -25,6 +27,8 @@ import {
 import type { DownloadWhat, ResetLevel, RoomPatch, SettingsPatch, SpeakChoice } from "./settings-types";
 
 const SHAPE = "The answer was not in the expected shape.";
+/** The value the daemon wants before it deletes all data (`vision.settings.erase.CONFIRM`). */
+export const DELETE_ALL_CONFIRM = "delete all data";
 
 /** The query for `GET /api/fs/dirs`, or null when the text cannot name a folder yet. */
 export function foldersQuery(text: string): string | null {
@@ -63,6 +67,8 @@ export class HttpSettings implements SettingsApi {
   reset = (level: ResetLevel, removeKey: boolean) => this.ask("POST", "/api/reset", asResetAnswer, { level, remove_key: removeKey });
   backups = () => this.ask("GET", "/api/backups", asBackups);
   restore = (id: string) => this.ask("POST", `/api/backups/${encodeURIComponent(id)}/restore`, asRestoreAnswer);
+  deleteAllPreview = () => this.ask("GET", "/api/delete-all", asDeleteAllPreview);
+  deleteAll = (models: boolean) => this.ask("POST", "/api/delete-all", asDeleteAllAnswer, { confirm: DELETE_ALL_CONFIRM, models });
   patchRoom = (id: string, patch: RoomPatch) => this.ask("PATCH", roomPath(id), accepted, patch).then(asDone);
   removeRoom = (id: string) => this.ask("DELETE", roomPath(id), accepted).then(asDone);
 

@@ -280,6 +280,10 @@ class Daemon:
         self._runner_task: asyncio.Task[None] | None = None
         self._reports_task: asyncio.Task[None] | None = None
         self._presence_task: asyncio.Task[None] | None = None
+        self._stopped = False
+        self.erased = False
+        """Delete all data has run: the API refuses every other request until the daemon stops."""
+        self._server: uvicorn.Server | None = None
         self.app = create_app(self)
 
     def host_context(self) -> proposals.Context:
@@ -484,6 +488,10 @@ class Daemon:
                     self.bus.publish(RoomState(room=HALL, state=light))
 
     async def stop(self) -> None:
+        """Stop every part, once; later calls (the server's own shutdown after Delete all data) do nothing."""
+        if self._stopped:
+            return
+        self._stopped = True
         await self.phone.stop()
         await self.board.stop()
         for task in (
@@ -512,6 +520,11 @@ class Daemon:
             except Exception:
                 log.exception("error during shutdown")
 
+    def request_exit(self) -> None:
+        """Ask the server `serve` runs to stop, as Ctrl-C would; the shutdown then runs `stop`."""
+        if self._server is not None:
+            self._server.should_exit = True
+
     async def serve(self) -> None:
         server = uvicorn.Server(
             uvicorn.Config(
@@ -522,4 +535,5 @@ class Daemon:
                 ws_ping_interval=20,
             )
         )
+        self._server = server
         await server.serve()

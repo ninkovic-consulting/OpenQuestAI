@@ -14,6 +14,8 @@ final class Background {
     var openHouse: () -> Void = {}
     /// Closes the house window and leaves the app in the menu bar; the app delegate sets it.
     var goToBackground: () -> Void = {}
+    /// The app's last step after Delete all data, given what to tell the owner; the app delegate sets it.
+    var finishDeleteAll: (String) async -> Void = { _ in }
 
     init(settings: Settings, supervisor: Supervisor, store: PrefStore) {
         self.store = store

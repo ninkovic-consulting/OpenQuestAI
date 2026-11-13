@@ -1,6 +1,7 @@
 """Shared fixtures. Every test runs with a temp `VISION_HOME`, a temp `.env`
 path, a temp Hugging Face cache and a Keychain that lives in memory, so nothing
 touches the real home, a real model, the repo's `.env` or the owner's Keychain.
+`launchctl` is never called and the LaunchAgent's plist path is in tmp_path.
 
 The Keychain stand-in is installed when this file is imported and replaced by
 an empty one for each test: reading, storing and deleting all stay in memory.
@@ -28,6 +29,7 @@ import uvicorn
 from keyring.errors import PasswordDeleteError
 
 from vision.app import Components, Daemon
+from vision.core import launchd
 from vision.core.bus import Bus
 from vision.core.config import Config, load_config
 from vision.testing.fakes import (
@@ -96,6 +98,19 @@ def stand_in_presence(monkeypatch: pytest.MonkeyPatch) -> FakePresenceReader:
     reader = FakePresenceReader()
     monkeypatch.setattr("vision.presence.default_reader", lambda: reader)
     return reader
+
+
+@pytest.fixture(autouse=True)
+def no_launchctl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """No test reaches `launchctl` or the real `~/Library/LaunchAgents`; the agent's plist lives in tmp_path."""
+
+    def refuse(args: list[str], *, check: bool) -> None:
+        raise AssertionError(f"a test called launchctl {' '.join(args)}")
+
+    plist = tmp_path / "LaunchAgents" / f"{launchd.LABEL}.plist"
+    monkeypatch.setattr(launchd, "_launchctl", refuse)
+    monkeypatch.setattr(launchd, "plist_path", lambda: plist)
+    return plist
 
 
 @pytest.fixture(autouse=True)

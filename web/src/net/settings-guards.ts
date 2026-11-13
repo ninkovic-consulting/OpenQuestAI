@@ -4,6 +4,8 @@
 import type {
   AudioDevice,
   Backup,
+  DeleteAllAnswer,
+  DeleteAllPreview,
   Doctor,
   DoctorCheck,
   Download,
@@ -129,7 +131,9 @@ export function asSettings(v: unknown): Settings | null {
     isObj(setup) &&
     isBool(setup["completed"]) &&
     isBool(setup["first_run"]) &&
-    isStrList(v["restart_pending"]);
+    isStrList(v["restart_pending"]) &&
+    isObj(v["data"]) &&
+    isStr(v["data"]["home"]);
   return ok ? (v as unknown as Settings) : null;
 }
 
@@ -257,6 +261,38 @@ export function asBackups(v: unknown): Backup[] | null {
 
 export function asResetAnswer(v: unknown): ResetAnswer | null {
   return isObj(v) && isBackup(v["backup"]) && isBool(v["restart"]) && isStr(v["message"]) ? (v as unknown as ResetAnswer) : null;
+}
+
+const isRepoBytes = (v: unknown): boolean => isObj(v) && isStr(v["repo"]) && isNum(v["bytes"]);
+const isNameWhy = (key: string) => (v: unknown): boolean => isObj(v) && isStr(v[key]) && isStr(v["why"]);
+
+export function asDeleteAllPreview(v: unknown): DeleteAllPreview | null {
+  return isObj(v) && isStr(v["home"]) && Array.isArray(v["models"]) && v["models"].every(isRepoBytes) && isNum(v["models_bytes"])
+    ? (v as unknown as DeleteAllPreview)
+    : null;
+}
+
+export function asDeleteAllAnswer(v: unknown): DeleteAllAnswer | null {
+  if (!isObj(v)) return null;
+  const { keychain, models, launch_agent: agent } = v;
+  const ok =
+    isStr(v["home"]) &&
+    isStrList(v["removed"]) &&
+    Array.isArray(v["left"]) &&
+    v["left"].every(isNameWhy("name")) &&
+    isBool(v["folder_removed"]) &&
+    isStrList(v["elsewhere"]) &&
+    isObj(keychain) &&
+    isBool(keychain["ok"]) &&
+    isStr(keychain["message"]) &&
+    (models === null ||
+      (isObj(models) && isStrList(models["removed"]) && Array.isArray(models["left"]) && models["left"].every(isNameWhy("repo")) && isNum(models["freed_bytes"]))) &&
+    isObj(agent) &&
+    isBool(agent["installed"]) &&
+    isBool(agent["removed"]) &&
+    isStr(agent["message"]) &&
+    isStr(v["message"]);
+  return ok ? (v as unknown as DeleteAllAnswer) : null;
 }
 
 export function asRestoreAnswer(v: unknown): RestoreAnswer | null {

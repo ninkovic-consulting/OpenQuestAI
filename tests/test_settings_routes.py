@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import tomllib
 
 import pytest
@@ -28,6 +29,8 @@ ROUTES = [
     ("POST", "/api/reset"),
     ("GET", "/api/backups"),
     ("POST", "/api/backups/20261112-130500-settings/restore"),
+    ("GET", "/api/delete-all"),
+    ("POST", "/api/delete-all"),
 ]
 
 
@@ -51,8 +54,9 @@ async def test_settings_shape(daemon: Daemon) -> None:
         got = (await http.get("/api/settings")).json()
     assert set(got) == {
         "assistant", "owner", "models", "budget", "agents", "voice", "gate", "jobs", "projects", "key",
-        "setup", "restart_pending",
+        "setup", "restart_pending", "data",
     }
+    assert got["data"] == {"home": os.path.realpath(daemon.config.paths.home)}
     assert got["owner"] == {"name": "", "business": "", "notes": ""}
     assert got["jobs"] == {
         "max_running": 2, "max_steps": 24, "timeout_s": 900.0, "max_job_usd": 1.0, "speak_results": True,

@@ -1,4 +1,5 @@
 import AppKit
+import WebKit
 
 /// Owns the daemon, the window, the widget with its shortcuts, and the menu bar item.
 ///
@@ -40,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         background.openHouse = { [weak self] in self?.openWindow() }
         background.goToBackground = { [weak self] in self?.closeWindow() }
+        background.finishDeleteAll = { [weak self] summary in await self?.finishDeleteAll(summary) }
         window.shell = background
         if selfTest == nil {
             menu = StatusMenu(
@@ -87,6 +89,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let selfTest else { return }
         selfTest.cleanUp()
         exit(selfTest.passed ? 0 : 1)
+    }
+
+    /// After Delete all data, which the daemon has done: what the app itself keeps goes too, then it
+    /// quits without starting the daemon again. Start at login is turned off, the page's stored
+    /// data (`WKWebsiteDataStore`) and the app's own preferences (its `UserDefaults` domain) are
+    /// removed, and the owner is told what the daemon said before the app quits. The self-test
+    /// runs with the owner's bundle id, so it never touches the login item, the stored data or
+    /// the preferences.
+    func finishDeleteAll(_ summary: String) async {
+        supervisor.end()
+        background.stop()
+        background.widget.hide()
+        var notes: [String] = []
+        if selfTest == nil {
+            do {
+                try LoginItem.set(false)
+            } catch {
+                notes.append("Start at login could not be turned off (\(error.localizedDescription)). Turn it off in System Settings, General, Login Items.")
+            }
+            let store = WKWebsiteDataStore.default()
+            await store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
+            if let id = Bundle.main.bundleIdentifier {
+                UserDefaults.standard.removePersistentDomain(forName: id)
+            }
+        }
+        let alert = NSAlert()
+        alert.messageText = "\(settings.name) deleted its data"
+        alert.informativeText = ([summary] + notes).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        alert.addButton(withTitle: "Quit")
+        NSApp.activate()
+        alert.runModal()
+        NSApp.terminate(nil)
     }
 
     @objc func openWindow() {

@@ -5,7 +5,7 @@
 - `GET /api/health`, `GET /api/state`, `GET /api/history?limit=50`,
   `GET /api/house` (plus the house package's own routes under `/api/house`,
   the settings package's under `/api`: settings, models, voice, downloads,
-  folders, doctor, reset and backups, the scheduler's `/api/automations` and
+  folders, doctor, reset, Delete all data and backups, the scheduler's `/api/automations` and
   the job board's `/api/jobs`, the phone channel's `/api/phone`, the
   owner's images, `/api/images`, the agents' procedures, `/api/procedures`,
   and their proposals and the tools they made, `/api/proposals` and
@@ -19,6 +19,9 @@
   it, so a closed or reloaded page never leaves the microphone open.
 - Any request or socket with an `Origin` header that is not the server's own
   origin is refused (HTTP 403, WebSocket close 4403).
+- Once Delete all data has run (`vision.settings.erase`), every other API
+  request is refused (HTTP 503) until the daemon has stopped, so nothing
+  writes the data folder again.
 """
 
 from __future__ import annotations
@@ -60,6 +63,7 @@ WEB_DIST = resources.web_dist()
 HELLO_TIMEOUT_S = 10.0
 CLOSE_UNAUTHORIZED = 4401
 CLOSE_FORBIDDEN_ORIGIN = 4403
+ERASED = "The assistant deleted all its data and is stopping."
 
 PLACEHOLDER = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>{name}</title>
@@ -117,6 +121,8 @@ def create_app(daemon: Daemon) -> FastAPI:
         origin = request.headers.get("origin")
         if origin is not None and origin not in origins:
             return JSONResponse({"detail": "forbidden origin"}, status_code=403)
+        if daemon.erased and request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": ERASED}, status_code=503)
         return await call_next(request)
 
     app.state.token = daemon.token

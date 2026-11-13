@@ -1650,3 +1650,27 @@
 .project-field .field-error[hidden] {
   display: none;
 }
+
+/* Delete all data, in Reset. */
+.reset-card.is-delete-all {
+  margin-top: 24px;
+}
+
+.delete-list {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--muted-light);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.delete-home {
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.is-delete-all > .btn,
+.is-delete-all > .confirm-box,
+.delete-result:not(:empty) {
+  margin-top: 14px;
+}

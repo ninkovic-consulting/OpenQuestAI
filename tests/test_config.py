@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from vision.core.config import Config, load_config, vision_home
 
 
@@ -86,6 +88,20 @@ anything = [1, 2, 3]
     assert config.paths.log_db == isolated_env / "data" / "log.db"
     assert config.paths.logs == Path("/var/tmp/vision-logs")
     assert config.agents == {"helper": {"room": "library", "anything": [1, 2, 3]}}
+
+
+def test_the_default_home_is_where_mac_apps_keep_their_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = tmp_path / "Users" / "sam"
+    monkeypatch.delenv("VISION_HOME")
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: user))
+    assert vision_home() == user / "Library" / "Application Support" / "Vision"
+    config = load_config()
+    assert config.paths.token == user / "Library" / "Application Support" / "Vision" / "token"
+    assert config.paths.house == config.paths.home / "house"
+    monkeypatch.setenv("VISION_HOME", str(tmp_path / "elsewhere"))
+    assert vision_home() == tmp_path / "elsewhere"  # the variable still wins
 
 
 def test_explicit_home(tmp_path: Path) -> None:
